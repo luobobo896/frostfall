@@ -78,3 +78,21 @@ test('大屏（812×375）：战场 HUD 按设计单位居中——触摸坐标�
     assert.equal(app.getModel().paused, true, '加上偏移之后才是「暂停」');
   } finally { fake.uninstall(); }
 });
+
+test('老基础库（没有 wx.getWindowInfo）：视口回落到 getSystemInfoSync，画面照常', async () => {
+  await import('../tools/build-minigame.mjs');
+  const fake = installFakeWx({ windowWidth: 812, windowHeight: 375, oldBaseLib: true });
+  try {
+    const require = createRequire(import.meta.url);
+    const app = loadFreshApp(require, 4);
+    // 视口按老接口给的尺寸来（812×375 → 大厅居中），大厅这一帧要真的画出来
+    app.drawFrame();
+    assert.ok(app.canvas.record.calls.length > 500, `老基础库下也要画得出大厅（调用 ${app.canvas.record.calls.length} 次）`);
+    assert.ok(app.canvas.record.texts.includes('冰封之地'), '标题要画出来');
+    // 进局也不能崩（战场那边同样读视口）
+    app.startMatch();
+    app.drawFrame();
+    assert.equal(app.screen(), 'battle');
+    assert.ok(app.canvas.record.texts.some((t) => t.includes('回大厅')), '战场 HUD 要画出来');
+  } finally { fake.uninstall(); }
+});

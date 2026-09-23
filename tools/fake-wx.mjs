@@ -4,7 +4,7 @@
 //   wx.getWindowInfo()（`wx.getSystemInfoSync` 已不推荐，我们优先用新接口）
 //   wx.vibrateShort / wx.connectSocket / wx.request（request 这里直接用本机 fetch 顶上）
 // **没有** document —— 这一点很关键，platform.isMiniGame() 靠它区分「小游戏」与「浏览器里的 wx 桥」。
-export function installFakeWx({ windowWidth = 667, windowHeight = 375, pixelRatio = 2, onVibrate = null } = {}) {
+export function installFakeWx({ windowWidth = 667, windowHeight = 375, pixelRatio = 2, onVibrate = null, oldBaseLib = false } = {}) {
   const store = new Map();
   const sockets = [];
   const touchHandlers = {};
@@ -49,7 +49,10 @@ export function installFakeWx({ windowWidth = 667, windowHeight = 375, pixelRati
     getStorageSync: (k) => (store.has(k) ? store.get(k) : ''),
     setStorageSync: (k, v) => { store.set(k, String(v)); },
     removeStorageSync: (k) => { store.delete(k); },
-    getWindowInfo: () => ({ windowWidth, windowHeight, pixelRatio }),
+    // `oldBaseLib: true` 模拟老基础库：没有 `getWindowInfo`，只有 `getSystemInfoSync`
+    ...(oldBaseLib
+      ? { getSystemInfoSync: () => ({ windowWidth, windowHeight, pixelRatio }) }
+      : { getWindowInfo: () => ({ windowWidth, windowHeight, pixelRatio }) }),
     vibrateShort: (o) => { if (onVibrate) onVibrate(o); else if (!store.get('__failVibrate')) return; },
     request: ({ url, success, fail }) => {
       fetch(url).then(async (res) => success({ statusCode: res.status, data: await res.json() }))
