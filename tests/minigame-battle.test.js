@@ -13,6 +13,9 @@ import {
 } from '../src/minigame/battle.js';
 import { installFakeWx } from '../tools/fake-wx.mjs';
 import { TOWER_MAX_LEVEL } from '../src/data.js';
+import { createMatch, makeEquipment, potionCount, update } from '../src/match.js';
+import { SHOP_ITEMS } from '../src/data.js';
+import { layoutBag, layoutItem, layoutShop } from '../src/minigame/battle.js';
 
 // 与 minigame-bundle.test.js 同一个道理：**各有各的产物目录**，否则并发跑会互相踩
 const OUT = mkdtempSync(join(tmpdir(), 'ff-mini-battle-'));
@@ -67,7 +70,7 @@ test('小游戏战场 HUD：命中测试与画出来的位置同源（每个按�
     assert.deepEqual(hitTestBattle(L, it.x + it.w / 2, it.y + it.h / 2), it.action, `${it.id} 点中心没命中自己`);
   }
   assert.equal(hitTestBattle(L, DESIGN.w / 2, 150), null, '战场中间那块要返回 null（交给点塔位的逻辑）');
-  assert.deepEqual(TOWER_ORDER.map((id) => L.byId[`tower-${id}`].cost).length, 4, '四种塔都要在 HUD 上');
+  assert.equal(TOWER_ORDER.length, 4, '四种塔（建造改到「点塔位弹面板」之后，HUD 上不再各占一个键）');
 });
 
 test('小游戏战场 HUD：结算时「开波」换成「再开一局」', () => {
@@ -86,7 +89,7 @@ test('小游戏战场 HUD：画一帧有波次 / 金币 / 核心 / 塔造价（�
   assert.ok(ctx.texts.some((t) => t.includes('3 / 12 波')), '波次要画出来');
   assert.ok(ctx.texts.some((t) => t.includes('金 200')), '金币要画出来');
   assert.ok(ctx.texts.some((t) => t.includes('核心 1800/2400')), '核心血要画出来');
-  assert.ok(ctx.texts.some((t) => t.includes('60 金')), '塔造价要画出来');
+  assert.ok(ctx.texts.some((t) => t.includes('商店')) && ctx.texts.some((t) => t.includes('背包')), '商店/背包入口要画出来');
 });
 
 test('小游戏战场：在假 wx 里真的能打起来（点塔位建塔 → 开波 → 90 秒后有击杀、波次推进）', async () => {
@@ -195,4 +198,85 @@ test('小游戏弹层：画一帧把标题 / 读数 / 各行动作画出来（�
   assert.ok(ctx.texts.some((t) => t.includes('伤害')), '读数要画出来');
   assert.ok(ctx.texts.some((t) => t.includes('升级')), '升级按钮要画出来');
   assert.ok(ctx.texts.some((t) => t.includes('空中优先')), '优先级按钮要画出来');
+});
+
+test('小游戏商店：每件商品一行（含撤柜与买不起的灰态），关闭行在画布内', () => {
+  const m = createMatch({ seed: 5 });
+  m.gold = 10;   // 都买不起
+  const sheet = layoutShop(m, {});
+  assert.equal(sheet.kind, 'shop');
+  assert.equal(sheet.rows.length, SHOP_ITEMS.length + 1, '每件商品 + 关闭');
+  for (const it of SHOP_ITEMS) {
+    const row = sheet.byId[`buy-${it.id}`];
+    assert.ok(row, `少了 ${it.id} 的行`);
+    assert.equal(row.disabled, true, '钱不够时每一行都该灰掉');
+    assert.ok(row.y + row.h <= DESIGN.h, `${it.id} 行出界`);
+  }
+  // §3.1 #20：塔防里回城卷轴与群疗符是「已撤柜」，要说出来而不是静默没有
+  const blocked = sheet.byId['buy-scroll_town'];
+  assert.match(blocked.sub, /已撤柜/);
+  // 给够钱就恢复可点
+  m.gold = 5000;
+  const rich = layoutShop(m, {});
+  assert.ok(rich.rows.filter((r) => r.id.startsWith('buy-') && !r.disabled).length >= 4, '钱够了大部分商品要可点');
+});
+
+test('小游戏背包：列出已装备与最近掉落、可合成时给「一键合成」、点一件进详情', () => {
+  const m = createMatch({ seed: 5 });
+  m.inventory.push(makeEquipment(m, 'weapon', 'blue', 6), makeEquipment(m, 'armor', 'blue', 6),
+    makeEquipment(m, 'trinket', 'blue', 6));
+  const sheet = layoutBag(m, {});
+  assert.equal(sheet.kind, 'bag');
+  assert.equal(sheet.rows.filter((r) => r.id.startsWith('item-')).length, 3, '三件都要列出来');
+  assert.ok(!sheet.byId.craft, '三件不同部位合不了，不该出现合成行');
+  assert.match(sheet.hint, /同部位同品质/);
+  // 三件同部位同品质 → 出现「一键合成」，且两步确认时转危险色
+  m.inventory.push(makeEquipment(m, 'weapon', 'blue', 6), makeEquipment(m, 'weapon', 'blue', 6));   // 武器凑到 3 件
+  const canCraft = layoutBag(m, {});
+  assert.ok(canCraft.byId.craft, '凑够 3 件同部位同品质要给合成入口');
+  assert.match(canCraft.byId.craft.sub, /3 件稀有武器 → 1 件/);
+  assert.equal(layoutBag(m, { craftArmed: true }).byId.craft.label, '确认合成？');
+  assert.equal(layoutBag(m, { craftArmed: true }).byId.craft.danger, true);
+  // 点一件 → 详情面板
+  const uid = m.inventory[0].uid;
+  const item = layoutItem(m, { itemUid: uid });
+  assert.equal(item.kind, 'item');
+  assert.ok(item.byId.equip && item.byId.enhance && item.byId.sell, '详情要有穿上/强化/出售');
+  assert.match(item.byId.sell.sub, /返还 \d+ 金/);
+  // 已装备的那件没有「穿上」，但有强化/出售
+  const eq = layoutItem(m, { itemUid: uid, equippedUid: uid });
+  assert.ok(eq.byId.enhance && eq.byId.sell);
+});
+
+test('小游戏商店闭环：在假 wx 里点开商店 → 买药 → 点药品键用掉（走的是内核那几个函数）', async () => {
+  await import('../tools/build-minigame.mjs');
+  const fake = installFakeWx();
+  try {
+    const require = createRequire(import.meta.url);
+    require(join(OUT, 'game.js'));
+    const app = globalThis.__frostfallLobby;
+    app.startMatch();
+    const m = app.match();
+    const gold0 = m.gold;
+
+    const tapBtn = (id) => {
+      const b = app.layout().byId[id];
+      assert.ok(b, `底部没有 ${id} 这个入口`);
+      return app.tap(b.x + b.w / 2, b.y + b.h / 2);
+    };
+    assert.equal(tapBtn('shop').type, 'shop', '点商店要开商店');
+    const sheet = app.getModel().sheet;
+    assert.equal(sheet.kind, 'shop');
+    const row = sheet.byId['buy-pot_small'];
+    app.tap(row.x + row.w / 2, row.y + row.h / 2);
+    assert.equal(potionCount(m), 1, '买到的药要进药品格');
+    assert.equal(m.gold, gold0 - 30, `小药 30 金（金币 ${gold0} → ${m.gold}）`);
+
+    // 关掉商店 → 点「药品」键真的用掉一瓶
+    const close = app.getModel().sheet.byId.close;
+    app.tap(close.x + close.w / 2, close.y + close.h / 2);
+    assert.equal(app.getModel().sheet, null, '关掉之后不该再有弹层');
+    tapBtn('potion');
+    assert.equal(potionCount(m), 0, '药品键要把药喝掉');
+  } finally { fake.uninstall(); }
 });

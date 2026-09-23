@@ -21,6 +21,7 @@ const SHOTS = [
   { file: 'minigame-lobby.png', w: Number(w), h: Number(h), page: 'lobby' },
   { file: 'minigame-battle.png', w: Number(w), h: Number(h), page: 'battle' },
   { file: 'minigame-tower.png', w: Number(w), h: Number(h), page: 'tower' },
+  { file: 'minigame-shop.png', w: Number(w), h: Number(h), page: 'shop' },
 ];
 
 if (!existsSync(CHROME)) {
@@ -86,6 +87,12 @@ if (page === 'lobby') {
   if (page === 'tower') {
     m.gold = 420;   // 让「升级」是亮着的，样张里能看出可点状态
     drawSheet(ctx, layoutSheet(m, { panelSlot: 1, sellArmed: false }));
+  }
+  // 第四张：商店（药品 3 格 + 技能书，撤柜的也写在行上）
+  if (page === 'shop') {
+    m.gold = 260;
+    m.bag = { pot_small: 1 };   // 让「药品格」看起来有东西
+    drawSheet(ctx, layoutSheet(m, { sheetKind: 'shop' }));
   }
 }
 window.__previewReady = true;

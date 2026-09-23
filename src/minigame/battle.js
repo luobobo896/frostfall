@@ -6,15 +6,23 @@
 // 这一屏的交互是**简化版**：点塔位 = 用当前选中的塔种建塔（已有塔则升级），点「开波」提前开波，
 // 点技能键放技能，点「回大厅」退回去。浏览器版那一套「点塔位 → 轮盘选塔 → 塔面板（升级/出售/优先级）」
 // 还没搬过来——真机手感确认之后再决定照搬还是换成更适合拇指的两步式（见 docs/minigame-port.md §5.2）。
-import { TARGET_PRIORITIES, TOWERS } from '../data.js';
+import {
+  EQUIP_SELL_BONUS_LUMBER, EQUIP_SELL_REFUND, EQUIP_SLOTS, QUALITY, QUALITY_ORDER,
+  SHOP_ITEMS, TARGET_PRIORITIES, TOWERS, TOWER_SELL_REFUND,
+} from '../data.js';
 import { attackHint } from '../hud-model.js';
-import { TOWER_REPAIR_GOLD, towerStatsAt, upgradeCost } from '../match.js';
+import {
+  TOWER_REPAIR_GOLD, craftableSlots, enhanceCostOf, potionCount, shopPriceOf, towerStatsAt, upgradeCost,
+} from '../match.js';
 
 export const DESIGN = { w: 667, h: 375 };
 /** 右上角胶囊按钮的禁区（和 lobby 同一条要求） */
 export const CAPSULE = { w: 96, h: 32 };
 export const TOWER_ORDER = ['tw_arrow', 'tw_cannon', 'tw_frost', 'tw_static'];
 export const PRIORITY_LABEL = { front: '最靠前', strongest: '最强', weakest: '最弱', air_first: '空中优先' };
+export const POTION_BAG_SLOTS = 3;   // §5.5.3：药品共 3 格（与内核同一个数）
+const QUALITY_NAME = Object.fromEntries(Object.entries(QUALITY).map(([k, v]) => [k, v.name ?? k]));
+const NEXT_QUALITY = { white: 'blue', blue: 'purple', purple: 'orange' };
 
 const COLORS = {
   panel: 'rgba(12, 20, 34, 0.86)',
@@ -57,16 +65,20 @@ const item = (id, x, y, w, h, label, action, extra = {}) => ({ id, x, y, w, h, l
  */
 export function layoutBattle(model = {}) {
   const items = [];
-  TOWER_ORDER.forEach((id, i) => {
-    items.push(item(`tower-${id}`, 12 + i * 62, 315, 58, 48, TOWERS[id].name.replace('塔', ''),
-      { type: 'tower', value: id },
-      { on: (model.selectedTower ?? 'tw_arrow') === id, cost: TOWERS[id].cost }));
-  });
+  /**
+   * 底部一排（从左到右）：商店 / 背包 / 药品 / 开波（结算时变「再开一局」）/ 技能 1 / 技能 2 / 回大厅。
+   * 上一版这里是四个塔种快捷键——建塔改成「点塔位弹面板」之后它们就没用了（同一个决定两个入口），
+   * 于是让位给局内真正缺的三个入口。
+   */
+  items.push(item('shop', 12, 315, 74, 48, '商店', { type: 'shop' }));
+  items.push(item('bag', 94, 315, 74, 48, `背包${model.bagCount ? `(${model.bagCount})` : ''}`, { type: 'bag' }));
+  items.push(item('potion', 176, 315, 74, 48, `药品 ${model.potionCount ?? 0}/${POTION_BAG_SLOTS}`,
+    { type: 'potion' }, { disabled: !model.potionCount }));
   items.push(model.result
-    ? item('restart', 276, 315, 92, 48, '再开一局', { type: 'restart' })
-    : item('early', 276, 315, 92, 48, '开波', { type: 'early' }, { disabled: !model.canEarly }));
+    ? item('restart', 258, 315, 92, 48, '再开一局', { type: 'restart' })
+    : item('early', 258, 315, 92, 48, '开波', { type: 'early' }, { disabled: !model.canEarly }));
   for (let i = 0; i < 2; i += 1) {
-    items.push(item(`skill-${i}`, 376 + i * 62, 315, 58, 48, i === 0 ? '技能 1' : '技能 2',
+    items.push(item(`skill-${i}`, 358 + i * 66, 315, 58, 48, i === 0 ? '技能 1' : '技能 2',
       { type: 'skill', index: i }, { disabled: !(model.skills?.[i] ?? i === 0) }));
   }
   items.push(item('lobby', 588, 315, 67, 48, '回大厅', { type: 'lobby' }));
@@ -115,17 +127,9 @@ export function drawBattleHud(ctx, m, L, { selectedTower = 'tw_arrow', message =
     ctx.strokeStyle = on ? COLORS.accent : COLORS.panelLine;
     ctx.lineWidth = on ? 2 : 1;
     ctx.stroke();
-    const isTower = it.id.startsWith('tower-');
-    text(ctx, it.label, it.x + it.w / 2, it.y + (isTower ? 16 : 24), {
-      size: isTower ? 11 : 13, align: 'center', color: it.disabled ? COLORS.dim : COLORS.ink,
-      weight: isTower ? '' : 'bold',
+    text(ctx, it.label, it.x + it.w / 2, it.y + it.h / 2, {
+      size: 13, align: 'center', color: it.disabled ? COLORS.dim : COLORS.ink, weight: 'bold',
     });
-    if (isTower) {
-      const afford = m.gold >= it.cost;
-      text(ctx, `${it.cost} 金`, it.x + it.w / 2, it.y + 34, {
-        size: 10, align: 'center', color: afford ? COLORS.gold : COLORS.danger,
-      });
-    }
   }
 
   if (message) {
@@ -160,6 +164,9 @@ export function drawBattleHud(ctx, m, L, { selectedTower = 'tw_arrow', message =
  * 真机手感确认之后如果轮盘更顺手，再换（换的时候这一层的四件套不用动）。
  */
 export function layoutSheet(m, ui = {}) {
+  if (ui?.sheetKind === 'shop') return layoutShop(m, ui);
+  if (ui?.sheetKind === 'bag') return layoutBag(m, ui);
+  if (ui?.sheetKind === 'item') return layoutItem(m, ui);
   const slot = ui.panelSlot ?? ui.selectedSlot ?? null;
   if (slot == null) return null;
   const t = m.towers.find((x) => x.slot === slot) ?? null;
@@ -192,7 +199,7 @@ export function layoutSheet(m, ui = {}) {
   // 塔面板：读数 + 升级 / 出售（两步）/ 优先级 / 修塔（只在攻城图）/ 关闭
   const s = t.stats ?? towerStatsAt(m.map, t.cell, t.towerId, t.level);
   const cost = upgradeCost(t.towerId, t.level);
-  const refund = Math.floor(t.invested * 0.5);
+  const refund = Math.floor(t.invested * TOWER_SELL_REFUND);   // 与内核同一个常数，别手写比例
   const canRepair = !!m.map.def.siege && t.maxHp && t.hp < t.maxHp;
   const info = `Lv${t.level} · 伤害 ${s.damage.toFixed(1)} · 攻速 ${s.atkSpeed.toFixed(2)} · 射程 ${s.range.toFixed(1)}`
     + (s.hitsAir ? ' · 对空' : ' · 不对空') + ` · ${attackHint(s.attackType)}`;
@@ -232,6 +239,129 @@ export function layoutSheet(m, ui = {}) {
     title: `${TOWERS[t.towerId].name} · Lv${t.level}`,
     hint: info,
     box: { x: 12, y: 62, w: 643, h: canRepair ? 240 : 190 },
+    rows, byId: Object.fromEntries(rows.map((r) => [r.id, r])),
+  };
+}
+
+/* ---------- 商店 / 背包 / 物品详情 ---------- */
+
+const itemLabel = (it) =>
+  `${QUALITY_NAME[it.quality] ?? it.quality}${EQUIP_SLOTS[it.slot]?.name ?? it.slot} ilvl${it.ilvl}${it.plus ? ` +${it.plus}` : ''}`;
+
+/**
+ * 商店（§5.5）：药品 3 格、技能书；**禁售与买满的写在行上**（§3.1 #20 的口径：撤柜也要说清为什么）。
+ * 波次中下单会走 3 秒读条（§5.5）——读条进度写在标题里，玩家不用猜为什么按钮点不动。
+ */
+export function layoutShop(m, ui = {}) {
+  const rows = [];
+  SHOP_ITEMS.forEach((it, i) => {
+    const col = i % 2, row = Math.floor(i / 2);
+    const price = shopPriceOf(m, it.id) ?? { gold: it.priceGold, lumber: it.priceLumber ?? 0 };
+    const blocked = m.shopBlocked?.[it.id];
+    const bought = m.shopBought?.[it.id] ?? 0;
+    const maxed = it.limit != null && bought >= it.limit;
+    const bagFull = it.type === 'potion' && potionCount(m) >= POTION_BAG_SLOTS;
+    const sub = blocked ? '已撤柜'
+      : maxed ? '已买满'
+        : bagFull ? '药品格已满'
+          : `${price.gold} 金${price.lumber ? ` + ${price.lumber} 木` : ''}`;
+    rows.push({
+      id: `buy-${it.id}`, label: it.name, sub,
+      x: 20 + col * 314, y: 96 + row * 50, w: 300, h: 44,
+      disabled: !!blocked || maxed || bagFull || m.gold < price.gold,
+      action: { type: 'buy', itemId: it.id },
+    });
+  });
+  const closeY = 96 + Math.ceil(SHOP_ITEMS.length / 2) * 50;
+  rows.push({ id: 'close', label: '关闭', x: 20, y: closeY, w: 614, h: 44, action: { type: 'close' } });
+  const cast = m.shopCast ? ` · 读条中 ${Math.max(0, (m.shopCast.until ?? 0) - m.time).toFixed(1)}s` : '';
+  return {
+    kind: 'shop',
+    title: `商店 · 金币 ${Math.round(m.gold)}${cast}`,
+    hint: `药品 ${potionCount(m)}/${POTION_BAG_SLOTS} 格 · 波次中下单读条 3 秒`,
+    box: { x: 12, y: 62, w: 643, h: closeY - 6 },
+    rows, byId: Object.fromEntries(rows.map((r) => [r.id, r])),
+  };
+}
+
+/**
+ * 背包（§5.2/§5.4）：已装备 3 格 + 最近掉落的几件；点一件进「物品详情」。
+ * 一屏放得下的件数有限（小游戏屏幕就这么大），所以只列最近的，剩下的在提示行里写清总数。
+ */
+export function layoutBag(m, ui = {}) {
+  const rows = [];
+  const equipped = Object.keys(EQUIP_SLOTS).map((s) => m.equipped?.[s]).filter(Boolean);
+  const inv = [...(m.inventory ?? [])].reverse();
+  const shown = [...equipped.map((it) => ({ it, equipped: true })), ...inv.map((it) => ({ it, equipped: false }))].slice(0, 6);
+  shown.forEach(({ it, equipped: isEq }, i) => {
+    const col = i % 2, row = Math.floor(i / 2);
+    rows.push({
+      id: `item-${it.uid}`, label: itemLabel(it), sub: isEq ? '已装备' : `${(it.affixes ?? []).length} 词条`,
+      x: 20 + col * 314, y: 96 + row * 50, w: 300, h: 44, on: isEq,
+      action: { type: 'item', uid: it.uid },
+    });
+  });
+  if (!shown.length) {
+    rows.push({ id: 'empty', label: '还没有掉落', x: 20, y: 96, w: 614, h: 44, disabled: true, action: null });
+  }
+  const craft = craftableSlots(m)[0];
+  const rowY = 96 + Math.max(1, Math.ceil(shown.length / 2)) * 50;
+  if (craft) {
+    rows.push({
+      id: 'craft', label: ui.craftArmed ? '确认合成？' : '一键合成',
+      sub: `3 件${QUALITY_NAME[craft.quality]}${EQUIP_SLOTS[craft.slot].name} → 1 件${QUALITY_NAME[NEXT_QUALITY[craft.quality]]}`,
+      x: 20, y: rowY, w: 300, h: 44, danger: !!ui.craftArmed,
+      action: { type: 'craft', slot: craft.slot, quality: craft.quality },
+    });
+    rows.push({ id: 'close', label: '关闭', x: 334, y: rowY, w: 300, h: 44, action: { type: 'close' } });
+  } else {
+    rows.push({ id: 'close', label: '关闭', x: 20, y: rowY, w: 614, h: 44, action: { type: 'close' } });
+  }
+  return {
+    kind: 'bag',
+    title: `背包 · ${m.inventory?.length ?? 0} 件（显示最近 ${Math.min(6, shown.length)} 件）`,
+    hint: craft ? '' : '攒够 3 件同部位同品质即可一键合成',
+    box: { x: 12, y: 62, w: 643, h: rowY + 44 + 12 - 62 },
+    rows, byId: Object.fromEntries(rows.map((r) => [r.id, r])),
+  };
+}
+
+/** 物品详情（§5.4 的三个动作：穿上 / 强化 / 出售）——与浏览器版 `actionsRow` 同一套动作 */
+export function layoutItem(m, ui = {}) {
+  const uid = ui.itemUid;
+  const inBag = (m.inventory ?? []).find((x) => x.uid === uid) ?? null;
+  const it = inBag ?? Object.values(m.equipped ?? {}).find((x) => x?.uid === uid) ?? null;
+  if (!it) return null;
+  const rows = [];
+  if (inBag) {
+    rows.push({
+      id: 'equip', label: '穿上', sub: '', x: 20, y: 96, w: 614, h: 44,
+      action: { type: 'equip', uid },
+    });
+  }
+  const cost = enhanceCostOf(it);
+  // 返还比例与「紫装以上多给木材」都取内核那两个常数（§5.4），别在这里手写一份
+  const refund = Math.floor((it.invested ?? 0) * EQUIP_SELL_REFUND);
+  const bonus = QUALITY_ORDER.indexOf(it.quality) >= QUALITY_ORDER.indexOf('purple')
+    ? ` + ${EQUIP_SELL_BONUS_LUMBER} 木` : '';
+  rows.push({
+    id: 'enhance', label: cost == null ? '强化已满级' : `强化 +${(it.plus ?? 0) + 1}`,
+    sub: cost == null ? '' : `${cost} 金`,
+    x: 20, y: inBag ? 146 : 96, w: 300, h: 44, disabled: cost == null || m.gold < cost,
+    action: { type: 'enhance', uid },
+  });
+  rows.push({
+    id: 'sell', label: ui.sellArmed ? '确认出售' : '出售', sub: `返还 ${refund} 金${bonus}`,
+    x: 334, y: inBag ? 146 : 96, w: 300, h: 44, danger: !!ui.sellArmed,
+    action: { type: 'sellItem', uid },
+  });
+  rows.push({ id: 'close', label: '关闭', x: 20, y: inBag ? 196 : 146, w: 614, h: 44, action: { type: 'close' } });
+  const closeBox = inBag ? 196 : 146;
+  return {
+    kind: 'item',
+    title: itemLabel(it),
+    hint: `词条 ${(it.affixes ?? []).length}`,
+    box: { x: 12, y: 62, w: 643, h: closeBox + 44 + 12 - 62 },
     rows, byId: Object.fromEntries(rows.map((r) => [r.id, r])),
   };
 }

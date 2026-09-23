@@ -7,8 +7,9 @@
 import { TICK_STEP } from '../data.js';
 import { DEFENSE_MAPS, MAPS } from '../data.js';
 import {
-  buildTower, castSkill, createMatch, describe as describeMatch, repairTower,
-  sellTower, setPriority, startWaveEarly, towerAtSlot, update, upgradeTower,
+  buildTower, buyItem, castSkill, craftEquipment, createMatch, describe as describeMatch, equipItem,
+  enhanceItem, potionCount, repairTower, sellItem, sellTower, setPriority, startWaveEarly,
+  towerAtSlot, update, upgradeTower, usePotion,
 } from '../match.js';
 import { createDefenseMatch, describeDefense, updateDefense } from '../defense.js';
 import { isMiniGame, onTouch, storage, viewport } from '../platform.js';
@@ -128,15 +129,22 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
 
   /** 一次「点」：弹层 → HUD → 战场（翻成最近的塔位） */
   const tapBattle = (b, x, y) => {
-    // 弹层开着时它最优先（关掉 / 选塔 / 升级 …）
-    if (b.ui.selectedSlot != null || b.ui.panelSlot != null) {
+    // 弹层开着时它最优先（关掉 / 选塔 / 升级 / 买东西 / 换装 …）
+    if (b.ui.sheetKind || b.ui.selectedSlot != null || b.ui.panelSlot != null) {
       const action = hitTestSheet(layoutSheet(b.m, b.ui), x, y);
       return applySheetAction(b, action);
     }
     const action = hitTestBattle(b.layout, x, y);
     if (action) {
       switch (action.type) {
-        case 'tower': b.selectedTower = action.value; note(b, `选中 ${action.label}（${action.cost} 金）`, 1.2); return action;
+        case 'shop': b.ui = { sheetKind: 'shop' }; return action;
+        case 'bag': b.ui = { sheetKind: 'bag' }; return action;
+        case 'potion': {
+          const id = b.m.bag.pot_small ? 'pot_small' : (b.m.bag.pot_large ? 'pot_large' : null);
+          const ok = id ? usePotion(b.m, id) : false;
+          note(b, ok ? '用药' : '药品冷却中或没有药');
+          return action;
+        }
         case 'early': {
           const ok = startWaveEarly(b.m, 0);
           note(b, ok ? '提前开波' : '现在开不了（正在交战）');
@@ -207,9 +215,42 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
         note(b, ok ? '塔已修复' : '金币不足或无需修复');
         return action;
       }
-      case 'tower':   // 底部那排塔种按钮（快捷改默认建造种类）
-        b.selectedTower = action.value;
+      // ---- 商店 / 背包 / 物品 ----
+      case 'buy': {
+        const ok = buyItem(b.m, action.itemId, 0);
+        const item = b.model().sheet?.byId?.[`buy-${action.itemId}`];
+        note(b, ok ? `买了 ${item?.label ?? action.itemId}` : '买不了（金币不足 / 已买满 / 药品格已满）');
         return action;
+      }
+      case 'item':
+        b.ui = { sheetKind: 'item', itemUid: action.uid };
+        return action;
+      case 'equip': {
+        const ok = equipItem(b.m, action.uid);
+        note(b, ok ? '已换上' : '换装失败');
+        b.ui = { sheetKind: 'bag' };   // 回到背包，能直接看到变化
+        return action;
+      }
+      case 'enhance': {
+        const ok = enhanceItem(b.m, action.uid);
+        note(b, ok ? '强化完成' : '金币不足或已满级');
+        return action;
+      }
+      case 'sellItem': {
+        if (!b.ui.sellArmed) { b.ui = { ...b.ui, sellArmed: true }; note(b, '再点一次确认出售', 2); return action; }
+        const ok = sellItem(b.m, action.uid, 0);
+        note(b, ok ? '已出售' : '出售失败');
+        b.ui = { sheetKind: 'bag' };
+        return action;
+      }
+      case 'craft': {
+        // 合成不可逆（§5.4.1）：和出售一样两步确认
+        if (!b.ui.craftArmed) { b.ui = { ...b.ui, craftArmed: true }; note(b, '再点一次确认合成', 2); return action; }
+        const ok = craftEquipment(b.m, action.slot, action.quality);
+        note(b, ok ? '合成成功' : '合成失败');
+        b.ui = { sheetKind: 'bag' };
+        return action;
+      }
       default: return action;
     }
   };
@@ -298,6 +339,9 @@ const describeBattleModel = (m) => ({
   result: m.result, length: m.length,
   canEarly: m.wave.phase === 'prep' && m.wave.timer > 0,
   skills: m.hero.skillUnlocked,
+  // 底部那排要显示的数量：药品格数（§5.5.3：共 3 格）与背包件数
+  potionCount: potionCount(m),
+  bagCount: m.inventory?.length ?? 0,
 });
 
 /** 回大厅时保留玩家刚选的模式/地图/难度/英雄（大厅的状态在进局那一刻被 Battle 接管了） */
