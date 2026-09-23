@@ -189,6 +189,11 @@ export function layoutDefense(m, model = {}) {
     // 英雄那一格（等级 / 阵亡倒计时）：顶栏已经挤满（轮次 + 预警 + 金 + 木 + 城堡），
     // 所以它写在顶栏下面那一行的左边——右边留给小地图（405 起）
     heroLine: { x: 22, y: 48 },
+    /**
+     * 「击杀 / 工事」那一行的**右边界**：让开右上角那两个键（倍速从 380 起，y 到 52）。
+     * 以前它右对齐到小地图左边（393）——那一截正压在倍速键下面（通用几何用例量出来的）。
+     */
+    statsLine: { right: 372, y: 48 },
     items,
     byId: Object.fromEntries(items.map((it) => [it.id, it])),
     stick: stickBase(model),
@@ -206,7 +211,9 @@ export function hitTestDefense(L, x, y) {
 /** 画 HUD：轮次 / 城堡血 / 资源 / 预警 + 右侧那排键 + 摇杆底座 */
 export function drawDefenseHud(ctx, m, L, { message = null, stick = null } = {}) {
   const castlePct = m.castle.hp / m.castle.maxHp;
-  ctx.fillStyle = COLORS.panel;
+  // 这一条用**近乎不透明**的底：世界那行「城堡 x/y」与它的血条就画在这一带，
+  // 半透明（0.86）挡不住那条亮蓝血条（样张里看得见一条亮线穿过去）
+  ctx.fillStyle = 'rgba(10, 16, 28, 0.97)';
   roundRect(ctx, L.top.x, L.top.y, L.top.w, L.top.h, 8);
   ctx.fill();
   ctx.strokeStyle = COLORS.panelLine;
@@ -237,14 +244,27 @@ export function drawDefenseHud(ctx, m, L, { message = null, stick = null } = {})
   const dead = !!m.hero?.dead;
   const state = dead ? `阵亡 ${Math.ceil(m.hero.reviveTimer ?? 0)}s`
     : (zoneLabel(zoneAt(m.def, m.hero?.cell)) || (m.hero?.moving ? '移动中' : '待命'));
-  text(ctx, fitText(ctx, `英雄 Lv${m.hero?.level ?? 1} · ${state}`, MINIMAP.x - 12 - L.heroLine.x), L.heroLine.x, L.heroLine.y,
+  /**
+   * 这两行**垫一层小面板**再写：它们是 HUD 里唯一的「裸字」——别的地方都在面板里，
+   * 而防守的战场会跟着相机跑过明亮的地形与工事（底板、墙、白光），那样字会读不清。
+   * （顺带核过：世界那行「城堡 x/y」画在 y≈86 那一带，不在这条下面。）
+   */
+  ctx.fillStyle = COLORS.panel;
+  roundRect(ctx, L.heroLine.x - 8, L.heroLine.y - 9, L.statsLine.right - L.heroLine.x + 16, 19, 6);
+  ctx.fill();
+  ctx.strokeStyle = COLORS.panelLine;
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  // 宽度按「到击杀那行左边、再留 12 空隙」算（两行都不许压到右上角那两个键上）
+  const heroMaxW = L.statsLine.right - 140 - 12 - L.heroLine.x;
+  text(ctx, fitText(ctx, `英雄 Lv${m.hero?.level ?? 1} · ${state}`, heroMaxW), L.heroLine.x, L.heroLine.y,
     { size: 11, color: dead ? COLORS.danger : COLORS.dim });
   /**
    * 这一行**右端**给两个读数（浏览器版在防守面板里也写着）：野外击杀数（§12.5：野区是主要装备来源，
    * 玩家得知道自己在野区捞了多少）与工事占用（`工事 2/6`——还剩几个空位）。右对齐到小地图左边。
    */
   text(ctx, `击杀 ${m.stats?.fieldKills ?? 0} · 工事 ${m.forts?.length ?? 0}/${m.def.fortSlots.length}`,
-    MINIMAP.x - 12, L.heroLine.y, { size: 11, align: 'right', color: COLORS.dim });
+    L.statsLine.right, L.statsLine.y, { size: 11, align: 'right', color: COLORS.dim });
   /**
    * 城堡血量**只写在顶栏这一行里**，不再单独占一条：`render.js` 的 drawDefense 本来就会在城堡上方
    * 画「城堡 x/y + 血条」，而相机跟人时城堡多半就在屏幕中上部——单独占一行会跟那条**正好叠在一起**

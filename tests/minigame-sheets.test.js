@@ -6,7 +6,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { DESIGN, layoutBag, layoutItem, layoutPause, layoutShop, layoutSheet } from '../src/minigame/battle.js';
+import {
+  DESIGN, layoutBag, layoutBattle, layoutItem, layoutPause, layoutShop, layoutSheet,
+} from '../src/minigame/battle.js';
+import { MINIMAP, layoutDefense } from '../src/minigame/defense-screen.js';
 import { layoutFortSheet as fortSheet } from '../src/minigame/defense-screen.js';
 import { createMatch, buildTower, makeEquipment } from '../src/match.js';
 import { createDefenseMatch } from '../src/defense.js';
@@ -69,4 +72,52 @@ test('小游戏弹层几何：每一种面板的每一行都 ≥44、在画布�
   checkSheet(layoutItem(td, { itemUid: inBag.uid }), '物品详情（背包里）');
   const equipped = Object.values(td.equipped).find(Boolean) ?? items[1];
   checkSheet(layoutItem(td, { itemUid: equipped.uid }), '物品详情（已装备）');
+});
+
+/**
+ * HUD 上那几块**同时出现**的东西（顶栏 / 提示行 / 预告 / 英雄读数 / 面板 / 各种键）不许压在一起。
+ * 单块各自有用例（热区、避开胶囊…），但「两块浮层叠在一块儿」这种错只有**跨块**看才看得见——
+ * 浏览器那边 §145 就是这么查的（十一个面逐一量）。
+ */
+test('小游戏 HUD 互不重叠：同一帧里同时出现的那几块（含「结算面板 + 底排」这种组合）', () => {
+  const box = (r) => ({ x: r.x, y: r.y, w: r.w, h: r.h });
+  const line = (x, y, w) => ({ x, y: y - 7, w, h: 14 });   // 一行字大约 14 高
+  const clash = (label, blocks) => {
+    // 这两对是**有意套在一起**的：引导条里画着它自己的「跳过」键、小地图那一格就是小地图本身
+    // （键只负责命中，图由绘制层贴上去）。除去这两对，其余两两不许压。
+    const intentional = new Set(['引导条|tutorialSkip', 'tutorialSkip|引导条', '小地图|minimap', 'minimap|小地图']);
+    for (let i = 0; i < blocks.length; i += 1) {
+      for (let j = i + 1; j < blocks.length; j += 1) {
+        const [na, a] = blocks[i], [nb, b] = blocks[j];
+        if (intentional.has(`${na}|${nb}`)) continue;
+        assert.ok(!overlap(a, b), `${label}：${na} 与 ${nb} 压在一起`);
+      }
+    }
+  };
+
+  // TD：第一局那一帧（有引导条、没结算面板）
+  const td = createMatch({ seed: 5 });
+  const model = { wave: 3, phase: 'prep', timer: 9, gold: 200, core: 2400, coreMax: 2400, result: null,
+    length: 'short', canEarly: true, skills: [{ name: '旋风斩', lv: 1 }, { name: '战吼', locked: true }],
+    potionCount: 1, potionReady: true, bagCount: 0, hero: { level: 1, dead: false, reviveIn: 0 }, lumber: 0,
+    tutorial: '点亮的塔位可以建塔 —— 点一个，选「箭塔」', rate: 1, paused: false };
+  const L1 = layoutBattle(model);
+  clash('TD（第一局）', [['顶栏', box(L1.top)], ['胶囊区', box(L1.capsule)],
+    ['下一波预告', line(L1.preview.x, L1.preview.y, L1.preview.w)],
+    ['英雄读数', line(L1.heroLine.x - 80, L1.heroLine.y, 80)],
+    ['引导条', box(L1.tutorial)], ...L1.items.map((it) => [it.id, box(it)])]);
+
+  // TD：结算那一帧（面板 + 底排 + 右上的两个键）
+  const L2 = layoutBattle({ ...model, result: 'win', tutorial: null });
+  clash('TD（结算）', [['顶栏', box(L2.top)], ['胶囊区', box(L2.capsule)], ['结算面板', box(L2.result)],
+    ['英雄读数', line(L2.heroLine.x - 80, L2.heroLine.y, 80)], ...L2.items.map((it) => [it.id, box(it)])]);
+
+  // 防守：整局中途那一帧（顶栏 / 小地图 / 英雄读数 + 击杀 / 竖排键 / 技能排）
+  const dm = createDefenseMatch({ seed: 5 });
+  const DL = layoutDefense(dm, { rate: 1, paused: false, potionCount: 1, potionReady: true });
+  clash('防守', [['顶栏', box(DL.top)], ['胶囊区', box(DL.capsule)], ['小地图', box(DL.minimap)],
+    ['英雄读数', line(DL.heroLine.x, DL.heroLine.y, 200)],
+    ['击杀/工事', line(DL.statsLine.right - 130, DL.statsLine.y, 130)],
+    ['提示行', line(300, 300, 200)],
+    ...DL.items.map((it) => [it.id, box(it)])]);
 });
