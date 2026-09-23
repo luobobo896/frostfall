@@ -9,6 +9,7 @@ import { createUI } from './ui.js';
 import { gridDist } from './core.js';
 import { autoPlay } from './ai.js';
 import { applyRemoteMessage, connect, identity } from './net.js';
+import { onHide, requestJson } from './platform.js';   // §平台适配（小游戏移植）：HTTP 与生命周期
 import { clearSave, hasSave, loadFromStorage, saveToStorage as saveMatch } from './save.js';
 import { UNLOCK_SOURCE_LABEL, clearProfile, isFirstRun, loadProfile, mapLocked, markTutorialDone, recordResult, reviveMulOf, saveProfile as saveProfileRaw, startGoldOf, unlockedFallback, unlockedMaps } from './profile.js';
 import { damageFloaters, recordLabel } from './hud-model.js';
@@ -213,11 +214,8 @@ function maybeAutosave(dt) {
   saveToStorage(match);
 }
 
-document.addEventListener('visibilitychange', () => {
-  if (net || match.result) return;
-  if (document.visibilityState === 'hidden') saveToStorage(match);
-});
-window.addEventListener('pagehide', () => { if (!net && !match.result) saveToStorage(match); });
+// §平台适配：切后台 / 关页面保存——浏览器是 visibilitychange + pagehide，小游戏是 wx.onHide
+onHide(() => { if (!net && !match.result) saveToStorage(match); });
 
 // 这份 handlers 同时给 createUI 与键盘快捷键用：**同一个出口**，联机分支只有一处
 const handlers = {
@@ -606,9 +604,8 @@ function setupStartScreen() {
       hero: choice.hero, length: choice.length,
     };
     try {
-      const res = await fetch(`/create?${new URLSearchParams(roomParams)}`);
-      if (!res.ok) throw new Error('服务端未开启');
-      const info = await res.json();
+      // §平台适配：建房这一发走适配层（浏览器 fetch / 小游戏 wx.request）
+      const info = await requestJson(`/create?${new URLSearchParams(roomParams)}`);
       // 保留入口上的其它参数（notutorial / seed 等），只覆盖进房需要的
       const next = new URLSearchParams(params);
       for (const [k, v] of Object.entries({ ...roomParams, room: info.code })) next.set(k, v);

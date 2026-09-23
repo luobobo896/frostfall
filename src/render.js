@@ -4,6 +4,7 @@ import { DEFENSE_MAPS, GRID, MAPS, MONSTERS, QUALITY, TEAM_COLORS, TOWERS } from
 import { buildMap, heroPos, posAt, project } from './core.js';
 import { heroMaxHp } from './match.js';
 import { isLowHp } from './hud-model.js';
+import { viewport } from './platform.js';   // §平台适配：像素比在两个环境里的取法不同
 
 const COLORS = {
   bg: '#070c14',
@@ -32,7 +33,7 @@ export function createRenderer(canvas) {
   let sized = '';   // 「画布尺寸 + 地图尺寸」指纹：没变就不要重算，否则每帧都会把玩家的视角弹回去
 
   function sizeCanvas() {
-    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    const dpr = Math.min(2, viewport().dpr || 1);   // §平台适配：小游戏没有 window，用 wx.getWindowInfo
     const w = canvas.clientWidth, h = canvas.clientHeight;
     const pw = Math.floor(w * dpr), ph = Math.floor(h * dpr);
     if (canvas.width !== pw || canvas.height !== ph) { canvas.width = pw; canvas.height = ph; }
@@ -567,7 +568,7 @@ export function createMinimap(canvas) {
   const view = { s: 1, ox: PAD, oy: PAD, w: 0, h: 0 };
 
   function size(m) {
-    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    const dpr = Math.min(2, viewport().dpr || 1);
     const w = canvas.clientWidth || canvas.width || 200;
     const h = canvas.clientHeight || canvas.height || 150;
     const pw = Math.floor(w * dpr), ph = Math.floor(h * dpr);
@@ -654,7 +655,7 @@ export function towerName(id) {
  */
 export function drawMapThumb(canvas, mode, mapId) {
   const ctx = canvas.getContext('2d');
-  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  const dpr = Math.min(2, viewport().dpr || 1);
   const w = canvas.clientWidth || canvas.width || 176;
   const h = canvas.clientHeight || canvas.height || 99;
   const pw = Math.floor(w * dpr), ph = Math.floor(h * dpr);

@@ -2,6 +2,10 @@
 // 不依赖任何音频资产：用 WebAudio 现场合成两声短促蜂鸣，占位期不用等音频产能（§14.6 的思路）。
 // 边界情况必须安静地失败：Node 里没有 AudioContext、浏览器在用户交互前会把 AudioContext 挂起——
 // 这两种情况都只是「这次没响」，绝不能让帧循环抛异常。
+// §平台适配（小游戏移植）：取上下文那一步走 platform——浏览器是 `new AudioContext()`，
+// 小游戏是 `wx.createWebAudioContext()`（见 docs/minigame-port.md）。
+import { audioContext } from './platform.js';
+
 export function createCue({ enabled = () => true } = {}) {
   let ctx = null;
   let failures = 0;
@@ -19,9 +23,8 @@ export function createCue({ enabled = () => true } = {}) {
   const warm = () => {
     if (!enabled()) return false;
     try {
-      const AC = globalThis.AudioContext ?? globalThis.webkitAudioContext;
-      if (!AC) return false;
-      ctx = ctx ?? new AC();
+      ctx = ctx ?? audioContext();
+      if (!ctx) return false;
       if (ctx.state !== 'running') ctx.resume?.();
       warmed += 1;
       return ctx.state === 'running';
@@ -44,9 +47,8 @@ export function createCue({ enabled = () => true } = {}) {
   const cue = (kind = 'warning') => {
     if (!enabled()) { log.push({ t: Date.now(), kind, played: false, reason: 'muted' }); return false; }
     try {
-      const AC = globalThis.AudioContext ?? globalThis.webkitAudioContext;
-      if (!AC) { failures += 1; log.push({ t: Date.now(), kind, played: false, reason: 'no-audio-context' }); return false; }
-      ctx = ctx ?? new AC();
+      ctx = ctx ?? audioContext();
+      if (!ctx) { failures += 1; log.push({ t: Date.now(), kind, played: false, reason: 'no-audio-context' }); return false; }
       if (ctx.state === 'suspended') ctx.resume?.();   // 用户交互前会挂起：这次可能不出声，但不报错
       const t0 = ctx.currentTime + 0.01;
       if (kind === 'warning') {

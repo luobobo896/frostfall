@@ -3,6 +3,8 @@
 // 「左右手镜像 / 技能拖拽瞄准 / 按钮大小 / 镜头灵敏度」属于摇杆操作方案或本作没有的高频操作，不适用。
 // 另外真正需要的是镜头缩放（等距图在手机上偏小）与特效强度（低端机保帧）。
 
+import { storage } from './platform.js';   // §平台适配：设置走适配层（小游戏 = wx storage）
+
 export const SETTINGS_VERSION = 1;
 const KEY = 'frostfall:settings';
 
@@ -34,17 +36,17 @@ export function normalizeSettings(raw) {
 
 export function loadSettings() {
   try {
-    const raw = localStorage.getItem(KEY);
+    const raw = storage.get(KEY);
     return normalizeSettings(raw ? JSON.parse(raw) : null);
   } catch { return { ...DEFAULT_SETTINGS }; }
 }
 
 export function saveSettings(s) {
-  try { localStorage.setItem(KEY, JSON.stringify({ ...s, v: SETTINGS_VERSION })); return true; } catch { return false; }
+  try { return storage.set(KEY, JSON.stringify({ ...s, v: SETTINGS_VERSION })); } catch { return false; }
 }
 
 export function resetSettings() {
-  try { localStorage.removeItem(KEY); } catch { /* 忽略 */ }
+  try { storage.remove(KEY); } catch { /* 忽略 */ }
   return { ...DEFAULT_SETTINGS };
 }
 

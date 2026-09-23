@@ -1,6 +1,7 @@
 // 局外档案（§3.6 / §2.2 / M3）：人物等级、声望、每图战绩与解锁。
 // 单人局存 localStorage；联机模式下由服务端按 uid 记账（M3 之后再接）。
-
+// §平台适配（小游戏移植）：存储走 platform 的适配层——浏览器里还是 localStorage，小游戏里是 wx storage。
+import { storage } from './platform.js';
 import { COMMANDER, DEFENSE_MAPS, MAPS, REPUTATION } from './data.js';
 
 export const PROFILE_VERSION = 1;
@@ -202,7 +203,7 @@ export function normalizeProfile(raw) {
 
 export function loadProfile() {
   try {
-    const raw = localStorage.getItem(KEY);
+    const raw = storage.get(KEY);      // §平台适配：小游戏走 wx.getStorageSync，浏览器仍是 localStorage
     if (!raw) return emptyProfile();
     const parsed = JSON.parse(raw);
     return parsed?.v === PROFILE_VERSION ? normalizeProfile(parsed) : emptyProfile();
@@ -210,9 +211,9 @@ export function loadProfile() {
 }
 
 export function saveProfile(profile) {
-  try { localStorage.setItem(KEY, JSON.stringify(profile)); return true; } catch { return false; }
+  try { return storage.set(KEY, JSON.stringify(profile)); } catch { return false; }
 }
 
 export function clearProfile() {
-  try { localStorage.removeItem(KEY); } catch { /* 忽略 */ }
+  try { storage.remove(KEY); } catch { /* 忽略 */ }
 }

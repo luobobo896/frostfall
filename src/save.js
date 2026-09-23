@@ -4,6 +4,7 @@
 import { FORTS, MONSTERS } from './data.js';
 import { createMatch, towerStatsAt } from './match.js';
 import { createDefenseMatch, onMonsterKilled } from './defense.js';
+import { storage } from './platform.js';   // §平台适配：存档走适配层（小游戏 = wx storage）
 
 export const SAVE_VERSION = 1;
 
@@ -249,15 +250,12 @@ export function saveToStorage(m) {
   // 一个「继续上局」，点进去是没有服务端的鬼局。守卫放在这里而不是逐个调用方，
   // 是因为「谁会把镜像写进存档」是调用方随时会变的事（这轮就是新加的一条离开路径撞上的）。
   if (m?.online) return false;
-  try {
-    localStorage.setItem(KEY, JSON.stringify(serializeMatch(m)));
-    return true;
-  } catch { return false; }
+  try { return storage.set(KEY, JSON.stringify(serializeMatch(m))); } catch { return false; }
 }
 
 export function loadFromStorage() {
   try {
-    const raw = localStorage.getItem(KEY);
+    const raw = storage.get(KEY);
     if (!raw) return null;
     return deserializeMatch(JSON.parse(raw));
   } catch { return null; }
@@ -277,5 +275,5 @@ export function hasSave() {
 }
 
 export function clearSave() {
-  try { localStorage.removeItem(KEY); } catch { /* 忽略 */ }
+  try { storage.remove(KEY); } catch { /* 忽略 */ }
 }

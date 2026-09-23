@@ -2,6 +2,9 @@
 // 本地镜像仍然用 createMatch 建（拿地图几何与定义表），但不再调用 update()，一切以快照为准。
 
 import { applyDefenseShared, applyPrivate, applyShared, decode, PROTOCOL_VERSION } from './protocol.js';
+// §平台适配（小游戏移植）：身份/房间码的存储与 WebSocket 都走适配层——
+// 浏览器里还是 localStorage + WebSocket，小游戏里是 wx storage + wx.connectSocket。
+import { connectSocket, defaultWsUrl, storage } from './platform.js';
 
 /**
  * 本机身份与上次房间：刷新 / 断线后能回到原位（§10.3）。
@@ -9,19 +12,19 @@ import { applyDefenseShared, applyPrivate, applyShared, decode, PROTOCOL_VERSION
  */
 function loadIdentity() {
   try {
-    const uid = localStorage.getItem('frostfall:uid') ?? `u${Math.floor(Math.random() * 1e9)}`;
-    localStorage.setItem('frostfall:uid', uid);
-    const token = localStorage.getItem('frostfall:token') ?? `t${Math.floor(Math.random() * 1e12).toString(36)}${Date.now().toString(36)}`;
-    localStorage.setItem('frostfall:token', token);
-    return { uid, token, lastRoom: localStorage.getItem('frostfall:room') };
+    const uid = storage.get('frostfall:uid') ?? `u${Math.floor(Math.random() * 1e9)}`;
+    storage.set('frostfall:uid', uid);
+    const token = storage.get('frostfall:token') ?? `t${Math.floor(Math.random() * 1e12).toString(36)}${Date.now().toString(36)}`;
+    storage.set('frostfall:token', token);
+    return { uid, token, lastRoom: storage.get('frostfall:room') };
   } catch {
-    // 隐私模式：没有 localStorage，每次刷新身份都会变（M0.5 接受；M3 的 wx.login 不受影响）
+    // 存储不可用：每次启动身份都会变（M0.5 接受；M3 的 wx.login 不受影响）
     return { uid: `u${Math.floor(Math.random() * 1e9)}`, token: null, lastRoom: null };
   }
 }
 
 export const identity = loadIdentity();
-export const rememberRoom = (code) => { try { localStorage.setItem('frostfall:room', code ?? ''); } catch { /* 隐私模式 */ } };
+export const rememberRoom = (code) => { try { storage.set('frostfall:room', code ?? ''); } catch { /* 隐私模式 */ } };
 
 /**
  * §10.3：「广播带 revision 序号；客户端发现序号跳跃即请求全量快照」。
@@ -45,7 +48,9 @@ export function connect({
   url, room, name, mapId, difficulty, heroId, mode, length, seed, match,
   onSnapshot, onStatus, onPlayerList, onEvents, onError, onProfile, onNotice, onHello,
 }) {
-  const wsUrl = url ?? `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`;
+  // §平台适配：浏览器按当前页面算 ws 地址；小游戏没有 location，必须由调用方把 wss 地址传进来
+  const wsUrl = url ?? defaultWsUrl();
+  if (!wsUrl) throw new Error('小游戏里没有 location：请显式传 url（wss://…，域名需备案并配成合法域名）');
   // §120：把自己的协议版本带上，服务端会校验（§10.5 的「版本号校验」）
   // 握手串每次现拼（换身份时要重拼，见下面的 rotateIdentity）
   const buildQs = () => {
@@ -77,7 +82,7 @@ export function connect({
     const token = `t${Math.floor(Math.random() * 1e12).toString(36)}${Date.now().toString(36)}`;
     identity.uid = uid;
     identity.token = token;
-    try { localStorage.setItem('frostfall:uid', uid); localStorage.setItem('frostfall:token', token); } catch { /* 存不了就只在这一次生效 */ }
+    try { storage.set('frostfall:uid', uid); storage.set('frostfall:token', token); } catch { /* 存不了就只在这一次生效 */ }
     qs = buildQs();
     onNotice?.('本机身份已失效（存储被清过，或这个身份在别的设备上）：已换一个新身份重新进房');
     return true;
@@ -95,22 +100,22 @@ export function connect({
   let lastResyncAt = -Infinity;
 
   const open = () => {
-    socket = new WebSocket(`${wsUrl}?${qs}`);
-    socket.onopen = () => {
+    socket = connectSocket(`${wsUrl}?${qs}`);
+    socket.onOpen(() => {
       reconnect.attempts = 0;
       state.connected = true;
       state.error = null;
       onStatus?.(state);
       pingSentAt = performance.now();
       socket.send(JSON.stringify({ t: 'ping' }));
-    };
-    socket.onmessage = handleMessage;
-    socket.onclose = () => {
+    });
+    socket.onMessage(handleMessage);
+    socket.onClose(() => {
       state.connected = false;
       onStatus?.(state);
       if (!reconnect.stopped) scheduleReconnect();
-    };
-    socket.onerror = () => { state.error = '连接失败'; onStatus?.(state); };
+    });
+    socket.onError(() => { state.error = '连接失败'; onStatus?.(state); });
   };
 
   function scheduleReconnect() {
@@ -215,7 +220,7 @@ export function connect({
   }
 
   const send = (command) => {
-    if (socket.readyState !== WebSocket.OPEN) return false;
+    if (socket.readyState() !== 1) return false;   // 1 = OPEN（浏览器与 wx.connectSocket 都这么约定）
     socket.send(JSON.stringify(command));
     return true;
   };
