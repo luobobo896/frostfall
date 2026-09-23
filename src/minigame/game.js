@@ -192,6 +192,19 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
     const tutorial = m.mode === 'defense' || !isFirstRun(lobby.model.profile)
       ? null
       : createTutorial({ startedAt: 0 });
+    return buildBattle(m, { tutorial });
+  };
+
+  /**
+   * 把一局装进「战场」这套状态（**开局与「继续上局」共用这一处**）。
+   *
+   * 以前这两条路各写了一遍，于是副本里少了两样东西，两样都会崩：
+   * ① 存档里是**防守局**时，「继续上局」按 TD 的形状读 `m.wave`——防守没有 `wave`；
+   * ② 副本没有 `sheetOf`，于是续档之后**点开任何面板、再点一下里面**就是
+   *    `b.sheetOf is not a function`。这类「同一件事写两遍、副本落后于正本」的账，
+   * 合并成一个构建口是最省事的修法。
+   */
+  const buildBattle = (m, over = {}) => {
     const renderer = createRenderer(canvas, { size: () => ({ w: size.width, h: size.height }) });
     renderer.fit(m.map?.grid ?? m.grid);
     const b = {
@@ -200,11 +213,12 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
       extra: null,     // 结算那一下记档的收获（声望 / 升级），画面板用
       paused: false, rate: 1,
       saveClock: 0,    // §10.3 单人局自动存档：每 5 秒一次 + 切后台补一次
-      tutorial,        // 新手引导状态机（null = 这一局不挂）
+      tutorial: null,  // 新手引导状态机（null = 这一局不挂）
       waveSeen: 0,     // 引导要的「上一波是第几波」——开波/清波两个事件由它算出来
       // 防守：摇杆状态（浮动模式下底座跟手指）+ 正在建的那个工事位
       stick: { active: false, id: null, origin: null, dir: { x: 0, y: 0, mag: 0 }, start: null },
       fortSlot: null,
+      ...over,
     };
     applyCamera(b);
     /**
@@ -534,20 +548,11 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
       lobby.layout = layoutLobby(size.width, size.height, lobby.model);
       return null;
     }
-    const renderer = createRenderer(canvas, { size: () => ({ w: size.width, h: size.height }) });
-    const b = {
-      m: restored, renderer, selectedTower: 'tw_arrow', message: '继续上一局', until: restored.time + 2,
-      layout: null, ui: { selectedSlot: null, panelSlot: null, sellArmed: false },
-      extra: restored.result ? {} : null, paused: false, rate: 1, saveClock: 0,
-    };
-    applyCamera(b);
-    b.model = () => ({
-      ...describeBattleModel(restored), selectedTower: b.selectedTower, paused: b.paused, rate: b.rate,
-      ui: b.ui, sheet: layoutSheet(restored, b.ui),
+    // 与「开一局」走同一个构建口：存档里是防守局时它也按防守那套装（以前的副本按 TD 读 `m.wave`）
+    return buildBattle(restored, {
+      message: '继续上一局', until: restored.time + 2,
+      extra: restored.result ? {} : null,
     });
-    b.layout = layoutBattle(b.model());
-    battle = b;
-    return b;
   };
 
   onTouch((e) => {

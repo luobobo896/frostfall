@@ -81,11 +81,53 @@ test('小游戏存档三处接线：每 5 秒自动存 + 切后台补一笔 + �
     assert.equal(reopened.screen(), 'battle', '点「继续上局」要真的回到战场');
     assert.ok(reopened.match().time >= t0, `接着上一局的进度（存档 ${t0.toFixed(1)} → 回来 ${reopened.match().time.toFixed(1)}）`);
 
+    // 续档之后**面板也要能用**：以前「继续上局」那条路自己拼了一份战场对象、没有 `sheetOf`，
+    // 于是点开暂停面板再点里面任何一行就是 `b.sheetOf is not a function`
+    reopened.tap(512, 30);                     // 顶栏那颗「暂停」
+    reopened.drawFrame();
+    const sheet = reopened.getModel().sheet;
+    assert.equal(sheet?.kind, 'pause', '续档之后暂停面板要能弹出来');
+    const speed = sheet.byId.speed;
+    reopened.tap(speed.x + speed.w / 2, speed.y + speed.h / 2);
+    assert.equal(reopened.getModel().rate, 2, '面板里的行也要真的能用（这一下以前会抛）');
+    const resume = reopened.getModel().sheet.byId.resume;
+    reopened.tap(resume.x + resume.w / 2, resume.y + resume.h / 2);
+
     // 打完这一局：存档要收掉，大厅不该再出现「继续上局」
     reopened.match().result = 'win';
     reopened.drawFrame();
     assert.equal(globalThis.wx.getStorageSync('frostfall:save'), '', '一局结束就收掉存档');
     reopened.backToLobby();
     assert.equal(reopened.getModel().canContinue, false, '回大厅后不该再给「继续上局」');
+  } finally { fake.uninstall(); }
+});
+
+test('小游戏续档：**防守局**的存档也能继续（以前那条路按 TD 的形状读 m.wave，一进去就崩）', async () => {
+  await import('../tools/build-minigame.mjs');
+  const fake = installFakeWx();
+  try {
+    const require = createRequire(import.meta.url);
+    const app = loadFreshApp(require, 3);
+    // 大厅切防守 → 开局 → 跑够 5 秒（自动存一次）
+    const def = app.layout().byId['mode-def'];
+    app.tap(def.x + def.w / 2, def.y + def.h / 2);
+    const start = app.layout().byId.start;
+    app.tap(start.x + start.w / 2, start.y + start.h / 2);
+    assert.equal(app.match().mode, 'defense', '前提：开的是防守局');
+    app.tick(6);
+    assert.notEqual(globalThis.wx.getStorageSync('frostfall:save'), '', '防守局也要自动存档');
+
+    // 关掉再打开 → 继续上局 → 这一屏要是**防守那套 HUD**，而且画帧不崩
+    const reopened = loadFreshApp(require, 4);
+    const cont = reopened.layout().byId.continue;
+    assert.ok(cont, '有防守局存档时也要给「继续上局」');
+    reopened.tap(cont.x + cont.w / 2, cont.y + cont.h / 2);
+    assert.equal(reopened.screen(), 'battle');
+    assert.equal(reopened.match().mode, 'defense');
+    reopened.drawFrame();
+    const texts = reopened.canvas.record.texts;
+    assert.ok(texts.some((t) => t.includes('回城')) && texts.some((t) => t.includes('城堡')),
+      '续回来的要是防守那一屏（回城 / 城堡这些读数）');
+    assert.ok(texts.some((t) => /第 \d+ 轮/.test(t)), 'HUD 上要有轮次');
   } finally { fake.uninstall(); }
 });
