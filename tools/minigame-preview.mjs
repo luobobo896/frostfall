@@ -174,7 +174,19 @@ for (const shot of SHOTS) {
     `--window-size=${shot.w},${shot.h}`, `--screenshot=${png}`, '--virtual-time-budget=2500',
     `http://127.0.0.1:${port}/?page=${shot.page}`,
   ], { stdio: 'ignore' });
-  await new Promise((r) => chrome.on('exit', r));
+  /**
+   * headless Chrome 偶发**不退出**（本轮实测卡了 3 分半、零输出，只能手 kill）——所以给它一个上限，
+   * 到点就杀，别把整个出样张的工具挂在那一张图上（浏览器冒烟的 §182 是同一类问题的另一个现场）。
+   */
+  const exited = await Promise.race([
+    new Promise((r) => chrome.on('exit', () => r(true))),
+    new Promise((r) => setTimeout(() => r(false), 30000).unref?.()),
+  ]);
+  if (!exited) {
+    try { chrome.kill('SIGKILL'); } catch { /* 已经退了 */ }
+    console.log(`⚠ 样张 ${shot.file}：headless Chrome 30 秒没退出，已强杀（这一张没出，继续下一张）`);
+    continue;
+  }
   await copyFile(png, join(SHOTS_DIR, shot.file));
   const { size } = await stat(png);
   if (size < 3000) {
