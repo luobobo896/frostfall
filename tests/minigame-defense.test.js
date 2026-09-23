@@ -450,3 +450,64 @@ test('小游戏防守：回防预警响一声（§2.6 的提示音 / §178 要�
     assert.equal(fake.audio.oscillators, played, '关掉之后不该再排蜂鸣');
   } finally { fake.uninstall(); }
 });
+
+test('小游戏防守：回城卷轴（§5.5.1）——冷却中也能回，那一格不该被灰掉', () => {
+  const m = createDefenseMatch({ seed: 5 });
+  m.hero.teleportCd = 12;
+  m.scrolls = 0;
+  const cold = layoutDefense(m, { rate: 1 });
+  assert.equal(cold.byId.teleport.disabled, true, '冷却中又没卷轴，点它确实没用（该灰）');
+  assert.match(cold.byId.teleport.sub, /12s/, '副标要写剩余秒数');
+  assert.equal(cold.byId.minimap.disabled, true, '小地图那一格同一个判据');
+
+  m.scrolls = 2;
+  const warm = layoutDefense(m, { rate: 1 });
+  assert.equal(warm.byId.teleport.disabled, false,
+    '有卷轴时冷却中也能回（§5.5.1：卷轴只负责把你送回去，不清冷却）');
+  assert.match(warm.byId.teleport.sub, /卷轴/, '副标要写卷轴数');
+  assert.equal(warm.byId.minimap.disabled, false, '小地图那一格同一个判据');
+});
+
+test('小游戏防守闭环：买一张回城卷轴 → 冷却中照样回得去（小游戏以前那格一冷却就灰）', async () => {
+  await import('../tools/build-minigame.mjs');
+  const fake = installFakeWx();
+  try {
+    const require = createRequire(import.meta.url);
+    const app = loadFreshApp(require, 8);
+    const tapBtn = (id) => {
+      const b = app.layout().byId[id];
+      assert.ok(b, `HUD 上找不到 ${id}`);
+      return app.tap(b.x + b.w / 2, b.y + b.h / 2);
+    };
+    const tapSheet = (id) => {
+      const r = app.getModel().sheet.byId[id];
+      assert.ok(r, `面板上找不到 ${id}`);
+      app.tap(r.x + r.w / 2, r.y + r.h / 2);
+    };
+    tapBtn('mode-def');
+    tapBtn('start');
+    const m = app.match();
+    m.gold = 500;
+
+    // 商店买一张卷轴（80 金）——它不是药品，单独记在 `m.scrolls`
+    tapBtn('shop');
+    tapSheet('buy-scroll_town');
+    assert.equal(m.scrolls, 1, '卷轴要到手');
+    tapSheet('close');
+
+    // 第一次回城：进 30 秒冷却
+    tapBtn('teleport');
+    assert.ok(m.hero.teleportCd > 0, '第一次回城要进冷却');
+    // 跑远一点，冷却中再点一次：有卷轴，照样回得去（并把卷轴用掉）
+    m.hero.cell = { x: m.castle.cell.x + 8, y: m.castle.cell.y + 8 };
+    app.drawFrame();
+    assert.equal(app.layout().byId.teleport.disabled, false, '有卷轴时不该灰');
+    tapBtn('teleport');
+    assert.equal(m.scrolls, 0, '用掉一张卷轴');
+    assert.ok(Math.abs(m.hero.cell.x - m.castle.cell.x) <= 3, '人回基地了');
+    assert.ok(m.hero.teleportCd > 0, '卷轴不清那 30 秒冷却');
+    // 卷轴用完、还在冷却：那一格该灰回去
+    app.drawFrame();
+    assert.equal(app.layout().byId.teleport.disabled, true, '没卷轴又冷却中，就该灰');
+  } finally { fake.uninstall(); }
+});

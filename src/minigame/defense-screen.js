@@ -105,18 +105,28 @@ export function layoutDefense(m, model = {}) {
   // 顶栏右侧两个键（与 TD 那屏同一个位置约定：避开右上角胶囊区）
   items.push(item('speed', 380, 8, 84, 44, model.rate === 2 ? '倍速 2×' : '倍速 1×', { type: 'speed' }, { on: model.rate === 2 }));
   items.push(item('pause', 470, 8, 84, 44, model.paused ? '继续' : '暂停', { type: 'pause' }, { on: !!model.paused }));
-  // 右侧竖排：回城 / 修城 / 工事 / 商店 / 背包 / 药品
+  /**
+   * 右侧竖排：回城 / 修城 / 工事 / 商店 / 背包 / 药品。
+   *
+   * 「回城」这一格的读数与浏览器版同一条口径（§5.5.1）：**冷却中但有回城卷轴时仍然能点**
+   * （卷轴只负责把你送回去，不清冷却）——小游戏以前一见冷却就灰掉，于是买来的卷轴一点用都没有。
+   * 卷轴数写成副标（冷却中写剩余秒数，有卷轴再补一句）。
+   */
   const col = 579;
+  const teleportCd = Math.ceil(m.hero?.teleportCd ?? 0);
+  const scrolls = m.scrolls ?? 0;
   const rows = [
-    ['teleport', '回城', { type: 'teleport' }, m.hero?.teleportCd > 0 || m.hero?.dead],
+    ['teleport', '回城', { type: 'teleport' },
+      !!m.hero?.dead || (teleportCd > 0 && scrolls === 0),
+      teleportCd > 0 ? `${teleportCd}s${scrolls > 0 ? ' 卷轴' : ''}` : (scrolls > 0 ? `卷轴 ×${scrolls}` : '')],
     ['repair', '修城', { type: 'repairCastle' }, m.castle.hp >= m.castle.maxHp],
     ['fort', '工事', { type: 'fort' }, false],
     ['shop', '商店', { type: 'shop' }, false],
     ['bag', `背包${(m.inventory?.length ?? 0) ? `(${m.inventory.length})` : ''}`, { type: 'bag' }, false],
     ['potion', `药品 ${model.potionCount ?? 0}/3`, { type: 'potion' }, !model.potionCount],
   ];
-  rows.forEach(([id, label, action, disabled], i) => {
-    items.push(item(id, col, 60 + i * 52, 80, 44, label, action, { disabled: !!disabled, small: true }));
+  rows.forEach(([id, label, action, disabled, sub], i) => {
+    items.push(item(id, col, 60 + i * 52, 80, 44, label, action, { disabled: !!disabled, small: true, sub }));
   });
   /**
    * §131 / §190：守住 4 轮之后转**无尽**（城堡剩余血量排行，§12.5）。结算面板弹出来时，
@@ -132,7 +142,9 @@ export function layoutDefense(m, model = {}) {
    * 它只负责两件事——命中测试（点它 = 回城，与「回城」按钮同一个动作）与给绘制层一个矩形。
    */
   items.push(item('minimap', MINIMAP.x, MINIMAP.y, MINIMAP.w, MINIMAP.h, '',
-    { type: 'teleport' }, { disabled: m.hero?.teleportCd > 0 || m.hero?.dead }));
+    { type: 'teleport' },
+    // 与「回城」那颗键同一个判据：冷却中但有卷轴照样能点（§5.5.1）
+    { disabled: !!m.hero?.dead || (teleportCd > 0 && scrolls === 0) }));
   /**
    * §1.9.1 的「右下技能」：防守的主操作是摇杆，但英雄的主动技照样要能放（浏览器版底部右侧那一排）。
    * 小游戏这一屏以前**一颗技能键都没有**——于是防守局里技能是死的（买了技能书更看不出区别）。
