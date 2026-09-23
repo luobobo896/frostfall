@@ -998,3 +998,27 @@ test('小游戏整局：参考打法在假 wx 里**真的**把 12 波打完 → 
     assert.ok(app.getModel().unlocked.includes('map_02'), '大厅里要能选到新解锁的图');
   } finally { fake.uninstall(); }
 });
+
+test('小游戏药品键：两瓶都在冷却时那颗键该灰掉（与浏览器版同判据）', async () => {
+  await import('../tools/build-minigame.mjs');
+  const fake = installFakeWx();
+  try {
+    const require = createRequire(import.meta.url);
+    const app = loadFreshApp(require, 22);
+    app.startMatch();
+    const m = app.match();
+    m.bag = { pot_small: 1, pot_large: 1 };
+    m.potionCd = {};
+    app.drawFrame();
+    assert.equal(app.layout().byId.potion.disabled, false, '有药且没冷却：能点');
+    m.potionCd = { pot_small: 5, pot_large: 8 };
+    app.drawFrame();
+    assert.equal(app.layout().byId.potion.disabled, true, '两瓶都在冷却：该灰（点了也没用）');
+    m.potionCd = { pot_small: 5 };
+    app.drawFrame();
+    assert.equal(app.layout().byId.potion.disabled, false, '大药没冷却：能点（会用它）');
+    m.bag = {};
+    app.drawFrame();
+    assert.equal(app.layout().byId.potion.disabled, true, '没药当然灰着');
+  } finally { fake.uninstall(); }
+});

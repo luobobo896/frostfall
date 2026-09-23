@@ -94,7 +94,7 @@ export function layoutBattle(model = {}) {
   items.push(item('shop', 12, 315, 74, 48, '商店', { type: 'shop' }));
   items.push(item('bag', 94, 315, 74, 48, `背包${model.bagCount ? `(${model.bagCount})` : ''}`, { type: 'bag' }));
   items.push(item('potion', 176, 315, 74, 48, `药品 ${model.potionCount ?? 0}/${POTION_BAG_SLOTS}`,
-    { type: 'potion' }, { disabled: !model.potionCount }));
+    { type: 'potion' }, { disabled: !model.potionReady }));
   items.push(model.result
     ? item('restart', 258, 315, 92, 48, '再开一局', { type: 'restart' })
     // 奖励写在脸上（浏览器版那颗键就是「提前开波 +3木」）：不然玩家不知道自己为什么要点它

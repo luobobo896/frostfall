@@ -130,7 +130,8 @@ export function layoutDefense(m, model = {}) {
     ['fort', '工事', { type: 'fort' }, false],
     ['shop', '商店', { type: 'shop' }, false],
     ['bag', `背包${(m.inventory?.length ?? 0) ? `(${m.inventory.length})` : ''}`, { type: 'bag' }, false],
-    ['potion', `药品 ${model.potionCount ?? 0}/3`, { type: 'potion' }, !model.potionCount],
+    // 灰态同 TD 那颗键：**包里还有没有一瓶没在冷却的**（只判「有没有药」时，两瓶刚喝过也亮着）
+    ['potion', `药品 ${model.potionCount ?? 0}/3`, { type: 'potion' }, !model.potionReady],
   ];
   rows.forEach(([id, label, action, disabled, sub], i) => {
     items.push(item(id, col, 60 + i * 52, 80, 44, label, action, { disabled: !!disabled, small: true, sub }));

@@ -1065,6 +1065,9 @@ const describeBattleModel = (m) => ({
   lumber: m.lumber?.[0] ?? 0,
   // 底部那排要显示的数量：药品格数（§5.5.3：共 3 格）与背包件数
   potionCount: potionCount(m),
+  // 药品键灰不灰：**包里还有没有一瓶没在冷却的**（与浏览器版那颗键同一条判据；
+  // 以前只判「有没有药」，两瓶刚喝过时按钮还亮着，点下去只得到一句「药品冷却中」）
+  potionReady: Object.keys(m.bag ?? {}).some((id) => m.bag[id] > 0 && !((m.potionCd ?? {})[id] > 0)),
   bagCount: m.inventory?.length ?? 0,
   // 技能键：名字 / 等级 / 冷却（`battle.js` 的 `skillKeys`，TD 与防守共用一份来源，§231）
   skills: skillKeys(m),
@@ -1078,6 +1081,7 @@ const pickLobbyKeys = (model) => ({
 /** 防守那屏的模型（HUD 只读这些，别顺手读整局对象） */
 const defModel = (b) => ({
   paused: b.paused, rate: b.rate, potionCount: potionCount(b.m),
+  potionReady: Object.keys(b.m.bag ?? {}).some((id) => b.m.bag[id] > 0 && !((b.m.potionCd ?? {})[id] > 0)),
   round: b.m.assault?.round ?? 0, warning: !!b.m.assault?.warning,
   // §131：守住 4 轮转无尽之后，玩家还得能接着玩——**结算面板还在时**才给那颗「继续（无尽）」
   // （点了它就 `resultDismissed`，面板收起来、那一局接着跑）
