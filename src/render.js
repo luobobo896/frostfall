@@ -653,14 +653,21 @@ export function towerName(id) {
  * 缩略图用俯视平面——等距缩到 180px 宽只会糊成一团，而这张图要回答的是
  * 「几条路 / 路怎么走 / 核心在哪」，俯视最省事也最清楚。
  */
-export function drawMapThumb(canvas, mode, mapId) {
-  const ctx = canvas.getContext('2d');
-  const dpr = Math.min(2, viewport().dpr || 1);
-  const w = canvas.clientWidth || canvas.width || 176;
-  const h = canvas.clientHeight || canvas.height || 99;
-  const pw = Math.floor(w * dpr), ph = Math.floor(h * dpr);
-  if (canvas.width !== pw || canvas.height !== ph) { canvas.width = pw; canvas.height = ph; }
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+export function drawMapThumb(canvas, mode, mapId, surface = null) {
+  /**
+   * `surface` 是给**小游戏大厅**用的（移植第 3 步）：那边没有 `<canvas>` 元素、也没有 DOM 尺寸，
+   * 只有一个主 canvas 和一个 2D 上下文，所以传 `{ ctx, w, h }` 就按**逻辑单位**直接画进指定位置，
+   * 不做尺寸设置与 dpr 变换（调用方自己 translate/clip）。不传 surface 时行为与以前完全一致。
+   */
+  const ctx = surface?.ctx ?? canvas.getContext('2d');
+  const dpr = surface ? 1 : Math.min(2, viewport().dpr || 1);
+  const w = surface?.w ?? (canvas.clientWidth || canvas.width || 176);
+  const h = surface?.h ?? (canvas.clientHeight || canvas.height || 99);
+  if (!surface) {
+    const pw = Math.floor(w * dpr), ph = Math.floor(h * dpr);
+    if (canvas.width !== pw || canvas.height !== ph) { canvas.width = pw; canvas.height = ph; }
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
 
   const def = mode === 'defense' ? DEFENSE_MAPS[mapId] : MAPS[mapId];
   if (!def) return;

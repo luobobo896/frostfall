@@ -175,6 +175,10 @@ test('§175 导出的东西都有人用（零读者的导出 = 写给想象中�
   for (const f of await readdir(new URL('src/server/', root))) {
     if (f.endsWith('.js')) srcNames.push(`src/server/${f}`);
   }
+  // `src/minigame/*.js` 同理（小游戏入口与大厅那一屏）：漏掉它会把 platform.js 的 onTouch 误判成零读者
+  for (const f of await readdir(new URL('src/minigame/', root))) {
+    if (f.endsWith('.js')) srcNames.push(`src/minigame/${f}`);
+  }
   const corpora = [];
   /**
    * 注释里提到一个名字**不算读者**——第一版没剥注释，于是这条检查被它自己的说明文字喂饱了：

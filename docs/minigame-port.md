@@ -66,7 +66,7 @@ npm run minigame         # 先打包再跑本地验收（假 wx）
 3. **主包里没有界面模块**：模块清单里不许出现 `ui/main/render/hud-model/joystick/tutorial`，
    也不许出现 `getElementById` / `querySelector` / `innerHTML` / `classList` 这类界面专用调用。
 
-## 5. 第 3 步（未做）：界面从 DOM 换到 Canvas
+## 5. 第 3 步（进行中）：界面从 DOM 换到 Canvas
 
 这是**唯一的大头**，也是**发布前的硬阻塞**。官方那套 `minigame-adapter` 只解决 canvas/WebGL/音频等 API，
 **不会提供 DOM 与 CSS 布局**，所以：
@@ -78,8 +78,33 @@ npm run minigame         # 先打包再跑本地验收（假 wx）
 * 现在的 `render.js` 已经是纯 Canvas（只依赖 `canvas.getContext('2d')`），**战场那一块可以原样复用**，
   要重写的是外围的 HUD 与面板。
 
-**建议的做法**：先只做**大厅一屏**（地图卡 / 模式 / 英雄 / 开始按钮），在小游戏里跑起来看观感，
-确认这条路值不值，再决定另外 10 个界面怎么切。别一上来全量重写。
+**建议的做法**：先只做**大厅一屏**，在小游戏里跑起来看观感，确认这条路值不值，再决定另外 10 个界面怎么切。
+
+### 5.1 大厅一屏（已完成 · 2026-09-23）
+
+![小游戏大厅样张](testing/screenshots/minigame-lobby.png)
+
+* `src/minigame/lobby.js`：**纯 Canvas、零 DOM**，写成纯函数——`layoutLobby(w,h,model)` 算布局、
+  `drawLobby(ctx,model,L)` 画一帧、`hitTestLobby(L,x,y)` 命中测试、`applyLobbyAction(model,action,档案)`
+  改模型（含解锁校验）。于是它能被 Node 用例直接测（记录型 ctx），也能在浏览器里截图看观感。
+* 内容与浏览器大厅对齐：模式 / 难度 / 时长 / 英雄 4 张卡 / 地图卡（复用 `render.js` 的俯视缩略图，
+  带星级、路线数、「未解锁」标记）/ 档案行（人物等级 · 声望 · 可玩地图数）。
+* 布局以 **667×375（§14.3 设计画布）为基准等比缩放并居中**，所以真机 812×375 这类更宽的屏直接居中多留白；
+  所有可点元素 **≥44×44**（§1.9.2），并且**避开右上角胶囊区**。
+* 输入走 `platform.onTouch`（小游戏 = 全局 `wx.onTouchStart`）。
+* **「单人开局」现在是灰的**，按钮上就写着「第 4 步接入」——战斗渲染还没接上，
+  与其摆一个点了没反应的假按钮，不如把这件事写在脸上（口径见 STATUS §3.1 第 2 条：不给玩家假选项）。
+
+**怎么复跑**：`npm run minigame`（打包 + 假 wx 验收，含「大厅真的画出来了」与「触摸能选中」两条）
+· `npm run minigame:preview`（本机 Chrome 出样张，就是上面那张图）· `npm test`（7 条大厅用例：
+热区 ≥44、互不重叠、避开胶囊、命中与画法同源、切模式换图、锁图不给选、提示文案不溢出）。
+
+### 5.2 还差的 10 个界面
+
+战场（`render.js`）已经是纯 Canvas，可以原样复用；按「玩家每局都会走一遍」的顺序建议：
+**TD HUD → 塔面板/建造轮盘 → 商店/背包 → 结算 → 设置/暂停 → 防守 HUD（含摇杆）→ 引导条**。
+每屏都按大厅这套写法（布局 / 绘制 / 命中 / 状态四件套 + 记录型 ctx 用例 + 一张样张），
+在微信开发者工具里逐屏过一遍手感。
 
 ## 6. 发布前还差什么（非代码，都要你那边办）
 
@@ -94,7 +119,8 @@ npm run minigame         # 先打包再跑本地验收（假 wx）
 ## 7. 现在能跑通的命令
 
 ```bash
-npm run minigame      # 打包 + 假 wx 本地验收（等价性 / 模块清单 / 存储）
-npm test              # 265 项，含 tests/minigame-bundle.test.js（打包产物本身也有检查）
-npm run smoke         # 378 条真浏览器断言（界面那一层仍然按浏览器验）
+npm run minigame      # 打包 + 假 wx 本地验收（等价性 / 模块清单 / 大厅画出来了 / 触摸能选中）
+npm run minigame:preview  # 本机 Chrome 出大厅样张（docs/testing/screenshots/minigame-lobby.png）
+npm test              # 272 项，含打包产物与大厅那一屏的检查
+npm run smoke         # 378 条真浏览器断言（浏览器那一侧的界面仍然按浏览器验）
 ```

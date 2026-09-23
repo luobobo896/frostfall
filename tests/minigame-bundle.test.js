@@ -24,7 +24,8 @@ test('小游戏包：假 wx 下能加载、内核与源码逐字段等价、主�
     const info = api.selfCheck();
     assert.equal(info.miniGame, true, '有 wx、没有 document → 认得出是小游戏环境');
     assert.equal(info.storage, true, '存储要能往返（小游戏走 wx.getStorageSync/setStorageSync）');
-    assert.equal(info.view.width, 1334, '视口走 wx.getWindowInfo');
+    // 假 wx 的默认视口是 667×375（手机横屏的**逻辑像素**，= §14.3 的设计画布尺寸）
+    assert.equal(info.view.width, 667, '视口走 wx.getWindowInfo（逻辑像素）');
 
     // 等价性：同一局（同种子、同人数、同秒数）包里的内核 == 源码的内核
     const { createMatch, describe, update } = await import('../src/match.js');
@@ -38,7 +39,9 @@ test('小游戏包：假 wx 下能加载、内核与源码逐字段等价、主�
     // 主包里不许有界面模块：小游戏没有 DOM，ui/main/render 那一层得等第 3 步换 Canvas
     const text = await readFile(BUNDLE, 'utf8');
     const mods = [...text.matchAll(/__def\("([^"]+)"/g)].map((x) => x[1]);
-    const ui = mods.filter((id) => /(^|\/)(ui|main|render|hud-model|joystick|tutorial)\.js$/.test(id));
+    // render.js / hud-model.js 允许进主包（纯 Canvas 与纯逻辑，大厅缩略图就复用 render.js）；
+    // DOM 那一层（ui.js / main.js / 摇杆 / 引导）不许进来。
+    const ui = mods.filter((id) => /(^|\/)(ui|main|joystick|tutorial)\.js$/.test(id));
     assert.deepEqual(ui, [], `主包里混进了界面模块：${ui.join('、')}`);
     for (const call of ['getElementById', 'querySelector', 'innerHTML', 'classList']) {
       assert.ok(!text.includes(call), `主包里出现了界面专用的 DOM 调用：${call}`);

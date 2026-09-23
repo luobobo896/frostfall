@@ -52,11 +52,28 @@ try {
    */
   const text = await readFile(BUNDLE, 'utf8');
   const mods = [...text.matchAll(/__def\("([^"]+)"/g)].map((m) => m[1]);
-  const uiMods = mods.filter((id) => /(^|\/)(ui|main|render|hud-model|joystick|tutorial|audio|feedback)\.js$/.test(id));
-  check(uiMods.length === 0, '主包里没有界面模块（ui/main/render/hud-model…）',
+  // `render.js` / `hud-model.js` **允许**进主包：它们是纯 Canvas 与纯逻辑（大厅缩略图就复用 render.js）。
+  // 真正进不去的是 DOM 那一层：`ui.js`（getElementById 全套）与 `main.js`（整页启动流程）。
+  const uiMods = mods.filter((id) => /(^|\/)(ui|main|joystick|tutorial)\.js$/.test(id));
+  check(uiMods.length === 0, '主包里没有 DOM 界面模块（ui/main/joystick/tutorial）',
     uiMods.length ? `混进了 ${uiMods.join('、')}` : `装了 ${mods.length} 个模块：${mods.map((m) => m.replace('src/', '')).join('、')}`);
   const domCalls = ['getElementById', 'querySelector', 'createElement', 'innerHTML', 'classList'].filter((k) => text.includes(k));
   check(domCalls.length === 0, '主包里没有界面专用的 DOM 调用', domCalls.length ? `命中 ${domCalls.join('/')}` : `${(text.length / 1024).toFixed(0)} KB`);
+
+  // ④ 大厅那一屏（移植第 3 步）：真的画出来了、点得动
+  const lobby = globalThis.__frostfallLobby;
+  const drawn = lobby?.canvas?.record ?? { calls: [], texts: [] };
+  const drewLobby = drawn.calls.length > 300 && drawn.texts.includes('冰封之地') && drawn.texts.some((t) => t.startsWith('霜原哨站'));
+  check(!!lobby && drewLobby, '大厅一屏真的画出来了（标题 + 地图卡都在这一帧里）',
+    `ctx 调用 ${drawn.calls.length} 次 · 文字 ${drawn.texts.length} 条`);
+
+  const L = lobby.layout();
+  const defBtn = L.byId['mode-def'];
+  fake.fireTouch(defBtn.x + defBtn.w / 2, defBtn.y + defBtn.h / 2);   // 点「防守生存」
+  const afterTap = lobby.getModel();
+  check(afterTap.mode === 'defense' && afterTap.map === 'def_01',
+    '全局触摸能选中（点「防守生存」→ 模式切了、地图落回已解锁的 def_01）',
+    `模式 ${afterTap.mode} · 地图 ${afterTap.map} · 可玩 ${afterTap.unlockedCount} 张`);
 } finally {
   fake.uninstall();
 }

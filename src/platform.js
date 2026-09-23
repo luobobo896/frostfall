@@ -184,6 +184,32 @@ export function onHide(fn) {
   }
 }
 
+/* ---------- 触摸 ---------- */
+
+/**
+ * 统一的触点回调：`fn({ type: 'down'|'move'|'up', x, y, id })`，坐标是**逻辑像素**。
+ * 小游戏用全局 `wx.onTouchStart/Move/End/Cancel`（没有 DOM 事件）；浏览器里挂到 document 上，
+ * 好让大厅这一屏也能在预览页里点。
+ */
+export function onTouch(fn) {
+  if (isMiniGame() && wxApi().onTouchStart) {
+    const relay = (type) => (e) => {
+      for (const t of e.changedTouches ?? e.touches ?? []) {
+        fn({ type, x: t.clientX ?? t.x ?? 0, y: t.clientY ?? t.y ?? 0, id: t.identifier ?? 0 });
+      }
+    };
+    wxApi().onTouchStart(relay('down'));
+    wxApi().onTouchMove(relay('move'));
+    wxApi().onTouchEnd(relay('up'));
+    wxApi().onTouchCancel?.(relay('up'));
+    return;
+  }
+  if (typeof g.document === 'undefined') return;   // Node：没有触摸，安静跳过
+  const relay = (type) => (e) => fn({ type, x: e.clientX ?? 0, y: e.clientY ?? 0, id: 0 });
+  g.document.addEventListener('pointerdown', relay('down'));
+  g.document.addEventListener('pointerup', relay('up'));
+}
+
 /* ---------- 触觉 ---------- */
 
 /**
