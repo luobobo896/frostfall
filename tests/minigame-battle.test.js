@@ -782,3 +782,37 @@ test('小游戏连打两局：第二局状态是新的、两局各记一次档�
     assert.equal(saved().clears[m1.mapId].clears, 2, '档案里那张图该记两局');
   } finally { fake.uninstall(); }
 });
+
+test('小游戏提示文案：写玩家认得的名字，不出现内部 id（tw_arrow / front 这种）', async () => {
+  await import('../tools/build-minigame.mjs');
+  const fake = installFakeWx();
+  try {
+    const require = createRequire(import.meta.url);
+    const app = loadFreshApp(require, 16);
+    app.startMatch();
+    const m = app.match();
+    const r = app.renderer();
+    const newest = (re) => app.canvas.record.texts.filter((t) => re.test(t)).at(-1);
+
+    // 建塔：提示要写「箭塔」，不是 `tw_arrow`
+    const p = r.toScreen(m.map.slots[0].x, m.map.slots[0].y);
+    app.tap(p.x, p.y);
+    const row = app.getModel().sheet.byId['build-tw_arrow'];
+    app.tap(row.x + row.w / 2, row.y + row.h / 2);
+    app.drawFrame();
+    assert.equal(newest(/^建了/), '建了 箭塔', `提示要写塔的名字（实际「${newest(/^建了/)}」）`);
+
+    // 优先级：提示要写「最靠前」，不是 `front`
+    const prio = app.getModel().sheet.byId['prio-front'];
+    assert.ok(prio, '前提：塔面板里有那一档优先级');
+    app.tap(prio.x + prio.w / 2, prio.y + prio.h / 2);
+    app.drawFrame();
+    assert.equal(newest(/^优先级/), '优先级：最靠前', `提示要写中文档位（实际「${newest(/^优先级/)}」）`);
+
+    // 整帧里不许出现内部 id（塔 id / 优先级枚举都算）
+    const all = app.canvas.record.texts.join(' ');
+    for (const id of ['tw_arrow', 'tw_cannon', 'tw_frost', 'tw_static', 'front', 'strongest', 'weakest', 'air_first']) {
+      assert.ok(!new RegExp(`(^|[^a-z_])${id}([^a-z_]|$)`).test(all), `界面文案里不该出现内部 id「${id}」`);
+    }
+  } finally { fake.uninstall(); }
+});

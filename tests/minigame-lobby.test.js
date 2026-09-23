@@ -119,7 +119,15 @@ test('小游戏大厅：画一帧真的把标题 / 档案 / 地图卡画出来�
   assert.ok(ctx.texts.includes('冰封之地'), '标题没画出来');
   assert.ok(ctx.texts.some((t) => t.startsWith('霜原哨站')), '地图卡名没画出来');
   assert.ok(ctx.texts.some((t) => /人物 Lv\d+ · 声望 \d+/.test(t)), '档案那行没画出来');
-  assert.ok(ctx.texts.some((t) => t.includes('第 4 步')), '「战斗还没接上」这句要写在界面上');
+  /**
+   * 出门的版本里**不许出现开发进度那类字**（「移植第 3 步」「第 4 步接入」）。
+   * 这条以前正好反过来——钉的是「战斗还没接上」那半句；接上之后它就该消失。
+   */
+  const allText = ctx.texts.join(' ');
+  for (const devWord of ['第 3 步', '第 4 步', '移植', '还没接']) {
+    assert.ok(!allText.includes(devWord), `大厅里不该出现开发进度文案「${devWord}」`);
+  }
+  assert.ok(ctx.texts.includes('单人开局'), '开始按钮写「单人开局」就够了');
 });
 
 test('小游戏大厅：提示文案不会溢出提示框（第一版就是这样压到「单人开局」上的）', () => {

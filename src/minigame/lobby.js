@@ -117,7 +117,9 @@ export function layoutLobby(w, h, model = {}) {
   // 有存档时右边再挤一个「继续上局」（§10.3：杀进程重开进度不丢）——两个都 ≥44 高
   const startW = model.canContinue ? 190 : 296;
   raw.push(btn('start', 348, 306, startW, 48,
-    model.canStart ? '单人开局' : '单人开局（第 4 步接入）', { type: 'start' }, { disabled: !model.canStart }));
+    // 按钮上**不写开发进度**（「第 4 步接入」那种）：出门的版本里玩家只该看到玩法本身。
+    // `canStart` 这个闸还留着（未来哪个模式没接好时灰掉它），但文案是中性的。
+    '单人开局', { type: 'start' }, { disabled: !model.canStart }));
   if (model.canContinue) {
     raw.push(btn('continue', 546, 306, 98, 48, model.continueLabel ?? '继续上局', { type: 'continue' }));
   }
@@ -185,9 +187,13 @@ const text = (ctx, str, x, y, { size = 12, color = COLORS.ink, weight = '', alig
 };
 
 export const DEFAULT_HINT = [
-  '移植第 3 步：大厅 + 战场都跑在 Canvas 上',
-  '可点：模式 / 难度 / 时长 / 英雄 / 地图',
-  '「单人开局」进局：点塔位建塔、点「开波」开打',
+  /**
+   * 这三行是**给玩家看的**，不是开发进度（原先第一行写着「移植第 3 步」，那是我们自己看的）。
+   * 每行都要放得下大厅那个提示框（316 宽 / 10px → 约 31 个汉字，有用例盯着别溢出）。
+   */
+  '单人开局：守住核心，打完 12 波（长局 30 波）',
+  '防守生存：左下推杆走路 · 点工事位建塔 · 预警响了就回城',
+  '点英雄卡片再点一次，能看技能与天赋',
 ];
 
 /** 画一帧（纯绘制，不改模型） */
@@ -336,7 +342,8 @@ export function applyLobbyAction(model, action, { unlocked = [], lockedReason = 
     }
     case 'start': {
       if (!next.canStart) {
-        next.hint = '战斗场景还没接上：内核已经能在小游戏里跑，渲染还没挂上去。';
+        // 中性文案（这扇门现在不会关：两种模式都接了；留着是给未来没接好的模式用）
+        next.hint = '这个模式现在开不了，先玩另一个。';
         return next;
       }
       next.started = true;

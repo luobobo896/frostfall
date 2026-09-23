@@ -4,7 +4,7 @@
 // `index.html` + `styles.css` + `ui.js` 那套 DOM+CSS。这一步做的是把**平台差异**与**打包**解决掉，
 // 并把不依赖 DOM 的那一大半（内核、数据表、存档、联机协议、平台适配）先在小游戏里跑通。
 // 界面换 Canvas 是第 3 步，见 docs/minigame-port.md。
-import { DEFENSE_MAPS, MAPS, TICK_STEP, WAVES, normalizeChoice } from '../data.js';
+import { DEFENSE_MAPS, FORTS, MAPS, TICK_STEP, TOWERS, WAVES, normalizeChoice } from '../data.js';
 import {
   buildTower, buyItem, castSkill, craftEquipment, createMatch, describe as describeMatch, equipItem,
   enhanceItem, potionCount, repairTower, reviveNow, sellItem, sellTower, setPriority, skillLevel,
@@ -35,7 +35,7 @@ import {
 } from './defense-screen.js';
 import { applyLobbyAction, drawLobby, hitTestLobby, layoutLobby } from './lobby.js';
 import {
-  DESIGN, drawBattleHud, drawResult, drawSheet, hitTestBattle, hitTestSheet,
+  DESIGN, PRIORITY_LABEL, drawBattleHud, drawResult, drawSheet, hitTestBattle, hitTestSheet,
   layoutBattle, layoutResult, layoutSheet, skillKeys,
 } from './battle.js';
 
@@ -457,7 +457,8 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
       case 'build': {
         const ok = buildTower(b.m, action.slot, action.towerId, 0);
         if (ok) b.tutorial?.onTowerBuilt(b.m.time);   // 引导第一步/第二步靠「真的建了塔」推进
-        note(b, ok ? `建了 ${action.towerId}` : '金币不足或这里不能建');
+        // 提示里写**玩家认得的名字**，不是 `tw_arrow` 这种内部 id（出门的版本里不该出现 id）
+        note(b, ok ? `建了 ${TOWERS[action.towerId]?.name ?? '塔'}` : '金币不足或这里不能建');
         if (ok) b.ui = { selectedSlot: null, panelSlot: action.slot, sellArmed: false };
         return action;
       }
@@ -476,7 +477,7 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
       }
       case 'priority': {
         const ok = setPriority(b.m, action.slot, action.value);
-        note(b, ok ? `优先级：${action.value}` : '设置失败');
+        note(b, ok ? `优先级：${PRIORITY_LABEL[action.value] ?? action.value}` : '设置失败');
         return action;
       }
       case 'repair': {
@@ -508,7 +509,8 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
       case 'buildFort': {
         const slot = b.fortSlot;
         const ok = slot == null ? false : buildFort(b.m, slot, action.fortId);
-        note(b, ok ? '工事已建' : (slot == null ? '先在战场上点一个工事位（‘修’字）' : '金币不足或这里已经建过'), 2);
+        note(b, ok ? `建了 ${FORTS[action.fortId]?.name ?? '工事'}`
+          : (slot == null ? '先在战场上点一个工事位（‘修’字）' : '金币不足或这里已经建过'), 2);
         if (ok) b.fortSlot = null;
         if (ok || slot == null) b.ui = { selectedSlot: null, panelSlot: null, sellArmed: false };
         return action;
