@@ -23,6 +23,7 @@ const SHOTS = [
   { file: 'minigame-tower.png', w: Number(w), h: Number(h), page: 'tower' },
   { file: 'minigame-shop.png', w: Number(w), h: Number(h), page: 'shop' },
   { file: 'minigame-result.png', w: Number(w), h: Number(h), page: 'result' },
+  { file: 'minigame-pause.png', w: Number(w), h: Number(h), page: 'pause' },
 ];
 
 if (!existsSync(CHROME)) {
@@ -107,6 +108,11 @@ if (page === 'lobby') {
   }
   // 第五张：结算面板（内容与浏览器版同一个 resultPanelModel）
   if (page === 'result') drawResult(ctx, layoutResult(m, { gain: 120, leveledUp: true, commanderLevel: 4 }));
+  // 第六张：暂停面板（倍速 / 镜头 / 震动三个开关都真的接着东西）
+  if (page === 'pause') {
+    drawBattleHud(ctx, m, layoutBattle({ ...model, paused: true, rate: 2 }), { selectedTower: 'tw_arrow' });
+    drawSheet(ctx, layoutSheet(m, { sheetKind: 'pause', rate: 2, settings: { tdFitAll: true, sfx: true } }));
+  }
 }
 window.__previewReady = true;
 </script></body></html>`;

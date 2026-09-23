@@ -17,6 +17,8 @@ import {
   loadProfile, mapLocked, recordResult, reviveMulOf, saveProfile, startGoldOf, unlockedMaps,
 } from '../profile.js';
 import { resultSummary } from '../result.js';
+import { loadSettings, saveSettings } from '../settings.js';
+import { createHaptics } from '../feedback.js';
 import { createRenderer } from '../render.js';
 import { applyLobbyAction, drawLobby, hitTestLobby, layoutLobby } from './lobby.js';
 import {
@@ -86,6 +88,21 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
   let lobby = { model: createLobbyModel(), layout: null };
   let battle = null;
   let lastSize = '';
+  let settings = loadSettings();
+  // §1.9.2 的短震动：小游戏这次真的接上了（浏览器版靠 DOM 点击事件，这边按 touch 手动触发）
+  const tap = createHaptics({ enabled: () => settings.sfx !== false });
+
+  /** 镜头设置（§2.5）：整图可见 = `renderer.fit()`；放大 = 以核心为中心用 `settings.zoom` */
+  const applyCamera = (b) => {
+    const grid = b?.m?.map?.grid;
+    if (!grid) return;
+    if (settings.tdFitAll === false) {
+      const core = b.m.core?.cell ?? { x: grid.w / 2, y: grid.h / 2 };
+      b.renderer.setCamera(core.x, core.y, settings.zoom ?? 1.5);
+    } else {
+      b.renderer.fit(grid);
+    }
+  };
 
   const resize = () => {
     size = viewport();
@@ -119,9 +136,11 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
       m, renderer, selectedTower: 'tw_arrow', message: null, until: 0, layout: null,
       ui: { selectedSlot: null, panelSlot: null, sellArmed: false },
       extra: null,     // 结算那一下记档的收获（声望 / 升级），画面板用
+      paused: false, rate: 1,
     };
+    applyCamera(b);
     b.model = () => ({
-      ...describeBattleModel(m), selectedTower: b.selectedTower,
+      ...describeBattleModel(m), selectedTower: b.selectedTower, paused: b.paused, rate: b.rate,
       ui: b.ui, sheet: layoutSheet(m, b.ui),
     });
     b.layout = layoutBattle(b.model());
@@ -146,9 +165,17 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
     }
     const action = hitTestBattle(b.layout, x, y);
     if (action) {
+      tap('light');   // §1.9.2：按下就震一下（开关在暂停面板里，关掉就静默）
       switch (action.type) {
         case 'shop': b.ui = { sheetKind: 'shop' }; return action;
         case 'bag': b.ui = { sheetKind: 'bag' }; return action;
+        case 'speed': b.rate = b.rate === 2 ? 1 : 2; return action;
+        case 'pause': {
+          // 单机局真暂停（联机才不谈暂停，§114）；暂停时顺手把面板摊开——玩家按暂停多半是想看点东西
+          b.paused = !b.paused;
+          b.ui = b.paused ? { sheetKind: 'pause' } : { selectedSlot: null, panelSlot: null, sellArmed: false };
+          return action;
+        }
         case 'potion': {
           const id = b.m.bag.pot_small ? 'pot_small' : (b.m.bag.pot_large ? 'pot_large' : null);
           const ok = id ? usePotion(b.m, id) : false;
@@ -261,6 +288,24 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
         b.ui = { sheetKind: 'bag' };
         return action;
       }
+      // ---- 暂停面板上的四个动作 ----
+      case 'resume':
+        b.paused = false;
+        b.ui = { selectedSlot: null, panelSlot: null, sellArmed: false };
+        return action;
+      case 'camera': {
+        settings = { ...settings, tdFitAll: settings.tdFitAll === false };
+        saveSettings(settings);
+        applyCamera(b);
+        note(b, settings.tdFitAll ? '镜头：整图可见' : '镜头：放大', 1.4);
+        return action;
+      }
+      case 'sfx': {
+        settings = { ...settings, sfx: settings.sfx === false };
+        saveSettings(settings);
+        note(b, settings.sfx === false ? '震动已关' : '震动已开', 1.4);
+        return action;
+      }
       default: return action;
     }
   };
@@ -308,6 +353,7 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
   /** 推进内核（小游戏里由帧循环按真实时间驱动；本地验收里手动调它） */
   const tick = (seconds) => {
     if (!battle) return 0;
+    if (battle.paused || battle.m.result) return 0;   // 真暂停：内核一步都不走
     const steps = Math.round(seconds / TICK_STEP);
     for (let i = 0; i < steps && !battle.m.result; i += 1) update(battle.m, TICK_STEP);
     recordIfFinished(battle);
@@ -337,7 +383,7 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
   const frame = (ts = 0) => {
     if (battle) {
       const dt = last ? Math.min(0.25, (ts - last) / 1000) : 0;
-      if (dt > 0) tick(dt);
+      if (dt > 0) tick(dt * (battle.rate ?? 1));   // 倍速就是「这一帧推两步」（内核步长仍是 1/20 秒）
     }
     last = ts;
     drawFrame();

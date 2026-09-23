@@ -15,7 +15,7 @@ import { installFakeWx } from '../tools/fake-wx.mjs';
 import { TOWER_MAX_LEVEL } from '../src/data.js';
 import { createMatch, makeEquipment, potionCount, update } from '../src/match.js';
 import { SHOP_ITEMS } from '../src/data.js';
-import { drawResult, layoutBag, layoutItem, layoutResult, layoutShop } from '../src/minigame/battle.js';
+import { drawResult, layoutBag, layoutItem, layoutPause, layoutResult, layoutShop } from '../src/minigame/battle.js';
 
 // 与 minigame-bundle.test.js 同一个道理：**各有各的产物目录**，否则并发跑会互相踩
 const OUT = mkdtempSync(join(tmpdir(), 'ff-mini-battle-'));
@@ -335,5 +335,66 @@ test('小游戏结算：一局结束后真的记档（声望 +120、解锁与大
     app.backToLobby();
     assert.equal(app.screen(), 'lobby');
     assert.equal(app.getModel().profile.reputation, 120);
+  } finally { fake.uninstall(); }
+});
+
+test('小游戏暂停面板：行都在画布内且 ≥44，倍速/镜头/震动按当前设置显示', () => {
+  const m = createMatch({ seed: 5 });
+  const sheet = layoutPause(m, { rate: 2, settings: { tdFitAll: false, sfx: false } });
+  assert.equal(sheet.kind, 'pause');
+  assert.equal(sheet.rows.length, 6, '继续 / 倍速 / 镜头 / 震动 / 回大厅 / 关面板');
+  for (const r of sheet.rows) {
+    assert.ok(r.h >= 44 && r.y + r.h <= DESIGN.h, `${r.id} 行高或位置不达标`);
+    assert.ok(!(r.x < 448 && r.y < 52 && r.x + r.w > 396), `${r.id} 压到顶栏那两个键上`);
+  }
+  assert.equal(sheet.byId.speed.sub, '2×');
+  assert.equal(sheet.byId.camera.sub, '放大', 'tdFitAll=false 时是放大');
+  assert.equal(sheet.byId.sfx.sub, '关');
+  assert.equal(sheet.byId.resume.label, '继续游戏');
+});
+
+test('小游戏暂停与倍速：暂停时内核一步不走，倍速按倍数走，镜头/震动落进设置', async () => {
+  await import('../tools/build-minigame.mjs');
+  const vib = [];
+  const fake = installFakeWx({ onVibrate: (o) => vib.push(o.type) });
+  try {
+    const require = createRequire(import.meta.url);
+    require(join(OUT, 'game.js'));
+    const app = globalThis.__frostfallLobby;
+    app.startMatch();
+    const m = app.match();
+    const tapBtn = (id) => {
+      const b = app.layout().byId[id];
+      assert.ok(b, `顶栏/底排没有 ${id}`);
+      return app.tap(b.x + b.w / 2, b.y + b.h / 2);
+    };
+    // 暂停 → 时间不动
+    tapBtn('pause');
+    assert.equal(app.getModel().paused, true);
+    assert.equal(app.getModel().sheet.kind, 'pause');
+    const t0 = m.time;
+    app.tick(30);
+    assert.equal(m.time, t0, '暂停时内核一步都不该走');
+
+    // 镜头：切成放大 → 设置里 tdFitAll=false
+    const cam = app.getModel().sheet.byId.camera;
+    app.tap(cam.x + cam.w / 2, cam.y + cam.h / 2);
+    assert.equal(JSON.parse(globalThis.wx.getStorageSync('frostfall:settings') || '{}').tdFitAll, false);
+    // 震动：关掉之后不再调 wx.vibrateShort
+    const sfx = app.getModel().sheet.byId.sfx;
+    app.tap(sfx.x + sfx.w / 2, sfx.y + sfx.h / 2);
+    assert.equal(JSON.parse(globalThis.wx.getStorageSync('frostfall:settings') || '{}').sfx, false);
+    const callsAfterMute = vib.length;
+    const resume = app.getModel().sheet.byId.resume;
+    app.tap(resume.x + resume.w / 2, resume.y + resume.h / 2);
+    assert.equal(app.getModel().paused, false, '继续之后要恢复推进');
+    assert.equal(vib.length, callsAfterMute, '关掉震动之后按按钮不该再震');
+
+    // 倍速：同一段时间走两步
+    tapBtn('speed');
+    assert.equal(app.getModel().rate, 2);
+    const t1 = m.time;
+    app.tick(10);
+    assert.ok(Math.abs((m.time - t1) - 10) < 0.2, `倍速下 tick(10) 该走 10 秒（实际 ${(m.time - t1).toFixed(1)}）`);
   } finally { fake.uninstall(); }
 });

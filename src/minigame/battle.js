@@ -83,10 +83,17 @@ export function layoutBattle(model = {}) {
       { type: 'skill', index: i }, { disabled: !(model.skills?.[i] ?? i === 0) }));
   }
   items.push(item('lobby', 588, 315, 67, 48, '回大厅', { type: 'lobby' }));
+  /**
+   * 顶栏右侧那两个键：**倍速**与**暂停**（§1.9.3 的设置、§1.9.4 的「随时能停」）。
+   * 位置必须避开右上角胶囊区（官方要求），所以它们放在顶栏与胶囊之间那段空档里，高度给到 44（§1.9.2）。
+   */
+  items.push(item('speed', 380, 8, 84, 44, model.rate === 2 ? '倍速 2×' : '倍速 1×', { type: 'speed' }, { on: model.rate === 2 }));
+  items.push(item('pause', 470, 8, 84, 44, model.paused ? '继续' : '暂停', { type: 'pause' }, { on: !!model.paused }));
   return {
     w: DESIGN.w, h: DESIGN.h,
     capsule: { x: DESIGN.w - CAPSULE.w - 8, y: 6, w: CAPSULE.w, h: CAPSULE.h },
-    top: { x: 12, y: 8, w: 380, h: 30 },
+    // 顶栏只到 x=368：右边要留给倍速/暂停两个键（再往右是右上角胶囊区，官方要求避开）
+    top: { x: 12, y: 8, w: 356, h: 30 },
     result: { x: 173, y: 120, w: 320, h: 130 },
     items,
     byId: Object.fromEntries(items.map((it) => [it.id, it])),
@@ -114,11 +121,12 @@ export function drawBattleHud(ctx, m, L, { selectedTower = 'tw_arrow', message =
   ctx.strokeStyle = COLORS.panelLine;
   ctx.lineWidth = 1;
   ctx.stroke();
+  // 顶栏窄了（让出右边给倍速/暂停），所以这几格的位置跟着收——第一版没收，核心血量被按钮压住了
   text(ctx, `第 ${waveLabel}`, L.top.x + 10, L.top.y + 15, { size: 13, weight: 'bold' });
-  text(ctx, phase, L.top.x + 106, L.top.y + 15, { size: 11, color: COLORS.dim });
-  text(ctx, `金 ${Math.round(m.gold)}`, L.top.x + 186, L.top.y + 15, { size: 12, color: COLORS.gold });
-  text(ctx, `木 ${Math.round(m.lumber?.[0] ?? 0)}`, L.top.x + 252, L.top.y + 15, { size: 12, color: COLORS.wood });
-  text(ctx, `核心 ${core}`, L.top.x + 312, L.top.y + 15, { size: 12, color: m.core.hp / m.core.maxHp < 0.35 ? COLORS.danger : COLORS.ink });
+  text(ctx, phase, L.top.x + 96, L.top.y + 15, { size: 11, color: COLORS.dim });
+  text(ctx, `金 ${Math.round(m.gold)}`, L.top.x + 150, L.top.y + 15, { size: 12, color: COLORS.gold });
+  text(ctx, `木 ${Math.round(m.lumber?.[0] ?? 0)}`, L.top.x + 210, L.top.y + 15, { size: 12, color: COLORS.wood });
+  text(ctx, `核心 ${core}`, L.top.x + 258, L.top.y + 15, { size: 11, color: m.core.hp / m.core.maxHp < 0.35 ? COLORS.danger : COLORS.ink });
 
   for (const it of L.items) {
     const on = !!it.on;
@@ -234,6 +242,7 @@ export function layoutSheet(m, ui = {}) {
   if (ui?.sheetKind === 'shop') return layoutShop(m, ui);
   if (ui?.sheetKind === 'bag') return layoutBag(m, ui);
   if (ui?.sheetKind === 'item') return layoutItem(m, ui);
+  if (ui?.sheetKind === 'pause') return layoutPause(m, ui);
   const slot = ui.panelSlot ?? ui.selectedSlot ?? null;
   if (slot == null) return null;
   const t = m.towers.find((x) => x.slot === slot) ?? null;
@@ -389,6 +398,45 @@ export function layoutBag(m, ui = {}) {
     title: `背包 · ${m.inventory?.length ?? 0} 件（显示最近 ${Math.min(6, shown.length)} 件）`,
     hint: craft ? '' : '攒够 3 件同部位同品质即可一键合成',
     box: { x: 12, y: 62, w: 643, h: rowY + 44 + 12 - 62 },
+    rows, byId: Object.fromEntries(rows.map((r) => [r.id, r])),
+  };
+}
+
+/**
+ * 暂停面板（单机局才有意义：联机「不假装暂停」是 §114 那条口径；小游戏现在只有单机，所以这是真暂停）。
+ *
+ * 三个开关都**真的接在东西上**，不是摆样子：
+ *   倍速　→ 帧循环按 1× / 2× 推内核；
+ *   镜头　→ `settings.tdFitAll`（整图可见 / 放大到 settings.zoom），与浏览器版同一份设置；
+ *   震动　→ `settings.sfx` 经 `feedback.js` 的 `wx.vibrateShort`（同一份设置里的那个开关）。
+ * **没摆的两项**：`effects`（低特效档关的是飘字与脉冲，而小游戏这一版还没画飘字——摆了就是假选项）；
+ * 音效那一半要等防守模式的预警音（TD 本来就没有提示音）。
+ */
+export function layoutPause(m, ui = {}) {
+  const rows = [];
+  const sv = ui.settings ?? {};
+  rows.push({ id: 'resume', label: '继续游戏', x: 20, y: 96, w: 614, h: 44, action: { type: 'resume' } });
+  rows.push({
+    id: 'speed', label: '倍速', sub: ui.rate === 2 ? '2×' : '1×',
+    x: 20, y: 146, w: 300, h: 44, on: ui.rate === 2, action: { type: 'speed' },
+  });
+  rows.push({
+    id: 'camera', label: '镜头', sub: sv.tdFitAll === false ? '放大' : '整图',
+    x: 334, y: 146, w: 300, h: 44, on: sv.tdFitAll === false, action: { type: 'camera' },
+  });
+  rows.push({
+    id: 'sfx', label: '震动', sub: sv.sfx === false ? '关' : '开',
+    x: 20, y: 196, w: 300, h: 44, on: sv.sfx !== false, action: { type: 'sfx' },
+  });
+  rows.push({ id: 'lobby', label: '回大厅', x: 334, y: 196, w: 300, h: 44, action: { type: 'lobby' } });
+  rows.push({
+    id: 'close', label: '关掉面板（仍是暂停）', x: 20, y: 246, w: 614, h: 44, action: { type: 'close' },
+  });
+  return {
+    kind: 'pause',
+    title: '已暂停',
+    hint: `第 ${m.wave.index} / ${m.length === 'long' ? 30 : 12} 波 · 金币 ${Math.round(m.gold)}`,
+    box: { x: 12, y: 62, w: 643, h: 240 },
     rows, byId: Object.fromEntries(rows.map((r) => [r.id, r])),
   };
 }
