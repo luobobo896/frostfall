@@ -11,6 +11,7 @@ import {
   DESIGN, MINIMAP, SKILL_BAR, STICK, drawDefenseHud, hitTestDefense, inStickZone,
   layoutDefense, layoutFortSheet, stickBase, stickVector,
 } from '../src/minigame/defense-screen.js';
+import { hitTestSheet } from '../src/minigame/battle.js';
 import { REVIVE_LUMBER } from '../src/match.js';
 import { createDefenseMatch } from '../src/defense.js';
 import { DEFENSE_RULES, FORTS } from '../src/data.js';
@@ -718,5 +719,43 @@ test('小游戏整局（防守）：参考打法守满 4 轮 → 转无尽 → �
     assert.equal(prof.clears.def_01.clears, 1, '防守这张图要记一笔');
     assert.ok((prof.clears.def_01.bestRounds ?? 0) >= 4, `战绩要写守住轮次（实际 ${prof.clears.def_01.bestRounds}）`);
     assert.ok(prof.reputation > 0, '声望要涨');
+  } finally { fake.uninstall(); }
+});
+
+test('小游戏工事面板：两种工事各占一行，**墙那个选项点得到**（以前两行叠着，墙永远建不出来）', async () => {
+  await import('../tools/build-minigame.mjs');
+  const fake = installFakeWx();
+  try {
+    const require = createRequire(import.meta.url);
+    const app = loadFreshApp(require, 13);
+    const tapBtn = (id) => {
+      const b = app.layout().byId[id];
+      assert.ok(b, `HUD 上找不到 ${id}`);
+      return app.tap(b.x + b.w / 2, b.y + b.h / 2);
+    };
+    tapBtn('mode-def');
+    tapBtn('start');
+    const m = app.match();
+    m.gold = 5000;
+    const r = app.renderer();
+    // 点一个这一帧里点得到的工事位（防守是跟随相机，投影随帧变）
+    const pick = (() => {
+      for (let i = 0; i < m.def.fortSlots.length; i += 1) {
+        const sp = r.toScreen(m.def.fortSlots[i].x, m.def.fortSlots[i].y);
+        if (!hitTestDefense(app.layout(), sp.x, sp.y)) return { i, sp };
+      }
+      throw new Error('这一帧里没有点得到的工事位');
+    })();
+    app.tap(pick.sp.x, pick.sp.y);
+    const sheet = app.getModel().sheet;
+    assert.equal(sheet.kind, 'fort');
+    const arrow = sheet.byId['fort-fort_arrow'];
+    const wall = sheet.byId['fort-fort_wall'];
+    assert.notEqual(wall.y, arrow.y, '两种工事不该叠在同一行（以前 y 写死成 96，墙点不到）');
+    assert.deepEqual(hitTestSheet(sheet, wall.x + wall.w / 2, wall.y + wall.h / 2),
+      { type: 'buildFort', fortId: 'fort_wall' }, '墙那一行的命中要是它自己');
+    // 真的点它 → 墙上场
+    app.tap(wall.x + wall.w / 2, wall.y + wall.h / 2);
+    assert.ok(m.forts.some((f) => f.fortId === 'fort_wall'), '点墙那一行要真的建出墙');
   } finally { fake.uninstall(); }
 });

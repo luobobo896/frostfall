@@ -302,7 +302,13 @@ export function layoutFortSheet(m, model = {}) {
   Object.values(FORTS).forEach((f, i) => {
     rows.push({
       id: `fort-${f.id}`, label: f.name, sub: `${f.cost} 金`,
-      x: 20, y: 96, w: 614, h: 44, disabled: m.gold < f.cost,
+      /**
+       * **每个 i 各占一行**：这里以前把 `y` 写死成 96（`i` 收了却没用），两行就**完全叠在一起**——
+       * `hitTestSheet` 返回第一行，于是「墙」那个选项**永远点不到**（只能在代码里直接建）。
+       * 这种「画出来了但点不到」的错在原用例里看不出来（它只查行存在与灰态），
+       * 是那条通用的弹层几何用例（每一行 ≥44 / 不重叠）抓到的。
+       */
+      x: 20, y: 96 + i * 50, w: 614, h: 44, disabled: m.gold < f.cost,
       action: { type: 'buildFort', fortId: f.id },
     });
   });
