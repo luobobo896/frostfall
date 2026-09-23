@@ -4,23 +4,28 @@
 // `index.html` + `styles.css` + `ui.js` 那套 DOM+CSS。这一步做的是把**平台差异**与**打包**解决掉，
 // 并把不依赖 DOM 的那一大半（内核、数据表、存档、联机协议、平台适配）先在小游戏里跑通。
 // 界面换 Canvas 是第 3 步，见 docs/minigame-port.md。
-import { TICK_STEP } from '../data.js';
-import { DEFENSE_MAPS, MAPS } from '../data.js';
+import { DEFENSE_MAPS, MAPS, TICK_STEP } from '../data.js';
 import {
   buildTower, buyItem, castSkill, craftEquipment, createMatch, describe as describeMatch, equipItem,
   enhanceItem, potionCount, repairTower, sellItem, sellTower, setPriority, startWaveEarly,
   towerAtSlot, update, upgradeTower, usePotion,
 } from '../match.js';
-import { createDefenseMatch, describeDefense, updateDefense } from '../defense.js';
 import { isMiniGame, onHide, onTouch, storage, viewport } from '../platform.js';
 import { clearSave, hasSave, loadFromStorage, saveToStorage } from '../save.js';
 import {
   loadProfile, mapLocked, recordResult, reviveMulOf, saveProfile, startGoldOf, unlockedMaps,
 } from '../profile.js';
 import { resultSummary } from '../result.js';
+import { gridDist } from '../core.js';
 import { loadSettings, saveSettings } from '../settings.js';
 import { createHaptics } from '../feedback.js';
 import { createRenderer } from '../render.js';
+import {
+  buildFort, createDefenseMatch, describeDefense, orderMove, repairCastle, steerGoal, teleportHome, updateDefense,
+} from '../defense.js';
+import {
+  drawDefenseHud, hitTestDefense, inStickZone, layoutDefense, layoutFortSheet, stickBase, stickVector,
+} from './defense-screen.js';
 import { applyLobbyAction, drawLobby, hitTestLobby, layoutLobby } from './lobby.js';
 import {
   drawBattleHud, drawResult, drawSheet, hitTestBattle, hitTestSheet,
@@ -98,7 +103,8 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
 
   /** 镜头设置（§2.5）：整图可见 = `renderer.fit()`；放大 = 以核心为中心用 `settings.zoom` */
   const applyCamera = (b) => {
-    const grid = b?.m?.map?.grid;
+    // 防守局的 `grid` 是状态自己的字段（`m.map` 只有 TD 有）——两处都要兜住
+    const grid = b?.m?.map?.grid ?? b?.m?.grid;
     if (!grid) return;
     if (settings.tdFitAll === false) {
       const core = b.m.core?.cell ?? { x: grid.w / 2, y: grid.h / 2 };
@@ -121,34 +127,41 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
 
   /** 进局：按大厅里选的那套配置开一局（联机/多人缩放先按单人；多人是后面的事） */
   const startMatch = () => {
-    if (lobby.model.mode === 'defense') {
-      // 防守战场（跟随相机 + 摇杆 + 另一套 HUD）还没搬，这里**说清原因**而不是开出一局 TD 糊弄
-      lobby.model = { ...lobby.model, hint: '防守模式的战场还没接过来（下一步）：先玩 TD 塔防。' };
-      lobby.layout = layoutLobby(size.width, size.height, lobby.model);
-      return null;
-    }
-    const m = createMatch({
-      mapId: lobby.model.map, difficulty: lobby.model.difficulty, heroId: lobby.model.hero,
-      seed: Date.now() % 1e6 || 7, players: 1, length: lobby.model.length ?? 'short',
-      // §3.6：人物等级的便利（初始金币 + 复活加速）在浏览器版里是这么传进来的，小游戏这边同样接上——
-      // 以前 mini-game 里这两项**根本没生效**（开局永远是裸的 200 金、复活永远 15 秒）
-      startGold: startGoldOf(lobby.model.profile), reviveMul: reviveMulOf(lobby.model.profile),
-    });
+    const seed = Date.now() % 1e6 || 7;
+    const m = lobby.model.mode === 'defense'
+      ? createDefenseMatch({
+        mapId: lobby.model.map.startsWith('def_') ? lobby.model.map : 'def_01',
+        difficulty: lobby.model.difficulty, heroId: lobby.model.hero, seed,
+        reviveMul: reviveMulOf(lobby.model.profile),   // §3.6：防守也有复活加速
+      })
+      : createMatch({
+        mapId: lobby.model.map, difficulty: lobby.model.difficulty, heroId: lobby.model.hero,
+        seed, players: 1, length: lobby.model.length ?? 'short',
+        // §3.6：人物等级的便利（初始金币 + 复活加速）在浏览器版里是这么传进来的，小游戏这边同样接上——
+        // 以前 mini-game 里这两项**根本没生效**（开局永远是裸的 200 金、复活永远 15 秒）
+        startGold: startGoldOf(lobby.model.profile), reviveMul: reviveMulOf(lobby.model.profile),
+      });
+    if (m.mode === 'defense') m.autoPickup = settings.autoPickup !== false;   // §12.5：走到掉落物上自动捡
     const renderer = createRenderer(canvas, { size: () => ({ w: size.width, h: size.height }) });
-    renderer.fit(m.map.grid);
+    renderer.fit(m.map?.grid ?? m.grid);
     const b = {
       m, renderer, selectedTower: 'tw_arrow', message: null, until: 0, layout: null,
       ui: { selectedSlot: null, panelSlot: null, sellArmed: false },
       extra: null,     // 结算那一下记档的收获（声望 / 升级），画面板用
       paused: false, rate: 1,
       saveClock: 0,    // §10.3 单人局自动存档：每 5 秒一次 + 切后台补一次
+      // 防守：摇杆状态（浮动模式下底座跟手指）+ 正在建的那个工事位
+      stick: { active: false, id: null, origin: null, dir: { x: 0, y: 0, mag: 0 }, start: null },
+      fortSlot: null,
     };
     applyCamera(b);
-    b.model = () => ({
-      ...describeBattleModel(m), selectedTower: b.selectedTower, paused: b.paused, rate: b.rate,
-      ui: b.ui, sheet: layoutSheet(m, b.ui),
-    });
-    b.layout = layoutBattle(b.model());
+    b.model = () => (m.mode === 'defense'
+      ? { ...defModel(b), sheet: sheetFor(m, b) }
+      : {
+        ...describeBattleModel(m), selectedTower: b.selectedTower, paused: b.paused, rate: b.rate,
+        ui: b.ui, sheet: sheetFor(m, b),
+      });
+    b.layout = m.mode === 'defense' ? layoutDefense(m, defModel(b)) : layoutBattle(b.model());
     battle = b;
     return b;
   };
@@ -166,42 +179,21 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
   const tapBattle = (b, x, y) => {
     // 弹层开着时它最优先（关掉 / 选塔 / 升级 / 买东西 / 换装 …）
     if (b.ui.sheetKind || b.ui.selectedSlot != null || b.ui.panelSlot != null) {
-      const action = hitTestSheet(layoutSheet(b.m, b.ui), x, y);
-      return applySheetAction(b, action);
+      // 走 `sheetFor`：工事那张是防守专有的——直接调 layoutSheet 会返回 null，
+      // 于是点哪儿都算「关掉弹层」（第一版就是这么建不出工事的）
+      const action = hitTestSheet(sheetFor(b.m, b), x, y);
+      return applyAction(b, action);
+    }
+    // 防守模式：右侧那排 HUD 之外的点 = **点地移动 / 点工事位**（与浏览器版 defenseTap 同一套语义）
+    if (b.m.mode === 'defense') {
+      const hit = hitTestDefense(b.layout, x, y);
+      if (hit) { tap('light'); return applyAction(b, hit); }
+      return tapDefenseField(b, x, y);
     }
     const action = hitTestBattle(b.layout, x, y);
     if (action) {
       tap('light');   // §1.9.2：按下就震一下（开关在暂停面板里，关掉就静默）
-      switch (action.type) {
-        case 'shop': b.ui = { sheetKind: 'shop' }; return action;
-        case 'bag': b.ui = { sheetKind: 'bag' }; return action;
-        case 'speed': b.rate = b.rate === 2 ? 1 : 2; return action;
-        case 'pause': {
-          // 单机局真暂停（联机才不谈暂停，§114）；暂停时顺手把面板摊开——玩家按暂停多半是想看点东西
-          b.paused = !b.paused;
-          b.ui = b.paused ? { sheetKind: 'pause' } : { selectedSlot: null, panelSlot: null, sellArmed: false };
-          return action;
-        }
-        case 'potion': {
-          const id = b.m.bag.pot_small ? 'pot_small' : (b.m.bag.pot_large ? 'pot_large' : null);
-          const ok = id ? usePotion(b.m, id) : false;
-          note(b, ok ? '用药' : '药品冷却中或没有药');
-          return action;
-        }
-        case 'early': {
-          const ok = startWaveEarly(b.m, 0);
-          note(b, ok ? '提前开波' : '现在开不了（正在交战）');
-          return action;
-        }
-        case 'skill': {
-          const ok = castSkill(b.m, action.index);
-          note(b, ok ? '技能已放' : '技能冷却中或还没解锁');
-          return action;
-        }
-        case 'lobby': backToLobby(); return action;
-        case 'restart': startMatch(); return action;
-        default: return action;
-      }
+      return applyAction(b, action);
     }
     // 战场：屏幕点 → 最近格 → 最近的塔位（§2.5「不要求点得准」）
     const g = b.renderer.toGrid(x, y);
@@ -222,10 +214,43 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
   };
 
   /** 弹层上的动作 → 内核调用 */
-  const applySheetAction = (b, action) => {
+  /**
+   * **唯一的动作出口**：HUD 上的键、弹层里的行、防守那排按钮，全走这一处。
+   * （第一版把 HUD 动作写在 `tapBattle` 的 switch 里、弹层动作写在另一个函数里，
+   * 于是防守那屏把 HUD 命中接到「弹层动作」上——暂停点了没反应。一个出口就没有这种错配。）
+   */
+  const applyAction = (b, action) => {
     if (!action) return null;
     const slot = b.ui.panelSlot ?? b.ui.selectedSlot;
     switch (action.type) {
+      // ---- HUD 上的通用键 ----
+      case 'shop': b.ui = { sheetKind: 'shop' }; return action;
+      case 'bag': b.ui = { sheetKind: 'bag' }; return action;
+      case 'speed': b.rate = b.rate === 2 ? 1 : 2; return action;
+      case 'pause': {
+        // 单机局真暂停（联机才不谈暂停，§114）；暂停时顺手把面板摊开——玩家按暂停多半是想看点东西
+        b.paused = !b.paused;
+        b.ui = b.paused ? { sheetKind: 'pause' } : { selectedSlot: null, panelSlot: null, sellArmed: false };
+        return action;
+      }
+      case 'potion': {
+        const id = b.m.bag.pot_small ? 'pot_small' : (b.m.bag.pot_large ? 'pot_large' : null);
+        const ok = id ? usePotion(b.m, id) : false;
+        note(b, ok ? '用药' : '药品冷却中或没有药');
+        return action;
+      }
+      case 'early': {
+        const ok = startWaveEarly(b.m, 0);
+        note(b, ok ? '提前开波' : '现在开不了（正在交战）');
+        return action;
+      }
+      case 'skill': {
+        const ok = castSkill(b.m, action.index);
+        note(b, ok ? '技能已放' : '技能冷却中或还没解锁');
+        return action;
+      }
+      case 'lobby': backToLobby(); return action;
+      case 'restart': startMatch(); return action;
       case 'close':
         b.ui = { selectedSlot: null, panelSlot: null, sellArmed: false };
         return action;
@@ -256,6 +281,29 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
       case 'repair': {
         const ok = repairTower(b.m, action.slot);
         note(b, ok ? '塔已修复' : '金币不足或无需修复');
+        return action;
+      }
+      // ---- 防守专有 ----
+      case 'teleport': {
+        const ok = teleportHome(b.m);
+        note(b, ok ? '已回城' : '冷却中或阵亡中');
+        return action;
+      }
+      case 'repairCastle': {
+        const ok = repairCastle(b.m);
+        note(b, ok ? '城堡已修复' : '金币不足或城堡已满血');
+        return action;
+      }
+      case 'fort':
+        b.fortSlot = null;          // 从面板进 = 还没选位置，先在战场上点一个工事位
+        b.ui = { sheetKind: 'fort' };
+        return action;
+      case 'buildFort': {
+        const slot = b.fortSlot;
+        const ok = slot == null ? false : buildFort(b.m, slot, action.fortId);
+        note(b, ok ? '工事已建' : (slot == null ? '先在战场上点一个工事位（‘修’字）' : '金币不足或这里已经建过'), 2);
+        if (ok) b.fortSlot = null;
+        if (ok || slot == null) b.ui = { selectedSlot: null, panelSlot: null, sellArmed: false };
         return action;
       }
       // ---- 商店 / 背包 / 物品 ----
@@ -316,6 +364,20 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
     }
   };
 
+  /** 防守：点战场 = 走过去；点空工事位 = 开工事面板（浏览器版 `defenseTap` 的同一套语义） */
+  const tapDefenseField = (b, x, y) => {
+    const cell = b.renderer.toGrid(x, y);
+    const slot = b.m.def.fortSlots.findIndex((s, i) => gridDist(s, cell) <= 1 && !b.m.forts.some((f) => f.slot === i));
+    if (slot >= 0) {
+      b.fortSlot = slot;
+      b.ui = { sheetKind: 'fort' };
+      return { type: 'openFort', slot };
+    }
+    const ok = orderMove(b.m, cell);
+    note(b, ok ? '走过去' : '走不过去', 1.2);
+    return { type: 'move', cell };
+  };
+
   /** 一次「点」（大厅）：应用选择，并在「单人开局」上真的进局 */
   const tapLobby = (x, y) => {
     const action = hitTestLobby(lobby.layout, x, y);
@@ -356,13 +418,41 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
   };
 
   onTouch((t) => {
-    if (t.type !== 'down') return;     // 这一版只要「点」；拖动/双指缩放留给后面
     if (!battle) {
-      tapLobby(t.x, t.y);
+      if (t.type === 'down') tapLobby(t.x, t.y);
       drawFrame();
       return;
     }
-    tapBattle(battle, t.x, t.y);
+    const b = battle;
+    const sheetOpen = !!b.ui.sheetKind || b.ui.selectedSlot != null || b.ui.panelSlot != null;
+    /**
+     * 防守多一层：**左侧 45% 的拖动 = 摇杆**（§1.9.1），松手时若几乎没动就补一次「点地移动」
+     * （浏览器版 `stick.owns()` 那套的同一件事）。其余地方仍然是「点」。
+     */
+    if (b.m.mode === 'defense' && !sheetOpen) {
+      if (t.type === 'down' && inStickZone(b.layout, t.x, t.y)) {
+        // 注意：`size` 是 viewport() 的形状（width/height/dpr），stickBase 要的是 {w,h}——
+        // 传错形状时底座坐标会变成 NaN，表现是「推杆推不动」（第一版就是这么踩的）
+        const base = stickBase(defModel(b), { w: size.width, h: size.height });
+        b.stick = { active: true, id: t.id, origin: base, start: { x: t.x, y: t.y }, dir: { x: 0, y: 0, mag: 0 } };
+        drawFrame();
+        return;
+      }
+      if (t.type === 'move' && b.stick.active && t.id === b.stick.id) {
+        b.stick.dir = stickVector(b.stick.origin, t.x, t.y);
+        drawFrame();
+        return;
+      }
+      if (t.type === 'up' && b.stick.active && t.id === b.stick.id) {
+        const moved = Math.hypot(t.x - b.stick.start.x, t.y - b.stick.start.y);
+        b.stick = { active: false, id: null, origin: null, start: null, dir: { x: 0, y: 0, mag: 0 } };
+        if (moved < 12) tapBattle(b, t.x, t.y);   // 轻点：走那一步 / 点工事位
+        drawFrame();
+        return;
+      }
+    }
+    if (t.type !== 'down') return;     // 其余情况这一版只要「点」
+    tapBattle(b, t.x, t.y);
     drawFrame();
   });
   // 切后台 / 退出时补一笔存档（§10.3 的「随时能停」：小游戏是 wx.onHide）
@@ -373,13 +463,19 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
     if (`${width}x${height}` !== lastSize) resize();
     if (!battle) { drawLobby(ctx, lobby.model, lobby.layout); return; }
     const b = battle;
-    b.layout = layoutBattle(b.model());
-    b.renderer.draw({ m: b.m, selectedSlot: null, selectedTower: null, localSlot: 0, now: b.m.time, pulses: false });
-    ctx.setTransform(size.dpr, 0, 0, size.dpr, 0, 0);   // renderer 可能重设过变换，这里再对齐一次
-    drawBattleHud(ctx, b.m, b.layout, {
-      selectedTower: b.selectedTower,
-      message: b.m.time < b.until ? b.message : null,
-    });
+    const message = b.m.time < b.until ? b.message : null;
+    if (b.m.mode === 'defense') {
+      b.layout = layoutDefense(b.m, defModel(b));
+      // 跟随相机由 drawDefense 自己算（它拿 `scale`）；我们只把缩放档递进去
+      b.renderer.draw({ m: b.m, scale: settings.zoom ?? 1.5, now: b.m.time });
+      ctx.setTransform(size.dpr, 0, 0, size.dpr, 0, 0);
+      drawDefenseHud(ctx, b.m, b.layout, { message, stick: b.stick.active ? { base: b.stick.origin, dir: b.stick.dir } : { base: b.layout.stick, dir: { x: 0, y: 0, mag: 0 } } });
+    } else {
+      b.layout = layoutBattle(b.model());
+      b.renderer.draw({ m: b.m, selectedSlot: null, selectedTower: null, localSlot: 0, now: b.m.time, pulses: false });
+      ctx.setTransform(size.dpr, 0, 0, size.dpr, 0, 0);   // renderer 可能重设过变换，这里再对齐一次
+      drawBattleHud(ctx, b.m, b.layout, { selectedTower: b.selectedTower, message });
+    }
     // 结算面板：内核出结果之后盖上来（内容是浏览器版那个 resultPanelModel，一份模型两个渲染器）
     recordIfFinished(b);
     if (b.m.result) drawResult(ctx, layoutResult(b.m, b.extra ?? {}));
@@ -392,7 +488,21 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
     if (!battle) return 0;
     if (battle.paused || battle.m.result) return 0;   // 真暂停：内核一步都不走
     const steps = Math.round(seconds / TICK_STEP);
-    for (let i = 0; i < steps && !battle.m.result; i += 1) update(battle.m, TICK_STEP);
+    const step = battle.m.mode === 'defense' ? updateDefense : update;
+    for (let i = 0; i < steps && !battle.m.result; i += 1) {
+      // 防守：摇杆推着走 = 每帧重发同一条移动指令（换格时才重发，别每帧重算 A*，与浏览器版同源）
+      if (battle.m.mode === 'defense' && battle.stick.dir.mag > 0) {
+        const goal = steerGoal(battle.m, battle.stick.dir);
+        const last = battle.stickGoal;
+        if (goal && (!last || goal.x !== last.x || goal.y !== last.y)) {
+          battle.stickGoal = goal;
+          orderMove(battle.m, goal);
+        }
+      } else if (battle.m.mode === 'defense') {
+        battle.stickGoal = null;
+      }
+      step(battle.m, TICK_STEP);
+    }
     maybeAutosave(battle, seconds);
     recordIfFinished(battle);
     return steps;
@@ -475,6 +585,23 @@ const describeBattleModel = (m) => ({
 const pickLobbyKeys = (model) => ({
   mode: model.mode, map: model.map, difficulty: model.difficulty, length: model.length, hero: model.hero,
 });
+
+/** 防守那屏的模型（HUD 只读这些，别顺手读整局对象） */
+const defModel = (b) => ({
+  paused: b.paused, rate: b.rate, potionCount: potionCount(b.m),
+  round: b.m.assault?.round ?? 0, warning: !!b.m.assault?.warning,
+  stickFloating: (b.stickFloating ?? false),
+  stickOrigin: b.stick.active ? b.stick.origin : null,
+  stick: b.stick,   // 调试/验收用：能断言「推着走了没有」
+  ui: b.ui,
+});
+
+/** 当前该显示哪张弹层：工事那张是防守专有的（两种工事 + 取消） */
+const sheetFor = (m, b) => (b.ui.sheetKind === 'fort'
+  ? layoutFortSheet(m, {
+    freeSlots: m.def.fortSlots.filter((_, i) => !m.forts.some((f) => f.slot === i)).length,
+  })
+  : layoutSheet(m, b.ui));
 
 /**
  * 无头跑一局内核（联机/自检/第 3 步的渲染循环都会用同一条路）。

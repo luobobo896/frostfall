@@ -224,11 +224,10 @@ export function applyLobbyAction(model, action, { unlocked = [], lockedReason = 
         .filter((id) => unlocked.includes(id));
       next.map = pool[0] ?? (action.value === 'defense' ? 'def_01' : 'map_01');
       /**
-       * 防守模式的战场还没搬过来（那要连摇杆、跟随相机、HUD 一起做，见 docs/minigame-port.md §5.2），
-       * 所以「单人开局」在防守模式下是**明写着为什么不行**，而不是点了没反应。
+       * 两种模式现在都能进局了（防守那屏见 §5.2.6：跟随相机 + 摇杆 + 另一套 HUD）。
        */
-      next.canStart = action.value !== 'defense';
-      next.hint = next.canStart ? null : '防守模式的战场还没接过来（下一步）：先玩 TD 塔防。';
+      next.canStart = true;
+      next.hint = null;
       return next;
     }
     case 'difficulty': next.difficulty = action.value; return next;
@@ -246,9 +245,7 @@ export function applyLobbyAction(model, action, { unlocked = [], lockedReason = 
     }
     case 'start': {
       if (!next.canStart) {
-        next.hint = next.mode === 'defense'
-          ? '防守模式的战场还没接过来（下一步）：先玩 TD 塔防。'
-          : '战斗场景还没接上：内核已经能在小游戏里跑，渲染还没挂上去。';
+        next.hint = '战斗场景还没接上：内核已经能在小游戏里跑，渲染还没挂上去。';
         return next;
       }
       next.started = true;

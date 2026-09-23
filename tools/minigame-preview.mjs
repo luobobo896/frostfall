@@ -8,7 +8,7 @@
 //       npm run minigame:preview 1024 768   （换个尺寸看缩放）
 import { existsSync } from 'node:fs';
 import { spawn } from 'node:child_process';
-import { mkdtemp, writeFile, mkdir, copyFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, copyFile, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -24,6 +24,7 @@ const SHOTS = [
   { file: 'minigame-shop.png', w: Number(w), h: Number(h), page: 'shop' },
   { file: 'minigame-result.png', w: Number(w), h: Number(h), page: 'result' },
   { file: 'minigame-pause.png', w: Number(w), h: Number(h), page: 'pause' },
+  { file: 'minigame-defense.png', w: Number(w), h: Number(h), page: 'defense' },
 ];
 
 if (!existsSync(CHROME)) {
@@ -38,6 +39,8 @@ if (!existsSync(CHROME)) {
 const pageFor = (page, w, h) => `<!doctype html><html><head><meta charset="utf-8">
 <style>html,body{margin:0;background:#05080e}canvas{display:block;width:${w}px;height:${h}px}</style></head>
 <body><canvas id="c"></canvas><script type="module">
+// 页面里一抛错，headless 截出来的就是一张空图（这一路已经踩过两次）；把它写进标题，方便出事时查
+window.onerror = (msg) => { document.title = 'ERR: ' + msg; };
 /**
  * 样张按 **1×** 出（与设计画布 667×375 同尺寸）。
  *
@@ -67,6 +70,30 @@ if (page === 'lobby') {
   };
   drawLobby(ctx, model, layoutLobby(w, h, model));
 } else {
+  // 防守那一屏：单独一条分支（它用 createDefenseMatch + drawDefense + 摇杆那套 HUD）
+  if (page === 'defense') {
+    const { createDefenseMatch, buildFort, updateDefense } = await import('/src/defense.js');
+    const { createRenderer } = await import('/src/render.js');
+    const { layoutDefense, drawDefenseHud } = await import('/src/minigame/defense-screen.js');
+    const { TICK_STEP } = await import('/src/data.js');
+    const m = createDefenseMatch({ mapId: 'def_01', difficulty: 'normal', heroId: 'hero_warrior', seed: 7 });
+    const renderer = createRenderer(canvas, { size: () => ({ w, h }) });
+    renderer.fit(m.grid);
+    // 建两座工事，留在基地附近跑 12 秒：样张要看得见**基地 + 工事 + 摇杆**这套东西
+    // （跑到野外去拍，画面里只剩一张空地图，看不出防守在玩什么）
+    buildFort(m, 0, 'fort_arrow');
+    buildFort(m, 1, 'fort_wall');
+    for (let i = 0; i < Math.round(12 / TICK_STEP); i += 1) updateDefense(m, TICK_STEP);
+    const model = { rate: 1, paused: false, potionCount: 2 };
+    const L = layoutDefense(m, model);
+    renderer.draw({ m, scale: 1.5, now: m.time });
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    drawDefenseHud(ctx, m, L, {
+      message: '摇杆走路 · 点工事位建塔 · 预警响了就回城',
+      stick: { base: L.stick, dir: { x: 0.7, y: -0.7, mag: 1 } },
+    });
+    window.__previewReady = true;
+  } else {
   const { createMatch, buildTower, update, startWaveEarly } = await import('/src/match.js');
   const { createRenderer } = await import('/src/render.js');
   const { layoutBattle, drawBattleHud, layoutSheet, drawSheet, layoutResult, drawResult } = await import('/src/minigame/battle.js');
@@ -114,6 +141,7 @@ if (page === 'lobby') {
     drawBattleHud(ctx, m, layoutBattle({ ...model, paused: true, rate: 2 }), { selectedTower: 'tw_arrow' });
     drawSheet(ctx, layoutSheet(m, { sheetKind: 'pause', rate: 2, settings: { tdFitAll: true, sfx: true } }));
   }
+  }   // ← 这个 } 收的是「防守分支 else」；少了它整段脚本语法不过（headless 只会给一张空图）
 }
 window.__previewReady = true;
 </script></body></html>`;
@@ -145,6 +173,17 @@ for (const shot of SHOTS) {
   ], { stdio: 'ignore' });
   await new Promise((r) => chrome.on('exit', r));
   await copyFile(png, join(SHOTS_DIR, shot.file));
-  console.log(`样张 → docs/testing/screenshots/${shot.file}（${shot.w}×${shot.h} 逻辑像素 @2x）`);
+  const { size } = await stat(png);
+  if (size < 3000) {
+    // 空图 = 页面里抛了错（或白屏）。把标题里那句错误打出来，别让样张悄悄变成一块黑
+    const dump = spawn(CHROME, ['--headless=new', '--disable-gpu', '--no-first-run', '--virtual-time-budget=2000', '--dump-dom', `http://127.0.0.1:${port}/?page=${shot.page}`], { stdio: ['ignore', 'pipe', 'ignore'] });
+    let html = '';
+    dump.stdout.on('data', (d) => { html += d; });
+    await new Promise((r) => dump.on('exit', r));
+    const title = (html.match(/<title>([\s\S]*?)<\/title>/) || [])[1] ?? '(没读到)';
+    console.log(`⚠ 样张 ${shot.file} 只有 ${size} 字节，可能是空白：${title}`);
+  } else {
+    console.log(`样张 → docs/testing/screenshots/${shot.file}（${shot.w}×${shot.h} 逻辑像素 @2x）`);
+  }
 }
 server.close();
