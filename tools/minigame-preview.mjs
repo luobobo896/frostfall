@@ -135,7 +135,13 @@ if (page === 'lobby') {
   };
   renderer.draw({ m, selectedSlot: null, selectedTower: null, localSlot: 0, now: m.time, pulses: false, hintSlots: 3 });
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  drawBattleHud(ctx, m, layoutBattle(model), { selectedTower: 'tw_arrow', message: '点塔位建塔 · 点「开波」提前开打' });
+  // 下一波预告那一行（§8.3）：文案与游戏入口一样取 wavePreview（一份两处用）
+  const { wavePreview } = await import('/src/hud-model.js');
+  const p = wavePreview(m.wave.index + 1, 3, m.waves);
+  const preview = p ? '下一波：' + (p.tag ? '【' + p.tag + '】' : '') + p.text : '下一波：—';
+  drawBattleHud(ctx, m, layoutBattle(model), {
+    selectedTower: 'tw_arrow', message: '点塔位建塔 · 点「开波」提前开打', preview,
+  });
   // 第三张样张：把塔面板摊开（点已建的塔就是这个界面）
   if (page === 'tower') {
     m.gold = 420;   // 让「升级」是亮着的，样张里能看出可点状态

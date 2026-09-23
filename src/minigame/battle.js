@@ -10,7 +10,7 @@ import {
   EQUIP_SELL_BONUS_LUMBER, EQUIP_SELL_REFUND, EQUIP_SLOTS, QUALITY, QUALITY_ORDER,
   SHOP_ITEMS, TARGET_PRIORITIES, TOWERS, TOWER_SELL_REFUND,
 } from '../data.js';
-import { attackHint, resultPanelModel, shopRows } from '../hud-model.js';
+import { attackHint, resultPanelModel, shopRows, wavePreview } from '../hud-model.js';
 import {
   TOWER_REPAIR_GOLD, craftableSlots, enhanceCostOf, potionCount, shopPriceOf, towerStatsAt, upgradeCost,
 } from '../match.js';
@@ -60,6 +60,18 @@ const text = (ctx, str, x, y, { size = 12, color = COLORS.ink, weight = '', alig
 const item = (id, x, y, w, h, label, action, extra = {}) => ({ id, x, y, w, h, label, action, ...extra });
 
 /**
+ * 把一句话裁到给定宽度（不够就加省略号）：HUD 上那几行文案的长度取决于**数据表**
+ * （怪物名与护甲标签都是可变的），量一量再画比「估个字数」靠谱——小游戏没有 CSS 的 `text-overflow`。
+ * 用不上 `measureText` 的假 ctx（Node 用例）会给出按字数估的宽度，行为一致。
+ */
+const fitText = (ctx, str, maxW) => {
+  if (ctx.measureText(str).width <= maxW) return str;
+  let cut = str;
+  while (cut.length > 1 && ctx.measureText(`${cut}…`).width > maxW) cut = cut.slice(0, -1);
+  return `${cut}…`;
+};
+
+/**
  * 战场 HUD 的布局（设计单位 667×375）。战场本身占满整屏，HUD 是压在上面的浮层：
  * 顶部一条状态栏、底部一排行（塔种 / 开波 / 技能 / 回大厅）。
  */
@@ -107,6 +119,8 @@ export function layoutBattle(model = {}) {
     // 顶栏只到 x=368：右边要留给倍速/暂停两个键（再往右是右上角胶囊区，官方要求避开）
     top: { x: 12, y: 8, w: 356, h: 30 },
     result: { x: 173, y: 120, w: 320, h: 130 },
+    // 下一波预告那一行（y=48：顶栏到 38 为止，再往下 60 是提示行；宽度在倍速键 380 之前收住）
+    preview: { x: 12, y: 48, w: 360 },
     tutorial: tutorial ? { x: 12, y: 261, w: 643, h: 44, text: tutorial } : null,
     items,
     byId: Object.fromEntries(items.map((it) => [it.id, it])),
@@ -123,7 +137,7 @@ export function hitTestBattle(L, x, y) {
 }
 
 /** 画 HUD（战场本身由 render.js 画，这里只画压在上面的那一圈） */
-export function drawBattleHud(ctx, m, L, { selectedTower = 'tw_arrow', message = null } = {}) {
+export function drawBattleHud(ctx, m, L, { selectedTower = 'tw_arrow', message = null, preview = null } = {}) {
   const waveLabel = m.length === 'long' ? `${m.wave.index} / 30 波` : `${m.wave.index} / 12 波`;
   const core = `${Math.round(m.core.hp)}/${m.core.maxHp}`;
   const phase = m.wave.phase === 'prep' ? `备战 ${Math.ceil(m.wave.timer)}s` : '交战中';
@@ -140,6 +154,14 @@ export function drawBattleHud(ctx, m, L, { selectedTower = 'tw_arrow', message =
   text(ctx, `金 ${Math.round(m.gold)}`, L.top.x + 150, L.top.y + 15, { size: 12, color: COLORS.gold });
   text(ctx, `木 ${Math.round(m.lumber?.[0] ?? 0)}`, L.top.x + 210, L.top.y + 15, { size: 12, color: COLORS.wood });
   text(ctx, `核心 ${core}`, L.top.x + 258, L.top.y + 15, { size: 11, color: m.core.hp / m.core.maxHp < 0.35 ? COLORS.danger : COLORS.ink });
+
+  /**
+   * 下一波预告（§8.3 / §6.2 的克制博弈）：**开波之前**就要能看出这一波是什么、
+   * 护甲是什么、有没有空中——不然「补哪种塔」这个决定只能靠猜。文案由 `wavePreview` 算（一份两处用）。
+   */
+  if (preview) {
+    text(ctx, fitText(ctx, preview, L.preview.w), L.preview.x, L.preview.y, { size: 11, color: COLORS.dim });
+  }
 
   // 引导条先画底、再画键：`items` 那一轮在它上面（跳过键就压在条的右端）
   if (L.tutorial) {
@@ -482,13 +504,26 @@ export function layoutPause(m, ui = {}) {
     id: 'sfx', label: '震动', sub: sv.sfx === false ? '关' : '开',
     x: 20, y: 196, w: 300, h: 44, on: sv.sfx !== false, action: { type: 'sfx' },
   });
-  rows.push({ id: 'lobby', label: '回大厅', x: 334, y: 196, w: 300, h: 44, action: { type: 'lobby' } });
+  /**
+   * §154：这一格也按模式取舍——TD 摆「波次预告」（§8.3：开波前先看这一波是什么），
+   * 防守摆「自动拾取」（§12.5：走到掉落物上自己捡）。两个都真的接着东西，不是摆样子。
+   */
+  rows.push(defense
+    ? {
+      id: 'autoPickup', label: '自动拾取', sub: sv.autoPickup === false ? '关' : '开',
+      x: 334, y: 196, w: 300, h: 44, on: sv.autoPickup !== false, action: { type: 'autoPickup' },
+    }
+    : {
+      id: 'wavePreview', label: '波次预告', sub: sv.showWavePreview === false ? '关' : '开',
+      x: 334, y: 196, w: 300, h: 44, on: sv.showWavePreview !== false, action: { type: 'wavePreview' },
+    });
+  rows.push({ id: 'lobby', label: '回大厅', x: 20, y: 246, w: 300, h: 44, action: { type: 'lobby' } });
   // §153 的「重看」：门槛只认 `profile.tutorialDone` 这一个标记，「重看」就是把它置回 false（下一局再挂）
   rows.push({
-    id: 'replayTutorial', label: '重看新手引导', sub: '下一局生效', x: 20, y: 246, w: 300, h: 44,
+    id: 'replayTutorial', label: '重看新手引导', sub: '下一局生效', x: 334, y: 246, w: 300, h: 44,
     action: { type: 'replayTutorial' },
   });
-  rows.push({ id: 'close', label: '收起面板', x: 334, y: 246, w: 300, h: 44, action: { type: 'close' } });
+  rows.push({ id: 'close', label: '收起面板', x: 20, y: 296, w: 614, h: 44, action: { type: 'close' } });
   return {
     kind: 'pause',
     title: '已暂停',
@@ -497,7 +532,7 @@ export function layoutPause(m, ui = {}) {
     hint: defense
       ? `第 ${m.assault?.round ?? 0} 轮 · 金币 ${Math.round(m.gold)}`
       : `第 ${m.wave.index} / ${m.length === 'long' ? 30 : 12} 波 · 金币 ${Math.round(m.gold)}`,
-    box: { x: 12, y: 62, w: 643, h: 240 },
+    box: { x: 12, y: 62, w: 643, h: 290 },
     rows, byId: Object.fromEntries(rows.map((r) => [r.id, r])),
   };
 }

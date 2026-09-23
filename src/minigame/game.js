@@ -23,6 +23,7 @@ import { gridDist } from '../core.js';
 import { loadSettings, saveSettings } from '../settings.js';
 import { createHaptics } from '../feedback.js';
 import { createMinimap, createRenderer } from '../render.js';
+import { wavePreview } from '../hud-model.js';
 import {
   buildFort, createDefenseMatch, describeDefense, orderMove, repairCastle, steerGoal, teleportHome, updateDefense,
 } from '../defense.js';
@@ -173,6 +174,18 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
     y: Math.max(0, (size.height - DESIGN.h) / 2),
   });
 
+  /**
+   * 下一波预告那一行（§8.3 / §6.2）：文案取浏览器版那份 `wavePreview`（一份两处用），
+   * 只在设置里关掉时说「已在设置里关闭」——不是把这一行悄悄藏起来，
+   * 玩家得能分清「我关了」和「这波没有预告」。
+   */
+  const nextWaveHint = (m) => {
+    if (settings.showWavePreview === false) return '下一波：（已在设置里关闭）';
+    const p = wavePreview(m.wave.index + 1, 3, m.waves);
+    if (!p) return '下一波：—';
+    return `下一波：${p.tag ? `【${p.tag}】` : ''}${p.text}`;
+  };
+
   /** 进局：按大厅里选的那套配置开一局（联机/多人缩放先按单人；多人是后面的事） */
   const startMatch = () => {
     const seed = Date.now() % 1e6 || 7;
@@ -265,6 +278,12 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
         ...describeBattleModel(m), selectedTower: b.selectedTower, paused: b.paused, rate: b.rate,
         // 结算面板一出来就收掉提示条（浏览器版 `view.tutorial` 同源）
         tutorial: m.result ? null : (b.tutorial?.current()?.text ?? null),
+        /**
+         * 下一波预告（§8.3：把波次表翻成人话，含空中与 Boss 提示）——文案取浏览器版那份 `wavePreview`，
+         * 设置里关掉时照浏览器版写一句「已在设置里关闭」（不是把这一行悄悄藏起来，
+         * 玩家得知道是「我关了」而不是「这波没有预告」）。
+         */
+        preview: m.result ? null : nextWaveHint(m),
         ui: b.ui, sheet: b.sheetOf(),
       });
     b.layout = m.mode === 'defense' ? layoutDefense(m, defModel(b)) : layoutBattle(b.model());
@@ -504,6 +523,21 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
         settings = { ...settings, stick: settings.stick === 'floating' ? 'fixed' : 'floating' };
         saveSettings(settings);
         note(b, settings.stick === 'floating' ? '摇杆：浮动（跟手）' : '摇杆：固定（左下）', 1.4);
+        return action;
+      }
+      case 'wavePreview': {
+        // §8.3：开波前那行预告（防：关了就说一句「已在设置里关闭」，不是把那一行藏起来）
+        settings = { ...settings, showWavePreview: settings.showWavePreview === false };
+        saveSettings(settings);
+        note(b, settings.showWavePreview ? '波次预告已开' : '波次预告已关', 1.4);
+        return action;
+      }
+      case 'autoPickup': {
+        // §12.5：防守走到掉落物上自动捡。内核读的是 `m.autoPickup`，所以改了要**立刻**写进去
+        settings = { ...settings, autoPickup: settings.autoPickup === false };
+        saveSettings(settings);
+        b.m.autoPickup = settings.autoPickup;
+        note(b, settings.autoPickup ? '自动拾取已开' : '自动拾取已关', 1.4);
         return action;
       }
       case 'sfx': {
@@ -757,7 +791,8 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
         ctx.drawImage(b.minimap.canvas, MINIMAP.x, MINIMAP.y, MINIMAP.w, MINIMAP.h);
       }
     } else {
-      b.layout = layoutBattle(b.model());
+      const model = b.model();
+      b.layout = layoutBattle(model);
       // `hintSlots`：引导第一步/第二步在战场上圈出「建这里」（render.js 本来就有这段，直接复用）
       b.renderer.draw({
         m: b.m, selectedSlot: null, selectedTower: null, localSlot: 0, now: b.m.time, pulses: false,
@@ -766,7 +801,7 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
       // renderer 可能重设过变换，这里再对齐一次（并按大屏把 HUD 居中）
       const o = hudOffset();
       ctx.setTransform(size.dpr, 0, 0, size.dpr, size.dpr * o.x, size.dpr * o.y);
-      drawBattleHud(ctx, b.m, b.layout, { selectedTower: b.selectedTower, message });
+      drawBattleHud(ctx, b.m, b.layout, { selectedTower: b.selectedTower, message, preview: model.preview });
     }
     // 结算面板：内核出结果之后盖上来（内容是浏览器版那个 resultPanelModel，一份模型两个渲染器）
     recordIfFinished(b);
