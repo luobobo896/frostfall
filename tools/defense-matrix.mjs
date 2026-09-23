@@ -48,6 +48,25 @@ for (const mapId of maps) {
   console.log(`${mapId}：${cells.length - lost.length}/${cells.length} 守住` + (lost.length
     ? ` —— 未守住：${lost.map((c) => `${c.hero}(${c.rounds}轮)`).join(' · ')}` : ''));
 }
+/**
+ * 无尽阶段有多长（§3.1 #27 的复测口径，验证记录 §207.5）。
+ *
+ * 这 36 局本来就一直打到 `m.over`（城堡陷落）或 40 分钟，所以「守满 4 轮之后又活了几波」是**顺手就有**的数——
+ * 以前这里只报「守住 / 未守住」，§207.5 那张表反倒要靠一次性的手写探针才量得出来（数字不可复现 = 欠账）。
+ * **只报数、不设闸**：§12.5 给的意图是「无尽 4-6 波」，实测只有普通档够得着（高难 1 波）；
+ * 要让高难也有区分度得让无尽曲线随难度取值，那是 M0.5 之外的数值决定（§207.5 已记）。
+ */
+const med = (a) => { const s = [...a].sort((x, y) => x - y); return s[Math.floor(s.length / 2)]; };
+console.log('\n无尽阶段（守满 4 轮之后又活了几波；打到城堡陷落或 40 分钟为止）：');
+for (const diff of diffs) {
+  // 注意要按 **row** 分组：`cells` 里没有 `diff` 字段（第一版就是这么写成空集合的）
+  const w = rows.filter((r) => r.diff === diff).flatMap((r) => r.cells)
+    .filter((c) => c.win).map((c) => Math.max(0, c.rounds - 4));
+  if (!w.length) { console.log(`  ${diff}：没有守满 4 轮的局`); continue; }
+  console.log(`  ${diff.padEnd(10)} 中位 ${med(w)} 波 · 范围 ${Math.min(...w)}-${Math.max(...w)} · ≥2 波 ${w.filter((x) => x >= 2).length}/${w.length}`);
+}
+console.log('（只报数：§12.5 的意图是 4-6 波，只有普通档够得着——高难守满 4 轮时城堡通常只剩一两千血）');
+
 // 门槛：def_01 / def_02 的普通难度必须 4/4（§3.1 #5）。这两格成立过，所以它是回归闸，
 // 不是「没达标就得改代码」的野心线。
 const gated = rows.filter((r) => (r.mapId === 'def_01' || r.mapId === 'def_02') && r.diff === 'normal');
