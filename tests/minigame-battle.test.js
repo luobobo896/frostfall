@@ -955,3 +955,46 @@ test('小游戏战场：伤害飘字（§14.3）——两帧血量差算出来�
     assert.ok(!app.floaters().some((f) => f.text === '999'), '过期的飘字要收掉');
   } finally { fake.uninstall(); }
 });
+
+test('小游戏整局：参考打法在假 wx 里**真的**把 12 波打完 → 结算 → 记档 → 解锁下一张图', async () => {
+  await import('../tools/build-minigame.mjs');
+  const { autoPlay } = await import('../src/ai.js');
+  const { unlockedMaps } = await import('../src/profile.js');
+  const fake = installFakeWx();
+  try {
+    const require = createRequire(import.meta.url);
+    const app = loadFreshApp(require, 21);
+    // 跳过引导（否则第一局的提示条会挡在战场上），从大厅正常开局
+    app.startMatch();
+    const m = app.match();
+    const before = JSON.parse(globalThis.wx.getStorageSync('frostfall:profile') || '{}');
+    const repBefore = before.reputation ?? 0;
+
+    /**
+     * 用内核里那份**参考打法**（`ai.js` 的 `autoPlay`，浏览器冒烟 §189 用的也是它）把这一局打完：
+     * 它内部调的是与 app 的 `tick()` 同一个 `update(m, dt)`，所以「能打完」这件事是真的。
+     */
+    autoPlay(m, { maxSeconds: 3000 });
+    assert.equal(m.result, 'win', `参考打法该把这一局打赢（实际 ${m.result ?? '进行中'}，第 ${m.wave.index} 波）`);
+    assert.equal(m.wave.index, 12, '打完就是第 12 波');
+    assert.ok(m.time > 240 && m.time < 1200, `一局 4-20 分钟（实际 ${(m.time / 60).toFixed(1)} 分钟）`);
+    assert.ok(m.towers.length >= 8, `参考打法该建起一片塔（实际 ${m.towers.length} 座）`);
+
+    // 结算：小游戏自己那一帧要画出结算面板，并且**记一次档**
+    app.drawFrame();
+    const texts = app.canvas.record.texts;
+    assert.ok(texts.some((t) => t.includes('通关！')), '结算面板要弹出来');
+    assert.ok(texts.some((t) => t.includes('单局时长')), '面板要写本局读数');
+    const after = JSON.parse(globalThis.wx.getStorageSync('frostfall:profile') || '{}');
+    assert.equal(after.reputation, repBefore + 120, `声望 +120（${repBefore} → ${after.reputation}）`);
+    assert.equal(after.clears.map_01.wins, 1, '战绩记一胜');
+    assert.equal(after.clears.map_01.bestTimeSec, Math.round(m.time), '最快通关 = 本局');
+    assert.ok(unlockedMaps(after, 'td').includes('map_02'), '通关要解锁下一张图');
+
+    // 回大厅：那行档案与卡面都跟着新档案走
+    const home = app.layout().byId.lobby;
+    app.tap(home.x + home.w / 2, home.y + home.h / 2);
+    assert.equal(app.screen(), 'lobby');
+    assert.ok(app.getModel().unlocked.includes('map_02'), '大厅里要能选到新解锁的图');
+  } finally { fake.uninstall(); }
+});

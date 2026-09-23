@@ -671,3 +671,52 @@ test('小游戏防守：正在建工事的那个位置要在画面上高亮（se
     assert.ok(seen.at(-1) == null, '关掉面板之后不该还高亮着');
   } finally { fake.uninstall(); }
 });
+
+test('小游戏整局（防守）：参考打法守满 4 轮 → 转无尽 → 城堡陷落 → 结算与记档都对', async () => {
+  await import('../tools/build-minigame.mjs');
+  const { autoPlayDefense } = await import('../src/ai-defense.js');
+  const fake = installFakeWx();
+  try {
+    const require = createRequire(import.meta.url);
+    const app = loadFreshApp(require, 12);
+    const tapBtn = (id) => {
+      const b = app.layout().byId[id];
+      assert.ok(b, `HUD 上找不到 ${id}`);
+      return app.tap(b.x + b.w / 2, b.y + b.h / 2);
+    };
+    tapBtn('mode-def');
+    tapBtn('start');
+    const m = app.match();
+    assert.equal(m.mapId, 'def_01');
+
+    /**
+     * 内核里那份防守参考打法（`ai-defense.js`）把它打到**城堡陷落**为止——
+     * 也就是「守满 4 轮 → 转无尽 → 无尽里陷落」这条完整路径（浏览器冒烟 §190 是这么验的）。
+     * 它内部走的是与 app 的 `tick()` 同一个 `updateDefense`。
+     */
+    autoPlayDefense(m, { maxSeconds: 1500 });
+    assert.ok(m.stats.roundsCleared >= 4, `要守满 4 轮（实际 ${m.stats.roundsCleared}）`);
+    assert.equal(m.assault.endless, true, '守满 4 轮之后要转无尽');
+    assert.ok(m.assault.round > 4, `无尽里继续开轮（实际第 ${m.assault.round} 轮）`);
+    assert.equal(m.result, 'win', '守住过就是 win（哪怕后面城堡陷落）');
+
+    /**
+     * 结算面板：防守那套读数 + **不再给「继续（无尽）」**（§190：城堡陷落之后那是假出口）。
+     * 落点由开局种子决定（app 用的种子带时间），所以「无尽里几轮陷落」每次不同——
+     * 这里把陷落**摆成确定态**（城堡 0 血 + `over`），验的是渲染与记档这一段。
+     */
+    m.castle.hp = 0;
+    m.over = true;
+    app.drawFrame();
+    const texts = app.canvas.record.texts;
+    assert.ok(texts.some((t) => t.includes('守住了！')), '结算面板要写「守住了！」');
+    assert.ok(texts.some((t) => t.includes('守住轮次')), '面板要写守住轮次');
+    assert.ok(!app.layout().byId.endless, '城堡陷落之后没有「继续（无尽）」');
+
+    // 记档：防守这张图记一笔，战绩口径是「守住轮次」（§12.6）
+    const prof = JSON.parse(globalThis.wx.getStorageSync('frostfall:profile') || '{}');
+    assert.equal(prof.clears.def_01.clears, 1, '防守这张图要记一笔');
+    assert.ok((prof.clears.def_01.bestRounds ?? 0) >= 4, `战绩要写守住轮次（实际 ${prof.clears.def_01.bestRounds}）`);
+    assert.ok(prof.reputation > 0, '声望要涨');
+  } finally { fake.uninstall(); }
+});
