@@ -1,0 +1,24 @@
+{
+  "name": "frostfall",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "冰封之地 —— 碎片化协作塔防（TD 塔防首发切片）",
+  "scripts": {
+    "test": "node --test --test-timeout=30000 tests/*.test.js",
+    "selfplay": "node tools/selfplay.mjs",
+    "serve": "node tools/serve.mjs",
+    "server": "node tools/server.mjs",
+    "bandwidth": "node tools/bandwidth.mjs",
+    "bench": "node tools/bench.mjs",
+    "tutorial": "node tools/tutorial-run.mjs",
+    "defense": "node tools/selfplay-defense.mjs",
+    "smoke": "node tools/smoke.mjs",
+    "waves": "node tools/wave-margin.mjs",
+    "matrix": "node tools/balance-matrix.mjs",
+    "soak": "node tools/soak.mjs",
+    "potions": "node tools/potion-balance.mjs",
+    "books": "node tools/skillbook-rate.mjs",
+    "defense-matrix": "node tools/defense-matrix.mjs"
+  }
+}

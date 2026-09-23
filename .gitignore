@@ -1,0 +1,8 @@
+# 运行时数据（局外档案落盘在这里，不该进版本库）
+.data/
+# 依赖与系统文件
+node_modules/
+.DS_Store
+
+# 别的工具在本目录留下的本地状态（WorkBuddy 的记忆目录），不是本项目的东西
+.workbuddy/
