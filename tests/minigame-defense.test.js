@@ -574,3 +574,53 @@ test('小游戏防守闭环：买一张回城卷轴 → 冷却中照样回得去
     assert.equal(app.layout().byId.teleport.disabled, true, '没卷轴又冷却中，就该灰');
   } finally { fake.uninstall(); }
 });
+
+test('小游戏防守：第一次打这张图时给一句操作提示，打过的图不再念（§14.3 稿 5）', async () => {
+  await import('../tools/build-minigame.mjs');
+  const fake = installFakeWx();
+  try {
+    const require = createRequire(import.meta.url);
+    const app = loadFreshApp(require, 9);
+    const tapBtn = (id) => {
+      const b = app.layout().byId[id];
+      assert.ok(b, `HUD 上找不到 ${id}`);
+      return app.tap(b.x + b.w / 2, b.y + b.h / 2);
+    };
+    tapBtn('mode-def');
+    tapBtn('start');
+    const m = app.match();
+    app.drawFrame();
+    /**
+     * 认这句提示要用**只在这句里出现过的词**（`点地面也走`）：大厅那三行提示里也有「推杆走路」，
+     * 而大厅那几帧也画在同一张 canvas 上、也在这份记录里——用「推杆走路」去认会认错，第一版就认错了。
+     */
+    const HINT = '点地面也走';
+    const hint = () => app.canvas.record.texts.filter((t) => t.includes(HINT)).at(-1);
+    assert.ok(hint(), `第一次打这张图要给一句操作提示（画了：${app.canvas.record.texts.slice(-4).join(' / ')}）`);
+    // 提示是**限时**的：过几秒就自己消失（不是常驻占着消息位）
+    const count = () => app.canvas.record.texts.filter((t) => t.includes(HINT)).length;
+    const c0 = count();
+    app.tick(6);
+    app.drawFrame();
+    assert.equal(count(), c0, '过几秒之后不该再画这句提示（记录是跨帧累积的，所以数「有没有多画一次」）');
+
+    // 打过的图：下一局不再念（`clears` 里有这张图）
+    m.time = 100;
+    m.result = 'win';
+    app.drawFrame();          // 记档：clears.def_01 记一笔
+    assert.ok(JSON.parse(globalThis.wx.getStorageSync('frostfall:profile') || '{}').clears[m.mapId],
+      '前提：这张图记过一笔');
+    // 关掉再打开（新实例读同一份存档）→ 再开这张防守图，不该再念
+    const again = loadFreshApp(require, 10);
+    const tap2 = (id) => {
+      const b = again.layout().byId[id];
+      assert.ok(b, `新实例的 HUD 上找不到 ${id}`);
+      again.tap(b.x + b.w / 2, b.y + b.h / 2);
+    };
+    tap2('mode-def');
+    tap2('start');
+    again.drawFrame();
+    assert.ok(!again.canvas.record.texts.some((t) => t.includes(HINT)),
+      '打过的图不该再念那句中上手指引');
+  } finally { fake.uninstall(); }
+});

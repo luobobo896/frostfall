@@ -250,7 +250,16 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
       profile: { ...lobby.model.profile, lastChoice: { ...pickLobbyKeys(lobby.model) } },
     };
     try { saveProfile(lobby.model.profile); } catch { /* 存不了就只在这一次生效 */ }
-    return buildBattle(m, { tutorial });
+    const b = buildBattle(m, { tutorial });
+    /**
+     * 防守的第一次上手提示：浏览器版的操作行上那颗键常驻写着「点地面移动」（§14.3 稿 5），
+     * 小游戏这边没有常驻操作行，所以开局给一句——**只给这张图还没打过的人**（`clears` 里没有它），
+     * 打过的人不必每次都被念一遍。
+     */
+    if (m.mode === 'defense' && !lobby.model.profile?.clears?.[m.mapId]) {
+      note(b, '左下推杆走路 · 点地面也走 · 预警响了就回城', 4.5);
+    }
+    return b;
   };
 
   /**
