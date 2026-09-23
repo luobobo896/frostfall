@@ -350,7 +350,23 @@ test('小游戏防守 HUD：右下技能键（§1.9.1）；阵亡时那一排换
   assert.equal(layoutDefense(m, {}).byId.revive.disabled, false, '木材够了就能点');
   const ctx = fakeCtx();
   drawDefenseHud(ctx, m, layoutDefense(m, {}), {});
-  assert.ok(ctx.texts.some((t) => /阵亡 \d+s/.test(t)), `顶栏要写阵亡倒计时（画了：${ctx.texts.join(' / ')}）`);
+  assert.ok(ctx.texts.some((t) => /英雄 Lv\d+ · 阵亡 \d+s/.test(t)),
+    `英雄那一行要写等级 + 阵亡倒计时（画了：${ctx.texts.join(' / ')}）`);
+
+  // 活着：人在野外区里报「区名 + 等级段 + 掉落加成」（§2.6 / §12.8，与浏览器版同一套文案）
+  m.hero.dead = false;
+  const zone = m.def.zones[0];
+  m.hero.cell = { x: zone.x, y: zone.y };
+  const inZone = fakeCtx();
+  drawDefenseHud(inZone, m, layoutDefense(m, {}), {});
+  assert.ok(inZone.texts.some((t) => /英雄 Lv\d+ · .*Lv\d+-\d+/.test(t)),
+    `进了野区要报区名与等级段（画了：${inZone.texts.join(' / ')}）`);
+  // 没进区：回落到「待命 / 移动中」
+  m.hero.cell = { x: m.castle.cell.x, y: m.castle.cell.y };
+  m.hero.moving = true;
+  const outside = fakeCtx();
+  drawDefenseHud(outside, m, layoutDefense(m, {}), {});
+  assert.ok(outside.texts.some((t) => t.includes('移动中')), '没进区就该回落成移动状态');
 });
 
 test('小游戏防守闭环：放技能真的进冷却；阵亡后点「快速复活」花 50 木把人拉起来', async () => {

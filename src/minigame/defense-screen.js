@@ -7,6 +7,8 @@
 // 这一层仍然是纯函数四件套（布局 / 绘制 / 命中 / 摇杆向量），所以能在 Node 里测、也能出样张。
 import { FORTS } from '../data.js';
 import { skillKeys } from './battle.js';
+import { zoneLabel } from '../hud-model.js';
+import { zoneAt } from '../defense.js';
 
 export const DESIGN = { w: 667, h: 375 };
 export const CAPSULE = { w: 96, h: 32 };
@@ -184,14 +186,18 @@ export function drawDefenseHud(ctx, m, L, { message = null, stick = null } = {})
   text(ctx, `金 ${Math.round(m.gold)}`, L.top.x + 156, L.top.y + 15, { size: 12, color: COLORS.gold });
   text(ctx, `木 ${Math.round(m.lumber?.[0] ?? 0)}`, L.top.x + 210, L.top.y + 15, { size: 12, color: COLORS.wood });
   /**
-   * 英雄那一格（§14.3 稿 6 的英雄面板压缩成一行）：活着写等级，**阵亡写倒计时**——
-   * 阵亡时玩家最需要知道的就是「还有几秒能回来」（以前这一屏一个字都不提，
-   * 人躺在地上只能盯着不动的画面猜）。写在顶栏下面那一行：顶栏里轮次 + 预警 + 金 + 木 + 城堡
-   * 已经占满，硬塞会跟「城堡 x/y」叠字（第一版就是这么叠上去的，样张里看得见）。
+   * 英雄那一格（§14.3 稿 6 的英雄面板压缩成一行）：等级 + 状态。
+   *
+   * 状态与浏览器版**同一套**（`ui.js` 那三行）：**阵亡写倒计时**（玩家最想知道的就是还有几秒回来）、
+   * 否则人在野外区里就报「区名 + 等级段 + 掉落加成」（§2.6 / §12.8：这也是那三个字段的读取方），
+   * 没进区才回落到「移动中 / 待命」。写在顶栏下面那一行：顶栏里轮次 + 预警 + 金 + 木 + 城堡已经占满，
+   * 硬塞会跟「城堡 x/y」叠字（第一版就是这么叠上去的，样张里看得见）。
    */
   const dead = !!m.hero?.dead;
-  text(ctx, dead ? `阵亡 ${Math.ceil(m.hero.reviveTimer ?? 0)}s` : `英雄 Lv${m.hero?.level ?? 1}`,
-    L.heroLine.x, L.heroLine.y, { size: 11, color: dead ? COLORS.danger : COLORS.ink });
+  const state = dead ? `阵亡 ${Math.ceil(m.hero.reviveTimer ?? 0)}s`
+    : (zoneLabel(zoneAt(m.def, m.hero?.cell)) || (m.hero?.moving ? '移动中' : '待命'));
+  text(ctx, `英雄 Lv${m.hero?.level ?? 1} · ${state}`, L.heroLine.x, L.heroLine.y,
+    { size: 11, color: dead ? COLORS.danger : COLORS.dim });
   /**
    * 城堡血量**只写在顶栏这一行里**，不再单独占一条：`render.js` 的 drawDefense 本来就会在城堡上方
    * 画「城堡 x/y + 血条」，而相机跟人时城堡多半就在屏幕中上部——单独占一行会跟那条**正好叠在一起**
