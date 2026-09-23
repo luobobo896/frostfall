@@ -8,6 +8,7 @@ export function installFakeWx({ windowWidth = 667, windowHeight = 375, pixelRati
   const store = new Map();
   const sockets = [];
   const touchHandlers = {};
+  const lifeHandlers = {};
   /**
    * 假 canvas + 记录型 2D 上下文：Node 里没有 canvas，但大厅那一屏要真的画一帧才算验过。
    * 用 Proxy 兜住所有 `ctx.*` 调用（未实现的也记一笔），`fillText` 把文字留下来 ——
@@ -62,6 +63,8 @@ export function installFakeWx({ windowWidth = 667, windowHeight = 375, pixelRati
     onTouchMove: (fn) => { touchHandlers.move = fn; },
     onTouchEnd: (fn) => { touchHandlers.up = fn; },
     onTouchCancel: (fn) => { touchHandlers.cancel = fn; },
+    onHide: (fn) => { lifeHandlers.hide = fn; },
+    onShow: (fn) => { lifeHandlers.show = fn; },
   };
   globalThis.wx = wx;
   /** 模拟一次触摸（小游戏里是 wx 的全局触摸回调，参数形状照官方：changedTouches[{clientX,clientY,identifier}]） */
@@ -71,5 +74,7 @@ export function installFakeWx({ windowWidth = 667, windowHeight = 375, pixelRati
     fn({ touches: [{ clientX: x, clientY: y, identifier: 0 }], changedTouches: [{ clientX: x, clientY: y, identifier: 0 }] });
     return true;
   };
-  return { wx, store, sockets, fireTouch, uninstall: () => { delete globalThis.wx; } };
+  /** 模拟切后台（小游戏里是 wx.onHide） */
+  const fireHide = () => { lifeHandlers.hide?.({}); return !!lifeHandlers.hide; };
+  return { wx, store, sockets, fireTouch, fireHide, uninstall: () => { delete globalThis.wx; } };
 }

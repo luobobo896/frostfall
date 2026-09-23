@@ -62,6 +62,7 @@ if (page === 'lobby') {
     mode: 'td', map: 'map_02', difficulty: 'normal', length: 'short', hero: 'hero_ranger',
     profile: { commanderLevel: 3, reputation: 240 },
     unlocked: ['map_01', 'map_02', 'def_01'], unlockedCount: 3, canStart: true, hint: null,
+    canContinue: true, continueLabel: '继续上局',   // 有存档时右边会多这一个出口
     locked: { map_03: '声望 500', def_02: '守住边陲小镇' },
   };
   drawLobby(ctx, model, layoutLobby(w, h, model));

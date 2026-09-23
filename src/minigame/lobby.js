@@ -77,8 +77,13 @@ export function layoutLobby(w, h, model = {}) {
   });
 
   // 开始按钮：战斗场景还没接上，**按钮上就写明**（不给一个点了没反应的假按钮）
-  raw.push(btn('start', 348, 306, 296, 48,
+  // 有存档时右边再挤一个「继续上局」（§10.3：杀进程重开进度不丢）——两个都 ≥44 高
+  const startW = model.canContinue ? 190 : 296;
+  raw.push(btn('start', 348, 306, startW, 48,
     model.canStart ? '单人开局' : '单人开局（第 4 步接入）', { type: 'start' }, { disabled: !model.canStart }));
+  if (model.canContinue) {
+    raw.push(btn('continue', 546, 306, 98, 48, model.continueLabel ?? '继续上局', { type: 'continue' }));
+  }
 
   // 统一映射：设计单位 → 画布坐标（等比缩放 + 居中）。命中测试与绘制都用这一份，天然同源。
   const items = raw.map((it) => ({ ...it, ...map(it.x, it.y, it.w, it.h) }));
@@ -247,6 +252,12 @@ export function applyLobbyAction(model, action, { unlocked = [], lockedReason = 
         return next;
       }
       next.started = true;
+      return next;
+    }
+    case 'continue': {
+      // 交给 app 处理（它才知道怎么把存档装进战场）；这里只把意图记下来
+      if (!next.canContinue) { next.hint = '没有可以继续的一局'; return next; }
+      next.continueRequested = true;
       return next;
     }
     default: return model;

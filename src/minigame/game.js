@@ -12,7 +12,8 @@ import {
   towerAtSlot, update, upgradeTower, usePotion,
 } from '../match.js';
 import { createDefenseMatch, describeDefense, updateDefense } from '../defense.js';
-import { isMiniGame, onTouch, storage, viewport } from '../platform.js';
+import { isMiniGame, onHide, onTouch, storage, viewport } from '../platform.js';
+import { clearSave, hasSave, loadFromStorage, saveToStorage } from '../save.js';
 import {
   loadProfile, mapLocked, recordResult, reviveMulOf, saveProfile, startGoldOf, unlockedMaps,
 } from '../profile.js';
@@ -55,6 +56,9 @@ export function createLobbyModel(profile = loadProfile()) {
     lockedReason: locked,
     unlockedCount: new Set([...unlockedTd, ...unlockedDef]).size,
     canStart: true,
+    // §10.3「随时能停」：有存档就多给一个「继续上局」入口（浏览器版 576 行那条同源）
+    canContinue: hasSave(),
+    continueLabel: '继续上局',
     hint: null,
   };
 }
@@ -137,6 +141,7 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
       ui: { selectedSlot: null, panelSlot: null, sellArmed: false },
       extra: null,     // 结算那一下记档的收获（声望 / 升级），画面板用
       paused: false, rate: 1,
+      saveClock: 0,    // §10.3 单人局自动存档：每 5 秒一次 + 切后台补一次
     };
     applyCamera(b);
     b.model = () => ({
@@ -150,6 +155,7 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
 
   const backToLobby = () => {
     battle = null;
+    clearSave();   // 回大厅 = 主动放弃这一局（与浏览器版同一个口径：大厅不会出现「继续上局」）
     lobby = { model: { ...createLobbyModel(), ...pickLobbyKeys(lobby.model) }, layout: null };
     lobby.layout = layoutLobby(size.width, size.height, lobby.model);
   };
@@ -317,7 +323,36 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
     if (next !== lobby.model) lobby.model = next;
     lobby.layout = layoutLobby(size.width, size.height, lobby.model);
     if (action?.type === 'start' && lobby.model.canStart !== false) startMatch();
+    if (action?.type === 'continue') continueSaved();
     return action;
+  };
+
+  /**
+   * 「继续上局」：把存档读回来装进战场（§10.3 单人局无限期可恢复）。
+   * 读不出来（键在但版本/形状不对）时**不留一个点了没反应的按钮**——清掉它并说一句（§204 的口径）。
+   */
+  const continueSaved = () => {
+    const restored = loadFromStorage();
+    if (!restored) {
+      clearSave();
+      lobby.model = { ...lobby.model, canContinue: false, hint: '上一局的存档读不出来（版本或形状对不上），已清掉' };
+      lobby.layout = layoutLobby(size.width, size.height, lobby.model);
+      return null;
+    }
+    const renderer = createRenderer(canvas, { size: () => ({ w: size.width, h: size.height }) });
+    const b = {
+      m: restored, renderer, selectedTower: 'tw_arrow', message: '继续上一局', until: restored.time + 2,
+      layout: null, ui: { selectedSlot: null, panelSlot: null, sellArmed: false },
+      extra: restored.result ? {} : null, paused: false, rate: 1, saveClock: 0,
+    };
+    applyCamera(b);
+    b.model = () => ({
+      ...describeBattleModel(restored), selectedTower: b.selectedTower, paused: b.paused, rate: b.rate,
+      ui: b.ui, sheet: layoutSheet(restored, b.ui),
+    });
+    b.layout = layoutBattle(b.model());
+    battle = b;
+    return b;
   };
 
   onTouch((t) => {
@@ -330,6 +365,8 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
     tapBattle(battle, t.x, t.y);
     drawFrame();
   });
+  // 切后台 / 退出时补一笔存档（§10.3 的「随时能停」：小游戏是 wx.onHide）
+  onHide(() => { if (battle && !battle.m.result) saveToStorage(battle.m); });
 
   const drawFrame = () => {
     const { width, height } = viewport();
@@ -356,8 +393,18 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
     if (battle.paused || battle.m.result) return 0;   // 真暂停：内核一步都不走
     const steps = Math.round(seconds / TICK_STEP);
     for (let i = 0; i < steps && !battle.m.result; i += 1) update(battle.m, TICK_STEP);
+    maybeAutosave(battle, seconds);
     recordIfFinished(battle);
     return steps;
+  };
+
+  /** 自动存档（§10.3）：每 5 秒一次；已经在结算的那一局不存（§113：完结的局不该再出现「继续上局」） */
+  const maybeAutosave = (b, dt) => {
+    if (!b || b.m.result) return false;
+    b.saveClock = (b.saveClock ?? 0) + dt;
+    if (b.saveClock < 5) return false;
+    b.saveClock = 0;
+    return saveToStorage(b.m);
   };
 
   /**
@@ -376,6 +423,7 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
       unlocked: [...unlockedMaps(next, 'td'), ...unlockedMaps(next, 'defense')],
       unlockedCount: new Set([...unlockedMaps(next, 'td'), ...unlockedMaps(next, 'defense')]).size,
     };
+    clearSave();   // 一局结束就收掉存档：大厅不该再出现「继续上局」（浏览器版同源，main.js 的 maybeRecordResult）
     try { saveProfile(next); } catch { /* 存不了就只在这一次生效（§183 的提示在浏览器版那边） */ }
   };
 
