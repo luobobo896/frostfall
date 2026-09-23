@@ -1,0 +1,1664 @@
+{
+  "messageId": "QvJP3kmOXD5_717nqf2XU",
+  "brandDeviceType": 5,
+  "deviceType": 8,
+  "deviceNumber": "N26072700001",
+  "noticeType": 2,
+  "data": {
+    "msgType": 310,
+    "attrList": [
+      {
+        "id": "100000018",
+        "value": "80",
+        "valueDesc": "换电柜温度告警门限 80℃"
+      },
+      {
+        "id": "100000019",
+        "value": "75",
+        "valueDesc": "换电柜温度告警恢复门限 75℃"
+      },
+      {
+        "id": "02303001",
+        "value": "100",
+        "valueDesc": "换电柜语音音量 100"
+      },
+      {
+        "id": "02304001",
+        "value": "1",
+        "valueDesc": "换电柜满电阈值 1"
+      },
+      {
+        "id": "100000015",
+        "value": "",
+        "valueDesc": "客服热线 "
+      },
+      {
+        "id": "100000016",
+        "value": "zh-CN",
+        "valueDesc": "柜机语言 zh-CN"
+      },
+      {
+        "id": "100000017",
+        "value": "80",
+        "valueDesc": "屏幕亮度 80"
+      },
+      {
+        "id": "100000004",
+        "value": "",
+        "valueDesc": "屏幕二维码 "
+      },
+      {
+        "id": "100000001",
+        "value": "95",
+        "valueDesc": "充电下限 95"
+      },
+      {
+        "id": "100000002",
+        "value": "100",
+        "valueDesc": "充电上限 100"
+      },
+      {
+        "id": "100000003",
+        "value": "11",
+        "valueDesc": "同时充电数量 11"
+      },
+      {
+        "id": "100000005",
+        "value": "123456",
+        "valueDesc": "远程下发修改密码 123456"
+      },
+      {
+        "id": "100000006",
+        "value": "0",
+        "valueDesc": "智能引导充电开关 0"
+      },
+      {
+        "id": "100000007",
+        "value": "0",
+        "valueDesc": "充电模式 0"
+      },
+      {
+        "id": "100000008",
+        "value": "0",
+        "valueDesc": "充电功率限制模式 0"
+      },
+      {
+        "id": "100000024",
+        "value": "0",
+        "valueDesc": "充换电设置 0"
+      },
+      {
+        "id": "100000009",
+        "value": "0",
+        "valueDesc": "整柜总功率 0W"
+      },
+      {
+        "id": "100000010",
+        "value": "0",
+        "valueDesc": "加热最大功率 0W"
+      },
+      {
+        "id": "100000011",
+        "value": "0",
+        "valueDesc": "单仓充电器功率 0W"
+      },
+      {
+        "id": "100000012",
+        "value": "0",
+        "valueDesc": "自动照明开关 0"
+      },
+      {
+        "id": "100000013",
+        "value": "06:00",
+        "valueDesc": "自动照明开启时间 06:00"
+      },
+      {
+        "id": "100000014",
+        "value": "20:00",
+        "valueDesc": "自动照明关闭时间 20:00"
+      },
+      {
+        "id": "100000020",
+        "value": "5",
+        "valueDesc": "开始加热温度 5"
+      },
+      {
+        "id": "100000021",
+        "value": "10",
+        "valueDesc": "停止加热温度 10"
+      },
+      {
+        "id": "100000022",
+        "value": "35",
+        "valueDesc": "开始散热温度 35"
+      },
+      {
+        "id": "100000023",
+        "value": "30",
+        "valueDesc": "停止散热温度 30"
+      },
+      {
+        "id": "100000025",
+        "value": "20",
+        "valueDesc": "全量上报周期 20分钟"
+      },
+      {
+        "id": "100000026",
+        "value": "66.0",
+        "valueDesc": "电池激活电压 66.0V"
+      },
+      {
+        "id": "100000027",
+        "value": "2",
+        "valueDesc": "电池激活电流 2A"
+      },
+      {
+        "id": "100000029",
+        "value": "HEXUP_V",
+        "valueDesc": "电池型号解码规则 HEXUP_V"
+      },
+      {
+        "id": "100000030",
+        "value": "1",
+        "valueDesc": "换电触发方式 1"
+      },
+      {
+        "id": "100000031",
+        "value": "HEXUP",
+        "valueDesc": "运营商名称 HEXUP"
+      },
+      {
+        "id": "100000032",
+        "value": "",
+        "valueDesc": "首页 LOGO URL "
+      },
+      {
+        "id": "103000004",
+        "value": [
+          {
+            "port": "8868",
+            "host": "47.115.62.72"
+          }
+        ],
+        "valueDesc": "设备 IP 和端口 [{\"port\":\"8868\",\"host\":\"47.115.62.72\"}]"
+      },
+      {
+        "id": "103000003",
+        "value": "N26072700001",
+        "valueDesc": "设置柜机编码 N26072700001"
+      },
+      {
+        "id": "100000028",
+        "value": [
+          {
+            "mode": "normal",
+            "charV": 71.4,
+            "charA": 10
+          }
+        ],
+        "valueDesc": "充电参数配置 [{\"mode\":\"normal\",\"charV\":71.4,\"charA\":10}]"
+      },
+      {
+        "id": "100000042",
+        "value": [],
+        "valueDesc": "[]"
+      },
+      {
+        "id": "100000033",
+        "value": "0",
+        "valueDesc": "刷卡密码校验 0"
+      },
+      {
+        "id": "100000035",
+        "value": "0",
+        "valueDesc": "刷卡还电 0"
+      },
+      {
+        "id": "100000040",
+        "value": "0",
+        "valueDesc": "0"
+      },
+      {
+        "id": "100000041",
+        "value": "00",
+        "valueDesc": "00"
+      },
+      {
+        "id": "100000034",
+        "value": {
+          "card": "S50",
+          "key": "",
+          "value": ""
+        },
+        "valueDesc": "读写卡配置 {\"card\":\"S50\",\"key\":\"\",\"value\":\"\"}"
+      },
+      {
+        "id": "100000036",
+        "value": "QiZ7#q#Zx4hHJA.=",
+        "valueDesc": "蓝牙离线令牌 QiZ7#q#Zx4hHJA.="
+      },
+      {
+        "id": "100000037",
+        "value": "0",
+        "valueDesc": "0"
+      },
+      {
+        "id": "100000038",
+        "value": "150",
+        "valueDesc": "150"
+      },
+      {
+        "id": "100000039",
+        "value": "",
+        "valueDesc": ""
+      },
+      {
+        "id": "02101001",
+        "value": "",
+        "valueDesc": "GSM 基站信息 "
+      },
+      {
+        "id": "02111001",
+        "value": "",
+        "valueDesc": "换电柜经度 "
+      },
+      {
+        "id": "02112001",
+        "value": "",
+        "valueDesc": "换电柜纬度 "
+      },
+      {
+        "id": "02105001",
+        "value": "-9999",
+        "valueDesc": "GSM 信号强度 -9999"
+      },
+      {
+        "id": "02119001",
+        "value": "1",
+        "valueDesc": "换电柜启用状态 启用",
+        "extVal": "cabNode="
+      },
+      {
+        "id": "102000002",
+        "value": "2",
+        "valueDesc": "柜内可用电池数量 2"
+      },
+      {
+        "id": "102000001",
+        "value": "2",
+        "valueDesc": "柜内电池数量 2"
+      },
+      {
+        "id": "102000009",
+        "value": {},
+        "valueDesc": "各型号可用电池数量 {}"
+      },
+      {
+        "id": "02107001",
+        "value": "232.7",
+        "valueDesc": "换电柜总电压 232.7V"
+      },
+      {
+        "id": "02108001",
+        "value": "0.13",
+        "valueDesc": "换电柜总电流 0.13A"
+      },
+      {
+        "id": "02113001",
+        "value": "28",
+        "valueDesc": "换电柜温度 28"
+      },
+      {
+        "id": "02120001",
+        "value": "15.65",
+        "valueDesc": "换电柜总用电量 15.65kwh"
+      },
+      {
+        "id": "02307001",
+        "value": "0",
+        "valueDesc": "供电类型 市电"
+      },
+      {
+        "id": "101000001",
+        "value": "0",
+        "valueDesc": "加热状态 关"
+      },
+      {
+        "id": "101000002",
+        "value": "0",
+        "valueDesc": "散热状态 关"
+      },
+      {
+        "id": "02306001",
+        "value": "0",
+        "valueDesc": "照明灯状态 关"
+      },
+      {
+        "id": "02305001",
+        "value": "0.00",
+        "valueDesc": "充电器电压 0.00V"
+      },
+      {
+        "id": "102000008",
+        "value": "1",
+        "valueDesc": "后维护门状态 开"
+      },
+      {
+        "id": "101000003",
+        "value": "0",
+        "valueDesc": "0"
+      },
+      {
+        "id": "18001029",
+        "value": "0.02",
+        "valueDesc": "0.02"
+      },
+      {
+        "id": "02107002",
+        "value": "0",
+        "valueDesc": "0"
+      },
+      {
+        "id": "02108002",
+        "value": "0",
+        "valueDesc": "0"
+      },
+      {
+        "id": "18001030",
+        "value": "0",
+        "valueDesc": "0"
+      },
+      {
+        "id": "02107003",
+        "value": "0",
+        "valueDesc": "0"
+      },
+      {
+        "id": "02108003",
+        "value": "0",
+        "valueDesc": "0"
+      },
+      {
+        "id": "18001031",
+        "value": "0",
+        "valueDesc": "0"
+      },
+      {
+        "id": "02102001",
+        "value": "1",
+        "valueDesc": "换电柜状态 空闲"
+      },
+      {
+        "id": "02103001",
+        "value": "0",
+        "valueDesc": "仓门状态 关",
+        "doorId": "1"
+      },
+      {
+        "id": "02103001",
+        "value": "0",
+        "valueDesc": "仓门状态 关",
+        "doorId": "2"
+      },
+      {
+        "id": "02103001",
+        "value": "0",
+        "valueDesc": "仓门状态 关",
+        "doorId": "3"
+      },
+      {
+        "id": "02103001",
+        "value": "0",
+        "valueDesc": "仓门状态 关",
+        "doorId": "4"
+      },
+      {
+        "id": "02103001",
+        "value": "0",
+        "valueDesc": "仓门状态 关",
+        "doorId": "5"
+      },
+      {
+        "id": "02103001",
+        "value": "0",
+        "valueDesc": "仓门状态 关",
+        "doorId": "6"
+      },
+      {
+        "id": "111000004",
+        "value": "0",
+        "valueDesc": "0",
+        "doorId": "1"
+      },
+      {
+        "id": "111000004",
+        "value": "0",
+        "valueDesc": "0",
+        "doorId": "2"
+      },
+      {
+        "id": "111000004",
+        "value": "0",
+        "valueDesc": "0",
+        "doorId": "3"
+      },
+      {
+        "id": "111000004",
+        "value": "0",
+        "valueDesc": "0",
+        "doorId": "4"
+      },
+      {
+        "id": "111000004",
+        "value": "0",
+        "valueDesc": "0",
+        "doorId": "5"
+      },
+      {
+        "id": "111000004",
+        "value": "0",
+        "valueDesc": "0",
+        "doorId": "6"
+      },
+      {
+        "id": "111000005",
+        "value": "0",
+        "valueDesc": "0",
+        "doorId": "1"
+      },
+      {
+        "id": "111000005",
+        "value": "0",
+        "valueDesc": "0",
+        "doorId": "2"
+      },
+      {
+        "id": "111000005",
+        "value": "0",
+        "valueDesc": "0",
+        "doorId": "3"
+      },
+      {
+        "id": "111000005",
+        "value": "0",
+        "valueDesc": "0",
+        "doorId": "4"
+      },
+      {
+        "id": "111000005",
+        "value": "0",
+        "valueDesc": "0",
+        "doorId": "5"
+      },
+      {
+        "id": "111000005",
+        "value": "0",
+        "valueDesc": "0",
+        "doorId": "6"
+      },
+      {
+        "id": "112000007",
+        "value": "0",
+        "valueDesc": "0",
+        "doorId": "1"
+      },
+      {
+        "id": "112000007",
+        "value": "0",
+        "valueDesc": "0",
+        "doorId": "2"
+      },
+      {
+        "id": "112000007",
+        "value": "0",
+        "valueDesc": "0",
+        "doorId": "3"
+      },
+      {
+        "id": "112000007",
+        "value": "0",
+        "valueDesc": "0",
+        "doorId": "4"
+      },
+      {
+        "id": "112000007",
+        "value": "0",
+        "valueDesc": "0",
+        "doorId": "5"
+      },
+      {
+        "id": "112000007",
+        "value": "0",
+        "valueDesc": "0",
+        "doorId": "6"
+      },
+      {
+        "id": "02104001",
+        "value": "0",
+        "valueDesc": "仓内电池状态 无电池",
+        "doorId": "1"
+      },
+      {
+        "id": "02104001",
+        "value": "0",
+        "valueDesc": "仓内电池状态 无电池",
+        "doorId": "2"
+      },
+      {
+        "id": "02104001",
+        "value": "0",
+        "valueDesc": "仓内电池状态 无电池",
+        "doorId": "3"
+      },
+      {
+        "id": "02104001",
+        "value": "7",
+        "valueDesc": "仓内电池状态 待充电",
+        "doorId": "4"
+      },
+      {
+        "id": "02104001",
+        "value": "7",
+        "valueDesc": "仓内电池状态 待充电",
+        "doorId": "5"
+      },
+      {
+        "id": "02104001",
+        "value": "0",
+        "valueDesc": "仓内电池状态 无电池",
+        "doorId": "6"
+      },
+      {
+        "id": "02106001",
+        "value": "",
+        "valueDesc": "柜内电池SN ",
+        "doorId": "1"
+      },
+      {
+        "id": "02106001",
+        "value": "",
+        "valueDesc": "柜内电池SN ",
+        "doorId": "2"
+      },
+      {
+        "id": "02106001",
+        "value": "",
+        "valueDesc": "柜内电池SN ",
+        "doorId": "3"
+      },
+      {
+        "id": "02106001",
+        "value": "BT107205024XC08263811447",
+        "valueDesc": "柜内电池SN BT107205024XC08263811447",
+        "doorId": "4"
+      },
+      {
+        "id": "02106001",
+        "value": "BT107205024XC08263812470",
+        "valueDesc": "柜内电池SN BT107205024XC08263812470",
+        "doorId": "5"
+      },
+      {
+        "id": "02106001",
+        "value": "",
+        "valueDesc": "柜内电池SN ",
+        "doorId": "6"
+      },
+      {
+        "id": "02109001",
+        "value": "0",
+        "valueDesc": "电池电量 0%",
+        "doorId": "1"
+      },
+      {
+        "id": "02109001",
+        "value": "0",
+        "valueDesc": "电池电量 0%",
+        "doorId": "2"
+      },
+      {
+        "id": "02109001",
+        "value": "0",
+        "valueDesc": "电池电量 0%",
+        "doorId": "3"
+      },
+      {
+        "id": "02109001",
+        "value": "77",
+        "valueDesc": "电池电量 77%",
+        "doorId": "4"
+      },
+      {
+        "id": "02109001",
+        "value": "88",
+        "valueDesc": "电池电量 88%",
+        "doorId": "5"
+      },
+      {
+        "id": "02109001",
+        "value": "0",
+        "valueDesc": "电池电量 0%",
+        "doorId": "6"
+      },
+      {
+        "id": "02110001",
+        "value": "0",
+        "valueDesc": "电池健康度 0%",
+        "doorId": "1"
+      },
+      {
+        "id": "02110001",
+        "value": "0",
+        "valueDesc": "电池健康度 0%",
+        "doorId": "2"
+      },
+      {
+        "id": "02110001",
+        "value": "0",
+        "valueDesc": "电池健康度 0%",
+        "doorId": "3"
+      },
+      {
+        "id": "02110001",
+        "value": "100",
+        "valueDesc": "电池健康度 100%",
+        "doorId": "4"
+      },
+      {
+        "id": "02110001",
+        "value": "100",
+        "valueDesc": "电池健康度 100%",
+        "doorId": "5"
+      },
+      {
+        "id": "02110001",
+        "value": "0",
+        "valueDesc": "电池健康度 0%",
+        "doorId": "6"
+      },
+      {
+        "id": "01116001",
+        "value": "0",
+        "valueDesc": "电芯数量 0",
+        "doorId": "1"
+      },
+      {
+        "id": "01116001",
+        "value": "0",
+        "valueDesc": "电芯数量 0",
+        "doorId": "2"
+      },
+      {
+        "id": "01116001",
+        "value": "0",
+        "valueDesc": "电芯数量 0",
+        "doorId": "3"
+      },
+      {
+        "id": "01116001",
+        "value": "24",
+        "valueDesc": "电芯数量 24",
+        "doorId": "4"
+      },
+      {
+        "id": "01116001",
+        "value": "24",
+        "valueDesc": "电芯数量 24",
+        "doorId": "5"
+      },
+      {
+        "id": "01116001",
+        "value": "0",
+        "valueDesc": "电芯数量 0",
+        "doorId": "6"
+      },
+      {
+        "id": "01117001",
+        "value": "3.322",
+        "valueDesc": "电芯电压 3.322V",
+        "doorId": "4"
+      },
+      {
+        "id": "01117002",
+        "value": "3.322",
+        "valueDesc": "电芯电压 3.322V",
+        "doorId": "4"
+      },
+      {
+        "id": "01117003",
+        "value": "3.322",
+        "valueDesc": "电芯电压 3.322V",
+        "doorId": "4"
+      },
+      {
+        "id": "01117004",
+        "value": "3.322",
+        "valueDesc": "电芯电压 3.322V",
+        "doorId": "4"
+      },
+      {
+        "id": "01117005",
+        "value": "3.322",
+        "valueDesc": "电芯电压 3.322V",
+        "doorId": "4"
+      },
+      {
+        "id": "01117006",
+        "value": "3.322",
+        "valueDesc": "电芯电压 3.322V",
+        "doorId": "4"
+      },
+      {
+        "id": "01117007",
+        "value": "3.323",
+        "valueDesc": "电芯电压 3.323V",
+        "doorId": "4"
+      },
+      {
+        "id": "01117008",
+        "value": "3.322",
+        "valueDesc": "电芯电压 3.322V",
+        "doorId": "4"
+      },
+      {
+        "id": "01117009",
+        "value": "3.323",
+        "valueDesc": "电芯电压 3.323V",
+        "doorId": "4"
+      },
+      {
+        "id": "01117010",
+        "value": "3.323",
+        "valueDesc": "电芯电压 3.323V",
+        "doorId": "4"
+      },
+      {
+        "id": "01117011",
+        "value": "3.322",
+        "valueDesc": "电芯电压 3.322V",
+        "doorId": "4"
+      },
+      {
+        "id": "01117012",
+        "value": "3.32",
+        "valueDesc": "电芯电压 3.32V",
+        "doorId": "4"
+      },
+      {
+        "id": "01117013",
+        "value": "3.323",
+        "valueDesc": "电芯电压 3.323V",
+        "doorId": "4"
+      },
+      {
+        "id": "01117014",
+        "value": "3.322",
+        "valueDesc": "电芯电压 3.322V",
+        "doorId": "4"
+      },
+      {
+        "id": "01117015",
+        "value": "3.322",
+        "valueDesc": "电芯电压 3.322V",
+        "doorId": "4"
+      },
+      {
+        "id": "01117016",
+        "value": "3.322",
+        "valueDesc": "电芯电压 3.322V",
+        "doorId": "4"
+      },
+      {
+        "id": "01117017",
+        "value": "3.322",
+        "valueDesc": "电芯电压 3.322V",
+        "doorId": "4"
+      },
+      {
+        "id": "01117018",
+        "value": "3.322",
+        "valueDesc": "电芯电压 3.322V",
+        "doorId": "4"
+      },
+      {
+        "id": "01117019",
+        "value": "3.322",
+        "valueDesc": "电芯电压 3.322V",
+        "doorId": "4"
+      },
+      {
+        "id": "01117020",
+        "value": "3.322",
+        "valueDesc": "电芯电压 3.322V",
+        "doorId": "4"
+      },
+      {
+        "id": "01117021",
+        "value": "0.0",
+        "valueDesc": "电芯电压 0.0V",
+        "doorId": "4"
+      },
+      {
+        "id": "01117022",
+        "value": "0.0",
+        "valueDesc": "电芯电压 0.0V",
+        "doorId": "4"
+      },
+      {
+        "id": "01117023",
+        "value": "0.0",
+        "valueDesc": "电芯电压 0.0V",
+        "doorId": "4"
+      },
+      {
+        "id": "01117024",
+        "value": "0.0",
+        "valueDesc": "电芯电压 0.0V",
+        "doorId": "4"
+      },
+      {
+        "id": "01117001",
+        "value": "3.323",
+        "valueDesc": "电芯电压 3.323V",
+        "doorId": "5"
+      },
+      {
+        "id": "01117002",
+        "value": "3.32",
+        "valueDesc": "电芯电压 3.32V",
+        "doorId": "5"
+      },
+      {
+        "id": "01117003",
+        "value": "3.321",
+        "valueDesc": "电芯电压 3.321V",
+        "doorId": "5"
+      },
+      {
+        "id": "01117004",
+        "value": "3.324",
+        "valueDesc": "电芯电压 3.324V",
+        "doorId": "5"
+      },
+      {
+        "id": "01117005",
+        "value": "3.323",
+        "valueDesc": "电芯电压 3.323V",
+        "doorId": "5"
+      },
+      {
+        "id": "01117006",
+        "value": "3.324",
+        "valueDesc": "电芯电压 3.324V",
+        "doorId": "5"
+      },
+      {
+        "id": "01117007",
+        "value": "3.324",
+        "valueDesc": "电芯电压 3.324V",
+        "doorId": "5"
+      },
+      {
+        "id": "01117008",
+        "value": "3.324",
+        "valueDesc": "电芯电压 3.324V",
+        "doorId": "5"
+      },
+      {
+        "id": "01117009",
+        "value": "3.324",
+        "valueDesc": "电芯电压 3.324V",
+        "doorId": "5"
+      },
+      {
+        "id": "01117010",
+        "value": "3.324",
+        "valueDesc": "电芯电压 3.324V",
+        "doorId": "5"
+      },
+      {
+        "id": "01117011",
+        "value": "3.324",
+        "valueDesc": "电芯电压 3.324V",
+        "doorId": "5"
+      },
+      {
+        "id": "01117012",
+        "value": "3.322",
+        "valueDesc": "电芯电压 3.322V",
+        "doorId": "5"
+      },
+      {
+        "id": "01117013",
+        "value": "3.322",
+        "valueDesc": "电芯电压 3.322V",
+        "doorId": "5"
+      },
+      {
+        "id": "01117014",
+        "value": "3.321",
+        "valueDesc": "电芯电压 3.321V",
+        "doorId": "5"
+      },
+      {
+        "id": "01117015",
+        "value": "3.321",
+        "valueDesc": "电芯电压 3.321V",
+        "doorId": "5"
+      },
+      {
+        "id": "01117016",
+        "value": "3.321",
+        "valueDesc": "电芯电压 3.321V",
+        "doorId": "5"
+      },
+      {
+        "id": "01117017",
+        "value": "3.321",
+        "valueDesc": "电芯电压 3.321V",
+        "doorId": "5"
+      },
+      {
+        "id": "01117018",
+        "value": "3.321",
+        "valueDesc": "电芯电压 3.321V",
+        "doorId": "5"
+      },
+      {
+        "id": "01117019",
+        "value": "3.321",
+        "valueDesc": "电芯电压 3.321V",
+        "doorId": "5"
+      },
+      {
+        "id": "01117020",
+        "value": "3.321",
+        "valueDesc": "电芯电压 3.321V",
+        "doorId": "5"
+      },
+      {
+        "id": "01117021",
+        "value": "0.0",
+        "valueDesc": "电芯电压 0.0V",
+        "doorId": "5"
+      },
+      {
+        "id": "01117022",
+        "value": "0.0",
+        "valueDesc": "电芯电压 0.0V",
+        "doorId": "5"
+      },
+      {
+        "id": "01117023",
+        "value": "0.0",
+        "valueDesc": "电芯电压 0.0V",
+        "doorId": "5"
+      },
+      {
+        "id": "01117024",
+        "value": "0.0",
+        "valueDesc": "电芯电压 0.0V",
+        "doorId": "5"
+      },
+      {
+        "id": "111000001",
+        "value": "26.8",
+        "valueDesc": "仓内温度 26.8",
+        "doorId": "1"
+      },
+      {
+        "id": "111000001",
+        "value": "26.6",
+        "valueDesc": "仓内温度 26.6",
+        "doorId": "2"
+      },
+      {
+        "id": "111000001",
+        "value": "26.5",
+        "valueDesc": "仓内温度 26.5",
+        "doorId": "3"
+      },
+      {
+        "id": "111000001",
+        "value": "26.8",
+        "valueDesc": "仓内温度 26.8",
+        "doorId": "4"
+      },
+      {
+        "id": "111000001",
+        "value": "26.5",
+        "valueDesc": "仓内温度 26.5",
+        "doorId": "5"
+      },
+      {
+        "id": "111000001",
+        "value": "26.5",
+        "valueDesc": "仓内温度 26.5",
+        "doorId": "6"
+      },
+      {
+        "id": "111000002",
+        "value": "0",
+        "valueDesc": "仓内散热风扇状态 关",
+        "doorId": "1"
+      },
+      {
+        "id": "111000002",
+        "value": "0",
+        "valueDesc": "仓内散热风扇状态 关",
+        "doorId": "2"
+      },
+      {
+        "id": "111000002",
+        "value": "0",
+        "valueDesc": "仓内散热风扇状态 关",
+        "doorId": "3"
+      },
+      {
+        "id": "111000002",
+        "value": "0",
+        "valueDesc": "仓内散热风扇状态 关",
+        "doorId": "4"
+      },
+      {
+        "id": "111000002",
+        "value": "0",
+        "valueDesc": "仓内散热风扇状态 关",
+        "doorId": "5"
+      },
+      {
+        "id": "111000002",
+        "value": "0",
+        "valueDesc": "仓内散热风扇状态 关",
+        "doorId": "6"
+      },
+      {
+        "id": "02305001",
+        "value": "0.00",
+        "valueDesc": "充电器电压 0.00V",
+        "doorId": "1"
+      },
+      {
+        "id": "02305001",
+        "value": "0.00",
+        "valueDesc": "充电器电压 0.00V",
+        "doorId": "2"
+      },
+      {
+        "id": "02305001",
+        "value": "0.00",
+        "valueDesc": "充电器电压 0.00V",
+        "doorId": "3"
+      },
+      {
+        "id": "02305001",
+        "value": "0.00",
+        "valueDesc": "充电器电压 0.00V",
+        "doorId": "4"
+      },
+      {
+        "id": "02305001",
+        "value": "0.00",
+        "valueDesc": "充电器电压 0.00V",
+        "doorId": "5"
+      },
+      {
+        "id": "02305001",
+        "value": "0.00",
+        "valueDesc": "充电器电压 0.00V",
+        "doorId": "6"
+      },
+      {
+        "id": "02305002",
+        "value": "0.00",
+        "valueDesc": "充电器电流 0.00A",
+        "doorId": "1"
+      },
+      {
+        "id": "02305002",
+        "value": "0.00",
+        "valueDesc": "充电器电流 0.00A",
+        "doorId": "2"
+      },
+      {
+        "id": "02305002",
+        "value": "0.00",
+        "valueDesc": "充电器电流 0.00A",
+        "doorId": "3"
+      },
+      {
+        "id": "02305002",
+        "value": "0.00",
+        "valueDesc": "充电器电流 0.00A",
+        "doorId": "4"
+      },
+      {
+        "id": "02305002",
+        "value": "0.00",
+        "valueDesc": "充电器电流 0.00A",
+        "doorId": "5"
+      },
+      {
+        "id": "02305002",
+        "value": "0.00",
+        "valueDesc": "充电器电流 0.00A",
+        "doorId": "6"
+      },
+      {
+        "id": "02118001",
+        "value": "1",
+        "valueDesc": "仓门启用状态 启用",
+        "doorId": "1",
+        "extVal": "boxNode="
+      },
+      {
+        "id": "02118001",
+        "value": "1",
+        "valueDesc": "仓门启用状态 启用",
+        "doorId": "2",
+        "extVal": "boxNode="
+      },
+      {
+        "id": "02118001",
+        "value": "1",
+        "valueDesc": "仓门启用状态 启用",
+        "doorId": "3",
+        "extVal": "boxNode="
+      },
+      {
+        "id": "02118001",
+        "value": "1",
+        "valueDesc": "仓门启用状态 启用",
+        "doorId": "4",
+        "extVal": "boxNode="
+      },
+      {
+        "id": "02118001",
+        "value": "1",
+        "valueDesc": "仓门启用状态 启用",
+        "doorId": "5",
+        "extVal": "boxNode="
+      },
+      {
+        "id": "02118001",
+        "value": "1",
+        "valueDesc": "仓门启用状态 启用",
+        "doorId": "6",
+        "extVal": "boxNode="
+      },
+      {
+        "id": "112000005",
+        "value": "0",
+        "valueDesc": "是否满足换电标准 否",
+        "doorId": "1"
+      },
+      {
+        "id": "112000005",
+        "value": "0",
+        "valueDesc": "是否满足换电标准 否",
+        "doorId": "2"
+      },
+      {
+        "id": "112000005",
+        "value": "0",
+        "valueDesc": "是否满足换电标准 否",
+        "doorId": "3"
+      },
+      {
+        "id": "112000005",
+        "value": "1",
+        "valueDesc": "是否满足换电标准 是",
+        "doorId": "4"
+      },
+      {
+        "id": "112000005",
+        "value": "1",
+        "valueDesc": "是否满足换电标准 是",
+        "doorId": "5"
+      },
+      {
+        "id": "112000005",
+        "value": "0",
+        "valueDesc": "是否满足换电标准 否",
+        "doorId": "6"
+      },
+      {
+        "id": "111000003",
+        "value": "0",
+        "valueDesc": "0",
+        "doorId": "1"
+      },
+      {
+        "id": "111000003",
+        "value": "0",
+        "valueDesc": "0",
+        "doorId": "2"
+      },
+      {
+        "id": "111000003",
+        "value": "0",
+        "valueDesc": "0",
+        "doorId": "3"
+      },
+      {
+        "id": "111000003",
+        "value": "2",
+        "valueDesc": "2",
+        "doorId": "4"
+      },
+      {
+        "id": "111000003",
+        "value": "2",
+        "valueDesc": "2",
+        "doorId": "5"
+      },
+      {
+        "id": "111000003",
+        "value": "0",
+        "valueDesc": "0",
+        "doorId": "6"
+      },
+      {
+        "id": "112000006",
+        "value": "0",
+        "valueDesc": "0",
+        "doorId": "1"
+      },
+      {
+        "id": "112000006",
+        "value": "0",
+        "valueDesc": "0",
+        "doorId": "2"
+      },
+      {
+        "id": "112000006",
+        "value": "0",
+        "valueDesc": "0",
+        "doorId": "3"
+      },
+      {
+        "id": "112000006",
+        "value": "0",
+        "valueDesc": "0",
+        "doorId": "4"
+      },
+      {
+        "id": "112000006",
+        "value": "0",
+        "valueDesc": "0",
+        "doorId": "5"
+      },
+      {
+        "id": "112000006",
+        "value": "0",
+        "valueDesc": "0",
+        "doorId": "6"
+      },
+      {
+        "id": "01118001",
+        "value": "0",
+        "valueDesc": "电池PCB温度 0度",
+        "doorId": "1"
+      },
+      {
+        "id": "01118001",
+        "value": "0",
+        "valueDesc": "电池PCB温度 0度",
+        "doorId": "2"
+      },
+      {
+        "id": "01118001",
+        "value": "0",
+        "valueDesc": "电池PCB温度 0度",
+        "doorId": "3"
+      },
+      {
+        "id": "01118001",
+        "value": "26",
+        "valueDesc": "电池PCB温度 26度",
+        "doorId": "4"
+      },
+      {
+        "id": "01118001",
+        "value": "25",
+        "valueDesc": "电池PCB温度 25度",
+        "doorId": "5"
+      },
+      {
+        "id": "01118001",
+        "value": "0",
+        "valueDesc": "电池PCB温度 0度",
+        "doorId": "6"
+      },
+      {
+        "id": "01119001",
+        "value": "0",
+        "valueDesc": "电芯温度 0度",
+        "doorId": "1"
+      },
+      {
+        "id": "01119001",
+        "value": "0",
+        "valueDesc": "电芯温度 0度",
+        "doorId": "2"
+      },
+      {
+        "id": "01119001",
+        "value": "0",
+        "valueDesc": "电芯温度 0度",
+        "doorId": "3"
+      },
+      {
+        "id": "01119001",
+        "value": "26",
+        "valueDesc": "电芯温度 26度",
+        "doorId": "4"
+      },
+      {
+        "id": "01119001",
+        "value": "25",
+        "valueDesc": "电芯温度 25度",
+        "doorId": "5"
+      },
+      {
+        "id": "01119001",
+        "value": "0",
+        "valueDesc": "电芯温度 0度",
+        "doorId": "6"
+      },
+      {
+        "id": "01120001",
+        "value": "0",
+        "valueDesc": "电池环境温度 0度",
+        "doorId": "1"
+      },
+      {
+        "id": "01120001",
+        "value": "0",
+        "valueDesc": "电池环境温度 0度",
+        "doorId": "2"
+      },
+      {
+        "id": "01120001",
+        "value": "0",
+        "valueDesc": "电池环境温度 0度",
+        "doorId": "3"
+      },
+      {
+        "id": "01120001",
+        "value": "27",
+        "valueDesc": "电池环境温度 27度",
+        "doorId": "4"
+      },
+      {
+        "id": "01120001",
+        "value": "27",
+        "valueDesc": "电池环境温度 27度",
+        "doorId": "5"
+      },
+      {
+        "id": "01120001",
+        "value": "0",
+        "valueDesc": "电池环境温度 0度",
+        "doorId": "6"
+      },
+      {
+        "id": "02116001",
+        "value": "0",
+        "valueDesc": "总放电量 0Ah",
+        "doorId": "1"
+      },
+      {
+        "id": "02116001",
+        "value": "0",
+        "valueDesc": "总放电量 0Ah",
+        "doorId": "2"
+      },
+      {
+        "id": "02116001",
+        "value": "0",
+        "valueDesc": "总放电量 0Ah",
+        "doorId": "3"
+      },
+      {
+        "id": "02116001",
+        "value": "0",
+        "valueDesc": "总放电量 0Ah",
+        "doorId": "4"
+      },
+      {
+        "id": "02116001",
+        "value": "0",
+        "valueDesc": "总放电量 0Ah",
+        "doorId": "5"
+      },
+      {
+        "id": "02116001",
+        "value": "0",
+        "valueDesc": "总放电量 0Ah",
+        "doorId": "6"
+      },
+      {
+        "id": "02117001",
+        "value": "0",
+        "valueDesc": "总充电量 0Ah",
+        "doorId": "1"
+      },
+      {
+        "id": "02117001",
+        "value": "0",
+        "valueDesc": "总充电量 0Ah",
+        "doorId": "2"
+      },
+      {
+        "id": "02117001",
+        "value": "0",
+        "valueDesc": "总充电量 0Ah",
+        "doorId": "3"
+      },
+      {
+        "id": "02117001",
+        "value": "0",
+        "valueDesc": "总充电量 0Ah",
+        "doorId": "4"
+      },
+      {
+        "id": "02117001",
+        "value": "0",
+        "valueDesc": "总充电量 0Ah",
+        "doorId": "5"
+      },
+      {
+        "id": "02117001",
+        "value": "0",
+        "valueDesc": "总充电量 0Ah",
+        "doorId": "6"
+      },
+      {
+        "id": "02114001",
+        "value": "0",
+        "valueDesc": "电池充电时长 0分钟",
+        "doorId": "1"
+      },
+      {
+        "id": "02114001",
+        "value": "0",
+        "valueDesc": "电池充电时长 0分钟",
+        "doorId": "2"
+      },
+      {
+        "id": "02114001",
+        "value": "0",
+        "valueDesc": "电池充电时长 0分钟",
+        "doorId": "3"
+      },
+      {
+        "id": "02114001",
+        "value": "0",
+        "valueDesc": "电池充电时长 0分钟",
+        "doorId": "4"
+      },
+      {
+        "id": "02114001",
+        "value": "0",
+        "valueDesc": "电池充电时长 0分钟",
+        "doorId": "5"
+      },
+      {
+        "id": "02114001",
+        "value": "0",
+        "valueDesc": "电池充电时长 0分钟",
+        "doorId": "6"
+      },
+      {
+        "id": "01115001",
+        "value": "0",
+        "valueDesc": "电池容量 0Ah",
+        "doorId": "1"
+      },
+      {
+        "id": "01115001",
+        "value": "0",
+        "valueDesc": "电池容量 0Ah",
+        "doorId": "2"
+      },
+      {
+        "id": "01115001",
+        "value": "0",
+        "valueDesc": "电池容量 0Ah",
+        "doorId": "3"
+      },
+      {
+        "id": "01115001",
+        "value": "31.62",
+        "valueDesc": "电池容量 31.62Ah",
+        "doorId": "4"
+      },
+      {
+        "id": "01115001",
+        "value": "36.48",
+        "valueDesc": "电池容量 36.48Ah",
+        "doorId": "5"
+      },
+      {
+        "id": "01115001",
+        "value": "0",
+        "valueDesc": "电池容量 0Ah",
+        "doorId": "6"
+      },
+      {
+        "id": "112000002",
+        "value": "0",
+        "valueDesc": "电池循环次数 0",
+        "doorId": "1"
+      },
+      {
+        "id": "112000002",
+        "value": "0",
+        "valueDesc": "电池循环次数 0",
+        "doorId": "2"
+      },
+      {
+        "id": "112000002",
+        "value": "0",
+        "valueDesc": "电池循环次数 0",
+        "doorId": "3"
+      },
+      {
+        "id": "112000002",
+        "value": "0",
+        "valueDesc": "电池循环次数 0",
+        "doorId": "4"
+      },
+      {
+        "id": "112000002",
+        "value": "0",
+        "valueDesc": "电池循环次数 0",
+        "doorId": "5"
+      },
+      {
+        "id": "112000002",
+        "value": "0",
+        "valueDesc": "电池循环次数 0",
+        "doorId": "6"
+      },
+      {
+        "id": "01111001",
+        "value": "0.00",
+        "valueDesc": "电池电压 0.00V",
+        "doorId": "1"
+      },
+      {
+        "id": "01111001",
+        "value": "0.00",
+        "valueDesc": "电池电压 0.00V",
+        "doorId": "2"
+      },
+      {
+        "id": "01111001",
+        "value": "0.00",
+        "valueDesc": "电池电压 0.00V",
+        "doorId": "3"
+      },
+      {
+        "id": "01111001",
+        "value": "79.73",
+        "valueDesc": "电池电压 79.73V",
+        "doorId": "4"
+      },
+      {
+        "id": "01111001",
+        "value": "79.73",
+        "valueDesc": "电池电压 79.73V",
+        "doorId": "5"
+      },
+      {
+        "id": "01111001",
+        "value": "0.00",
+        "valueDesc": "电池电压 0.00V",
+        "doorId": "6"
+      },
+      {
+        "id": "01112001",
+        "value": "0.00",
+        "valueDesc": "电池电流 0.00A",
+        "doorId": "1"
+      },
+      {
+        "id": "01112001",
+        "value": "0.00",
+        "valueDesc": "电池电流 0.00A",
+        "doorId": "2"
+      },
+      {
+        "id": "01112001",
+        "value": "0.00",
+        "valueDesc": "电池电流 0.00A",
+        "doorId": "3"
+      },
+      {
+        "id": "01112001",
+        "value": "0.00",
+        "valueDesc": "电池电流 0.00A",
+        "doorId": "4"
+      },
+      {
+        "id": "01112001",
+        "value": "0.00",
+        "valueDesc": "电池电流 0.00A",
+        "doorId": "5"
+      },
+      {
+        "id": "01112001",
+        "value": "0.00",
+        "valueDesc": "电池电流 0.00A",
+        "doorId": "6"
+      }
+    ],
+    "devId": "N26072700001",
+    "txnNo": "493265573380493312",
+    "time": 1790134877133,
+    "isFull": 1
+  },
+  "timestamp": 1790134878618
+}
