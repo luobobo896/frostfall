@@ -845,3 +845,25 @@ test('小游戏长局：大厅选「长局 30 波」之后真的按 30 波开（
       `顶栏要按长局写波次（画了：${app.canvas.record.texts.filter((t) => t.includes('波')).slice(-3).join(' / ')}）`);
   } finally { fake.uninstall(); }
 });
+
+test('小游戏药品键：小药在冷却时改用包里那瓶没冷却的（与浏览器版同一条顺序）', async () => {
+  await import('../tools/build-minigame.mjs');
+  const fake = installFakeWx();
+  try {
+    const require = createRequire(import.meta.url);
+    const app = loadFreshApp(require, 18);
+    app.startMatch();
+    const m = app.match();
+    m.bag = { pot_small: 1, pot_large: 1 };
+    m.potionCd = { pot_small: 5 };   // 小药刚喝过
+    m.hero.hp = 100;
+    app.drawFrame();
+    const potion = app.layout().byId.potion;
+    app.tap(potion.x + potion.w / 2, potion.y + potion.h / 2);
+    app.drawFrame();
+    assert.equal(m.bag.pot_large, 0, '该用掉那瓶没冷却的大药（以前会被小药挡死）');
+    assert.equal(m.bag.pot_small, 1, '小药还在（它确实在冷却）');
+    assert.ok(app.canvas.record.texts.some((t) => t === '用了 大治疗药剂'),
+      `提示要写用的是哪一瓶（画了：${app.canvas.record.texts.filter((t) => t.startsWith('用了')).slice(-2).join(' / ')}）`);
+  } finally { fake.uninstall(); }
+});

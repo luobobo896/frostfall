@@ -4,7 +4,9 @@
 // `index.html` + `styles.css` + `ui.js` 那套 DOM+CSS。这一步做的是把**平台差异**与**打包**解决掉，
 // 并把不依赖 DOM 的那一大半（内核、数据表、存档、联机协议、平台适配）先在小游戏里跑通。
 // 界面换 Canvas 是第 3 步，见 docs/minigame-port.md。
-import { DEFENSE_MAPS, FORTS, MAPS, TICK_STEP, TOWERS, WAVES, normalizeChoice } from '../data.js';
+import {
+  DEFENSE_MAPS, FORTS, MAPS, SHOP_ITEMS, TICK_STEP, TOWERS, WAVES, normalizeChoice,
+} from '../data.js';
 import {
   buildTower, buyItem, castSkill, craftEquipment, createMatch, describe as describeMatch, equipItem,
   enhanceItem, potionCount, repairTower, reviveNow, sellItem, sellTower, setPriority, skillLevel,
@@ -395,9 +397,15 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
         return action;
       }
       case 'potion': {
-        const id = b.m.bag.pot_small ? 'pot_small' : (b.m.bag.pot_large ? 'pot_large' : null);
-        const ok = id ? usePotion(b.m, id) : false;
-        note(b, ok ? '用药' : '药品冷却中或没有药');
+        /**
+         * 与浏览器版同一条（`ui.js` 的 `btn.onclick`）：**按包里的顺序挨个试**，第一个放得出来的就用。
+         * 以前这边写死了「先小药、没有才大药」——小药在冷却、大药明明能用时会被小药挡住
+         * （玩家只能干等，而包里躺着一瓶没进冷却的大药）。
+         */
+        const ids = Object.keys(b.m.bag ?? {}).filter((k) => b.m.bag[k] > 0);
+        const used = ids.find((id) => usePotion(b.m, id)) ?? null;
+        const name = SHOP_ITEMS.find((s) => s.id === used)?.name;
+        note(b, used ? `用了 ${name ?? '药品'}` : '药品冷却中或没有药');
         return action;
       }
       case 'early': {
