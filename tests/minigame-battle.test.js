@@ -727,3 +727,58 @@ test('小游戏 TD：阵亡时技能排换成「快速复活」、右上角写�
     assert.ok(app.layout().byId['skill-0'], '复活之后技能排回来');
   } finally { fake.uninstall(); }
 });
+
+test('小游戏连打两局：第二局状态是新的、两局各记一次档、大厅战绩跟着涨', async () => {
+  await import('../tools/build-minigame.mjs');
+  const fake = installFakeWx();
+  try {
+    const require = createRequire(import.meta.url);
+    const app = loadFreshApp(require, 15);
+    const tapBtn = (id) => {
+      const b = app.layout().byId[id];
+      assert.ok(b, `HUD 上找不到 ${id}`);
+      return app.tap(b.x + b.w / 2, b.y + b.h / 2);
+    };
+    /** 把这一局直接推成胜利（真打完 12 波要七八分钟，这里只要「结果那一下」的时序） */
+    const winNow = (m) => {
+      m.time = 400;
+      m.stats.kills = 40;
+      m.result = 'win';
+      app.drawFrame();
+    };
+    // 战斗中 `getModel()` 是战场模型（不带档案），所以档案从**落盘那一份**读
+    const saved = () => JSON.parse(globalThis.wx.getStorageSync('frostfall:profile') || '{}');
+
+    app.startMatch();
+    const m1 = app.match();
+    // 先把引导跳掉（不然第二局还会挂——那是**对的**：没人教过他）；跳掉之后就该不再挂（§153）
+    app.drawFrame();
+    tapBtn('tutorialSkip');
+    app.drawFrame();
+    assert.equal(app.getModel().tutorial, null, '跳过之后第一局也不该再挂引导');
+    winNow(m1);
+    const rep1 = saved().reputation;
+    assert.ok(rep1 > 0, `第一局要记档（声望 ${rep1}）`);
+
+    // 结果面板上的出口：这一格在结算时变成「再开一局」
+    assert.ok(app.layout().byId.restart, '结算时底排要有「再开一局」');
+    tapBtn('restart');
+    const m2 = app.match();
+    assert.notEqual(m2, m1, '第二局是**新的**一局对象');
+    assert.equal(m2.time, 0, '第二局从 0 开始');
+    assert.ok(m2.gold >= 200, `第二局金币要回到开局值（实际 ${m2.gold}）`);
+    assert.equal(m2.mapId, m1.mapId, '没换图就还是同一张');
+    assert.ok(!m2.result, '第二局没有上一局的结算');
+    assert.equal(app.getModel().tutorial, null, '第一局看完引导之后，第二局不再挂（§153）');
+
+    // 第二局也打完：声望要再涨一次（一局记一次，§188），并且大厅战绩变成 2 局
+    winNow(m2);
+    const rep2 = saved().reputation;
+    assert.ok(rep2 > rep1, `第二局也要记档（${rep1} → ${rep2}）`);
+    tapBtn('lobby');
+    assert.equal(app.screen(), 'lobby');
+    const card = app.layout().byId[`map-${m1.mapId}`].meta;
+    assert.match(card, /通关 2\/2/, `大厅卡面要写两局都通关（实际「${card}」）`);
+    assert.equal(saved().clears[m1.mapId].clears, 2, '档案里那张图该记两局');
+  } finally { fake.uninstall(); }
+});
