@@ -7,8 +7,8 @@
 import { DEFENSE_MAPS, MAPS, TICK_STEP, normalizeChoice } from '../data.js';
 import {
   buildTower, buyItem, castSkill, craftEquipment, createMatch, describe as describeMatch, equipItem,
-  enhanceItem, potionCount, repairTower, sellItem, sellTower, setPriority, skillLevel, startWaveEarly,
-  towerAtSlot, update, upgradeTower, usePotion,
+  enhanceItem, potionCount, repairTower, reviveNow, sellItem, sellTower, setPriority, skillLevel,
+  startWaveEarly, towerAtSlot, update, upgradeTower, usePotion,
 } from '../match.js';
 import { isMiniGame, onHide, onTouch, storage, viewport } from '../platform.js';
 import { clearSave, hasSave, loadFromStorage, saveToStorage } from '../save.js';
@@ -33,7 +33,7 @@ import {
 import { applyLobbyAction, drawLobby, hitTestLobby, layoutLobby } from './lobby.js';
 import {
   DESIGN, drawBattleHud, drawResult, drawSheet, hitTestBattle, hitTestSheet,
-  layoutBattle, layoutResult, layoutSheet,
+  layoutBattle, layoutResult, layoutSheet, skillKeys,
 } from './battle.js';
 
 export const version = '0.1.0';
@@ -450,6 +450,12 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
       case 'repairCastle': {
         const ok = repairCastle(b.m);
         note(b, ok ? '城堡已修复' : '金币不足或城堡已满血');
+        return action;
+      }
+      case 'revive': {
+        // §7.6 快速复活（50 木材）：浏览器版这条只有键盘 `r`（手机上根本够不着），小游戏补了按钮
+        const ok = reviveNow(b.m);
+        note(b, ok ? '快速复活' : '木材不够或没阵亡', 1.6);
         return action;
       }
       case 'fort':
@@ -935,19 +941,8 @@ const describeBattleModel = (m) => ({
   // 底部那排要显示的数量：药品格数（§5.5.3：共 3 格）与背包件数
   potionCount: potionCount(m),
   bagCount: m.inventory?.length ?? 0,
-  /**
-   * 技能键：**名字 / 等级 / 冷却都走内核那一个出口**（与浏览器版 `ui.js` 的 `renderSkills` 同一套：
-   * `hero.def.skills` + `thirdSkill`、`skillUnlocked`、`skillCd`、`skillLevel(m, def)`）。
-   *
-   * 小游戏这边以前只画两个写死的「技能 1 / 技能 2」——于是商店里卖的**技能书·秘传
-   * 把第三个技能解锁了，玩家却找不到那个按钮**（买了等于白买，界面上一个字都没提）。
-   */
-  skills: [...m.hero.def.skills, m.hero.def.thirdSkill].filter(Boolean).map((def, i) => ({
-    name: def.name,
-    locked: !m.hero.skillUnlocked[i],
-    cd: m.hero.skillCd?.[i] ?? 0,
-    lv: skillLevel(m, def),
-  })),
+  // 技能键：名字 / 等级 / 冷却（`battle.js` 的 `skillKeys`，TD 与防守共用一份来源，§231）
+  skills: skillKeys(m),
 });
 
 /** 回大厅时保留玩家刚选的模式/地图/难度/英雄（大厅的状态在进局那一刻被 Battle 接管了） */

@@ -12,7 +12,8 @@ import {
 } from '../data.js';
 import { attackHint, resultPanelModel, shopRows, wavePreview } from '../hud-model.js';
 import {
-  TOWER_REPAIR_GOLD, craftableSlots, enhanceCostOf, potionCount, shopPriceOf, towerStatsAt, upgradeCost,
+  TOWER_REPAIR_GOLD, craftableSlots, enhanceCostOf, potionCount, shopPriceOf, skillLevel, towerStatsAt,
+  upgradeCost,
 } from '../match.js';
 
 export const DESIGN = { w: 667, h: 375 };
@@ -58,6 +59,19 @@ const text = (ctx, str, x, y, { size = 12, color = COLORS.ink, weight = '', alig
 };
 
 const item = (id, x, y, w, h, label, action, extra = {}) => ({ id, x, y, w, h, label, action, ...extra });
+
+/**
+ * 技能键的**数据**（名字 / 解锁 / 冷却 / 等级）：TD 与防守两套 HUD 共用这一份来源——
+ * 全部取内核那几个出口（`hero.def.skills` + `thirdSkill`、`skillUnlocked`、`skillCd`、`skillLevel`），
+ * 与浏览器版 `ui.js` 的 `renderSkills` 同一套。两边各写一遍的话，
+ * 「买了技能书、第三颗键却没出现」那种事就会在另一边再犯一次（§231）。
+ */
+export const skillKeys = (m) => [...m.hero.def.skills, m.hero.def.thirdSkill].filter(Boolean).map((def, i) => ({
+  name: def.name,
+  locked: !m.hero.skillUnlocked[i],
+  cd: m.hero.skillCd?.[i] ?? 0,
+  lv: skillLevel(m, def),
+}));
 
 /**
  * 把一句话裁到给定宽度（不够就加省略号）：HUD 上那几行文案的长度取决于**数据表**

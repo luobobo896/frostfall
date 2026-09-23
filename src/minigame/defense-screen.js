@@ -6,6 +6,7 @@
 //   ③ HUD 换成轮次 / 城堡血 / 预警倒计时（TD 那套波次条在这里没有意义，§115 的口径）。
 // 这一层仍然是纯函数四件套（布局 / 绘制 / 命中 / 摇杆向量），所以能在 Node 里测、也能出样张。
 import { FORTS } from '../data.js';
+import { skillKeys } from './battle.js';
 
 export const DESIGN = { w: 667, h: 375 };
 export const CAPSULE = { w: 96, h: 32 };
@@ -14,6 +15,13 @@ export const CAPSULE = { w: 96, h: 32 };
  * 点它回城（与「回城」按钮共用 30 秒冷却）。位置挑在右侧那排按钮的左边、倍速/暂停下面那块空地。
  */
 export const MINIMAP = { x: 405, y: 60, w: 150, h: 112 };
+/**
+ * 技能/复活那一排（§1.9.1 的「右下技能」）：底部中间偏右，手指够得着、又不压摇杆。
+ * 76×48、间距 24（§1.9.2 的热区与按钮间距下限），三个技能正好 260..536。
+ */
+export const SKILL_BAR = { x: 260, y: 315, w: 76, h: 48, gap: 24 };
+/** §7.6 快速复活的价格（与内核 `reviveNow` 同一个数） */
+export const REVIVE_LUMBER = 50;
 export const STICK = {
   radius: 64,        // 摇杆推满的半径（§1.9.1 的 60-72pt，取中）
   deadZone: 0.25,    // 死区：小于它算没推（与 defense.js 的 steerGoal 门槛同源）
@@ -123,11 +131,30 @@ export function layoutDefense(m, model = {}) {
    */
   items.push(item('minimap', MINIMAP.x, MINIMAP.y, MINIMAP.w, MINIMAP.h, '',
     { type: 'teleport' }, { disabled: m.hero?.teleportCd > 0 || m.hero?.dead }));
+  /**
+   * §1.9.1 的「右下技能」：防守的主操作是摇杆，但英雄的主动技照样要能放（浏览器版底部右侧那一排）。
+   * 小游戏这一屏以前**一颗技能键都没有**——于是防守局里技能是死的（买了技能书更看不出区别）。
+   * 阵亡时换成一颗「快速复活 · 50 木」（§7.6）：那时本来也放不了技能，而复活是唯一想做的事。
+   */
+  if (m.hero?.dead) {
+    const wood = m.lumber?.[0] ?? 0;
+    items.push(item('revive', SKILL_BAR.x, SKILL_BAR.y, SKILL_BAR.w * 3 + SKILL_BAR.gap * 2, SKILL_BAR.h,
+      `快速复活 · ${REVIVE_LUMBER} 木`, { type: 'revive' }, { disabled: wood < REVIVE_LUMBER }));
+  } else {
+    skillKeys(m).forEach((sk, i) => {
+      items.push(item(`skill-${i}`, SKILL_BAR.x + i * (SKILL_BAR.w + SKILL_BAR.gap), SKILL_BAR.y, SKILL_BAR.w, SKILL_BAR.h,
+        sk.name ?? `技能 ${i + 1}`, { type: 'skill', index: i },
+        { disabled: !!sk.locked || sk.cd > 0, sub: sk.cd > 0 ? `${Math.ceil(sk.cd)}s` : (sk.lv ? `Lv${sk.lv}` : '') }));
+    });
+  }
   return {
     w: DESIGN.w, h: DESIGN.h,
     capsule: { x: DESIGN.w - CAPSULE.w - 8, y: 6, w: CAPSULE.w, h: CAPSULE.h },
     top: { x: 12, y: 8, w: 356, h: 30 },
     minimap: MINIMAP,
+    // 英雄那一格（等级 / 阵亡倒计时）：顶栏已经挤满（轮次 + 预警 + 金 + 木 + 城堡），
+    // 所以它写在顶栏下面那一行的左边——右边留给小地图（405 起）
+    heroLine: { x: 22, y: 48 },
     items,
     byId: Object.fromEntries(items.map((it) => [it.id, it])),
     stick: stickBase(model),
@@ -157,6 +184,15 @@ export function drawDefenseHud(ctx, m, L, { message = null, stick = null } = {})
   text(ctx, `金 ${Math.round(m.gold)}`, L.top.x + 156, L.top.y + 15, { size: 12, color: COLORS.gold });
   text(ctx, `木 ${Math.round(m.lumber?.[0] ?? 0)}`, L.top.x + 210, L.top.y + 15, { size: 12, color: COLORS.wood });
   /**
+   * 英雄那一格（§14.3 稿 6 的英雄面板压缩成一行）：活着写等级，**阵亡写倒计时**——
+   * 阵亡时玩家最需要知道的就是「还有几秒能回来」（以前这一屏一个字都不提，
+   * 人躺在地上只能盯着不动的画面猜）。写在顶栏下面那一行：顶栏里轮次 + 预警 + 金 + 木 + 城堡
+   * 已经占满，硬塞会跟「城堡 x/y」叠字（第一版就是这么叠上去的，样张里看得见）。
+   */
+  const dead = !!m.hero?.dead;
+  text(ctx, dead ? `阵亡 ${Math.ceil(m.hero.reviveTimer ?? 0)}s` : `英雄 Lv${m.hero?.level ?? 1}`,
+    L.heroLine.x, L.heroLine.y, { size: 11, color: dead ? COLORS.danger : COLORS.ink });
+  /**
    * 城堡血量**只写在顶栏这一行里**，不再单独占一条：`render.js` 的 drawDefense 本来就会在城堡上方
    * 画「城堡 x/y + 血条」，而相机跟人时城堡多半就在屏幕中上部——单独占一行会跟那条**正好叠在一起**
    * （样张里一眼可见）。顶栏这一行则是固定的，人跑多远都看得见。
@@ -172,10 +208,13 @@ export function drawDefenseHud(ctx, m, L, { message = null, stick = null } = {})
     ctx.strokeStyle = on ? COLORS.accent : COLORS.panelLine;
     ctx.lineWidth = on ? 2 : 1;
     ctx.stroke();
-    text(ctx, it.label, it.x + it.w / 2, it.y + it.h / 2, {
+    // 有副标就两行写（技能键的「名字 + Lv/冷却秒数」），没有副标的键与以前一模一样
+    const cx = it.x + it.w / 2, cy = it.y + it.h / 2;
+    text(ctx, it.label, cx, it.sub ? cy - 9 : cy, {
       size: it.label.length > 6 ? 11 : 12, align: 'center',
       color: it.disabled ? COLORS.dim : COLORS.ink, weight: 'bold',
     });
+    if (it.sub) text(ctx, it.sub, cx, cy + 11, { size: 10, align: 'center', color: COLORS.dim });
   }
 
   // 摇杆：底座 + 推杆（浮动模式底座就在手指落点，所以位置由调用方给）

@@ -8,10 +8,12 @@ import { join } from 'node:path';
 
 import { installFakeWx } from '../tools/fake-wx.mjs';
 import {
-  DESIGN, MINIMAP, STICK, hitTestDefense, inStickZone, layoutDefense, layoutFortSheet, stickBase, stickVector,
+  DESIGN, MINIMAP, REVIVE_LUMBER, SKILL_BAR, STICK, drawDefenseHud, hitTestDefense, inStickZone,
+  layoutDefense, layoutFortSheet, stickBase, stickVector,
 } from '../src/minigame/defense-screen.js';
 import { createDefenseMatch } from '../src/defense.js';
 import { FORTS } from '../src/data.js';
+import { gridDist } from '../src/core.js';
 
 const OUT = mkdtempSync(join(tmpdir(), 'ff-mini-defense-'));
 process.env.FF_MINIGAME_OUT = OUT;
@@ -24,7 +26,46 @@ const loadFreshApp = (require, n) => {
   return globalThis.__frostfallLobby;
 };
 
+/**
+ * 找一块**战场空地**：x 落在「固定档有效区」与「浮动档有效区」之间那道夹缝里
+ * （0.45×667 = 300 到 0.5×667 = 333.5），y 在下半屏；不在任何 HUD 键上，也离工事位与基地 ≥2 格。
+ * 用同一个点在两种档位各点一次，才能干净地量出「有效区变了」这件事。
+ */
+const fieldPoint = (app, m) => {
+  const r = app.renderer();
+  const L = app.layout();
+  for (let y = 200; y < 310; y += 5) {
+    for (let x = 305; x <= 330; x += 5) {
+      if (hitTestDefense(L, x, y)) continue;
+      const c = r.toGrid(x, y);
+      if (c.x < 0 || c.y < 0 || c.x >= m.grid.w || c.y >= m.grid.h) continue;
+      if (m.def.fortSlots.some((s) => gridDist(s, c) <= 2)) continue;
+      if (gridDist(m.castle.cell, c) <= 2) continue;
+      return { x, y };
+    }
+  }
+  throw new Error('这块屏上找不到一块战场空地');
+};
+
 const base = () => ({ x: 100, y: 300, r: STICK.radius, floating: false });
+
+/** 记录型 ctx：够断言「这一帧画了什么字」 */
+const fakeCtx = () => {
+  const texts = [];
+  const state = {};
+  return new Proxy(state, {
+    get(t, p) {
+      if (p === 'texts') return texts;
+      if (p in state) return state[p];
+      return (...args) => {
+        if (p === 'fillText') texts.push(String(args[0]));
+        if (p === 'measureText') return { width: String(args[0] ?? '').length * 6 };
+        return undefined;
+      };
+    },
+    set(t, p, v) { state[p] = v; return true; },
+  });
+};
 
 test('小游戏摇杆：死区内不动、推满夹紧、方向单位化（与 joystick.js 同一套规则）', () => {
   const b = base();
@@ -171,11 +212,12 @@ test('小游戏防守：摇杆切「浮动」之后左半屏都归摇杆、底�
     tapBtn('start');
     const m = app.match();
 
-    // 固定档（默认）：x=320 已经在「左下 45%」（0.45 × 667 = 300）之外，这一下不归摇杆
-    fake.fireTouch(320, 320, 'down');
+    // 固定档（默认）：这一块在「左下 45%」（0.45 × 667 = 300）之外，所以不归摇杆，是「点地移动」
+    const p = fieldPoint(app, m);
+    fake.fireTouch(p.x, p.y, 'down');
     assert.equal(app.getModel().stick.active, false, '固定档下 45% 之外不该归摇杆');
-    fake.fireTouch(320, 320, 'up');
-    assert.equal(m.hero.path.length > 0, true, '那一下仍然是「点地移动」');
+    assert.equal(app.tap(p.x, p.y).type, 'move', '那一下仍然是「点地移动」');
+    fake.fireTouch(p.x, p.y, 'up');
 
     // 切浮动：设置落盘 + 面板读数跟着变
     tapBtn('pause');
@@ -186,16 +228,16 @@ test('小游戏防守：摇杆切「浮动」之后左半屏都归摇杆、底�
     tapSheet('resume');
 
     // 浮动档：左半屏（50%）都归摇杆，而且**底座跟手指**
-    fake.fireTouch(320, 320, 'down');
+    fake.fireTouch(p.x, p.y, 'down');
     const st = app.getModel().stick;
     assert.equal(st.active, true, '浮动档下左半屏该归摇杆');
-    assert.equal(Math.round(st.origin.x), 320, '浮动底座要跟到手指那一点');
-    assert.equal(Math.round(st.origin.y), 320);
+    assert.equal(Math.round(st.origin.x), p.x, '浮动底座要跟到手指那一点');
+    assert.equal(Math.round(st.origin.y), p.y);
     const from = { ...m.hero.cell };
-    fake.fireTouch(420, 320, 'move');
+    fake.fireTouch(p.x + 100, p.y, 'move');
     app.tick(4);
     assert.notDeepEqual(m.hero.cell, from, `浮动摇杆推着也该走（还在 ${JSON.stringify(m.hero.cell)}）`);
-    fake.fireTouch(420, 320, 'up');
+    fake.fireTouch(p.x + 100, p.y, 'up');
   } finally { fake.uninstall(); }
 });
 
@@ -275,5 +317,74 @@ test('小游戏防守：小地图真的画出来了、贴到了主画布上，�
     const cell = app.layout().minimap;
     app.tap(cell.x + cell.w / 2, cell.y + cell.h / 2);
     assert.ok(m.hero.teleportCd > 0, '点小地图要真的回城（进冷却）');
+  } finally { fake.uninstall(); }
+});
+
+test('小游戏防守 HUD：右下技能键（§1.9.1）；阵亡时那一排换成「快速复活」（§7.6）', () => {
+  const m = createDefenseMatch({ seed: 5 });
+  const L = layoutDefense(m, { rate: 1, paused: false, potionCount: 1 });
+  // 活着：技能键在右下，名字 / 等级 / 冷却都从内核取（与 TD 那排同一份来源）
+  assert.equal(L.byId['skill-0'].label, '旋风斩');
+  assert.equal(L.byId['skill-0'].sub, 'Lv1');
+  assert.equal(L.byId['skill-1'].disabled, true, '没解锁的「战吼」要灰掉');
+  assert.ok(!L.byId.revive, '活着的时候不该有复活键');
+  const hit = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+  for (const id of ['skill-0', 'skill-1', 'skill-2']) {
+    const it = L.byId[id];
+    assert.ok(it.w >= 44 && it.h >= 44, `${id} 热区不够`);
+    assert.ok(it.x + it.w <= DESIGN.w && it.y + it.h <= DESIGN.h, `${id} 出界`);
+    assert.ok(!hit(it, L.minimap) && !hit(it, L.capsule), `${id} 压到小地图或胶囊区`);
+    assert.ok(!inStickZone(L, it.x + it.w / 2, it.y + it.h / 2), `${id} 落进了摇杆区`);
+  }
+  assert.equal(SKILL_BAR.x + 3 * SKILL_BAR.w + 2 * SKILL_BAR.gap <= DESIGN.w, true, '三颗键要放得下');
+
+  // 阵亡：那一排换成一颗「快速复活 · 50 木」，木材不够时灰掉；顶栏那一格写倒计时
+  m.hero.dead = true;
+  m.hero.reviveTimer = 8;
+  m.lumber[0] = 0;
+  const dead = layoutDefense(m, { rate: 1 });
+  assert.ok(dead.byId.revive && !dead.byId['skill-0'], '阵亡时换成复活键（技能本来就放不了）');
+  assert.match(dead.byId.revive.label, new RegExp(`快速复活 · ${REVIVE_LUMBER} 木`));
+  assert.equal(dead.byId.revive.disabled, true, '木材不够要灰掉');
+  m.lumber[0] = REVIVE_LUMBER;
+  assert.equal(layoutDefense(m, {}).byId.revive.disabled, false, '木材够了就能点');
+  const ctx = fakeCtx();
+  drawDefenseHud(ctx, m, layoutDefense(m, {}), {});
+  assert.ok(ctx.texts.some((t) => /阵亡 \d+s/.test(t)), `顶栏要写阵亡倒计时（画了：${ctx.texts.join(' / ')}）`);
+});
+
+test('小游戏防守闭环：放技能真的进冷却；阵亡后点「快速复活」花 50 木把人拉起来', async () => {
+  await import('../tools/build-minigame.mjs');
+  const fake = installFakeWx();
+  try {
+    const require = createRequire(import.meta.url);
+    const app = loadFreshApp(require, 6);
+    const tapBtn = (id) => {
+      const b = app.layout().byId[id];
+      assert.ok(b, `HUD 上找不到 ${id}`);
+      return app.tap(b.x + b.w / 2, b.y + b.h / 2);
+    };
+    tapBtn('mode-def');
+    tapBtn('start');
+    const m = app.match();
+
+    // 技能：点下去要真的进冷却（防守以前一颗技能键都没有）
+    tapBtn('skill-0');
+    assert.ok(m.hero.skillCd[0] > 0, '防守局也要能放技能');
+    app.drawFrame();
+    assert.equal(app.layout().byId['skill-0'].sub, `${Math.ceil(m.hero.skillCd[0])}s`, '键上要写剩余冷却');
+
+    // 阵亡 → 复活：木材不够时点了没用；够了就真的起来
+    m.hero.dead = true;
+    m.hero.reviveTimer = 12;
+    m.lumber[0] = 0;
+    app.drawFrame();
+    tapBtn('revive');
+    assert.equal(m.hero.dead, true, '木材不够不该复活');
+    m.lumber[0] = 50;
+    app.drawFrame();
+    tapBtn('revive');
+    assert.equal(m.hero.dead, false, '点了要真的把人拉起来');
+    assert.equal(m.lumber[0], 0, `花掉 ${REVIVE_LUMBER} 木材`);
   } finally { fake.uninstall(); }
 });
