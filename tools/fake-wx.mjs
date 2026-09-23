@@ -67,11 +67,15 @@ export function installFakeWx({ windowWidth = 667, windowHeight = 375, pixelRati
     onShow: (fn) => { lifeHandlers.show = fn; },
   };
   globalThis.wx = wx;
-  /** 模拟一次触摸（小游戏里是 wx 的全局触摸回调，参数形状照官方：changedTouches[{clientX,clientY,identifier}]） */
-  const fireTouch = (x, y, type = 'down') => {
+  /**
+   * 模拟一次触摸（小游戏里是 wx 的全局触摸回调，参数形状照官方：changedTouches[{clientX,clientY,identifier}]）。
+   * `id` 是触点编号：双指缩放要两个不同的 id（默认 0，老用例不用改）。
+   */
+  const fireTouch = (x, y, type = 'down', id = 0) => {
     const fn = touchHandlers[type];
     if (!fn) return false;
-    fn({ touches: [{ clientX: x, clientY: y, identifier: 0 }], changedTouches: [{ clientX: x, clientY: y, identifier: 0 }] });
+    const point = { clientX: x, clientY: y, identifier: id };
+    fn({ touches: [point], changedTouches: [point] });
     return true;
   };
   /** 模拟切后台（小游戏里是 wx.onHide） */

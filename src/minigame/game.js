@@ -31,7 +31,7 @@ import {
 } from './defense-screen.js';
 import { applyLobbyAction, drawLobby, hitTestLobby, layoutLobby } from './lobby.js';
 import {
-  drawBattleHud, drawResult, drawSheet, hitTestBattle, hitTestSheet,
+  DESIGN, drawBattleHud, drawResult, drawSheet, hitTestBattle, hitTestSheet,
   layoutBattle, layoutResult, layoutSheet,
 } from './battle.js';
 
@@ -127,6 +127,45 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
     lastSize = `${size.width}x${size.height}`;
   };
   resize();
+
+  /**
+   * 视口门槛（STATUS §3.1 #33 拍板的最小支持视口 = 667×375，浏览器侧是同两条 `@media`）。
+   * 小游戏端虽然能在后台锁横屏，但开发者工具与部分机型仍会给出竖屏尺寸——**画一堆挤在一起的面板
+   * 比直接说清楚更糟**，所以和浏览器版一样：竖屏一句「请横屏」、太小一句「屏幕太小」，期间不接任何触摸。
+   */
+  const viewportNotice = () => {
+    if (size.height > size.width) return '请横屏玩：本作是横屏游戏（手机转一下）';
+    if (size.width < 640 || size.height < 359) return '屏幕太小：本作按 667×375 pt 以上设计（iPhone SE 2 代及以上）';
+    return null;
+  };
+
+  /** 那条说明（按宽度折行——竖屏时一句话比屏幕还宽，不折就画到屏幕外面去了） */
+  const drawNotice = (text) => {
+    ctx.setTransform(size.dpr, 0, 0, size.dpr, 0, 0);
+    ctx.fillStyle = '#05080e';
+    ctx.fillRect(0, 0, size.width, size.height);
+    ctx.font = '16px "PingFang SC", "Hiragino Sans GB", system-ui, sans-serif';
+    ctx.fillStyle = '#e8eef7';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const maxW = size.width - 48;
+    const lines = [];
+    let cur = '';
+    for (const ch of text) {
+      if (cur && ctx.measureText(cur + ch).width > maxW) { lines.push(cur); cur = ch; } else cur += ch;
+    }
+    if (cur) lines.push(cur);
+    lines.forEach((line, i) => ctx.fillText(line, size.width / 2, size.height / 2 + (i - (lines.length - 1) / 2) * 24));
+  };
+
+  /**
+   * 战场 HUD 是**设计单位**（667×375）画的，屏幕更大时把它居中（只平移不缩放：
+   * 缩放会把 §1.9.2 那批 44pt 热区一起改小）。
+   */
+  const hudOffset = () => ({
+    x: Math.max(0, (size.width - DESIGN.w) / 2),
+    y: Math.max(0, (size.height - DESIGN.h) / 2),
+  });
 
   /** 进局：按大厅里选的那套配置开一局（联机/多人缩放先按单人；多人是后面的事） */
   const startMatch = () => {
@@ -417,6 +456,36 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
     return { type: 'move', cell };
   };
 
+  /**
+   * §2.5 / §171 的镜头操作：**单指拖空白处平移、双指缩放、双击回核心**。
+   * 三条都只对 TD 生效——防守是跟随相机（每帧被 `drawDefense` 覆盖），这是浏览器版同一个判据。
+   */
+  const pointers = new Map();   // 触点 id → 当前屏幕点（小游戏只能从 down/move/up 自己攒）
+  let drag = null;              // 拖动中的上一个屏幕点
+  let dragMoved = false;        // 这一下真的拖动了吗（「点空白处」也会武装 drag，不能拿它当判据）
+  let pinchDist = null;         // 上一帧的双指间距（null = 没在缩放）
+  let lastEmptyTap = null;      // 上一次「点空白处」的落点与时间（双击回核心用）
+
+  /** 这一下是不是「点空白处」（不在任何塔位的判定半径里）——双击回核心只认这种落点 */
+  const emptyTapAt = (b, x, y) => {
+    if (b.m.mode === 'defense') return false;
+    const cell = b.renderer.toGrid(x, y);
+    const g = b.m.map?.grid ?? { w: 32, h: 24 };
+    if (cell.x < 0 || cell.y < 0 || cell.x >= g.w || cell.y >= g.h) return false;
+    return !(b.m.map.slots ?? []).some((s) => gridDist(s, cell) <= 2);
+  };
+
+  /** §2.5 的「双击回核心」：整图档下本来就是整图可见（再点一次不动），放大档下回核心并记住这个档 */
+  const backToCore = (b) => {
+    if (b.m.mode === 'defense' || b.paused || b.m.result) return;
+    const grid = b.m.map.grid;
+    const core = b.m.core?.cell ?? b.m.cores?.[0]?.cell ?? { x: grid.w / 2, y: grid.h / 2 };
+    if (settings.tdFitAll && b.renderer.scale <= (settings.zoom ?? 1.5)) { b.renderer.fit(grid); return; }
+    settings = { ...settings, tdFitAll: false };
+    saveSettings(settings);
+    b.renderer.setCamera(core.x, core.y, settings.zoom ?? 1.5);
+  };
+
   /** 一次「点」（大厅）：应用选择，并在「单人开局」上真的进局 */
   const tapLobby = (x, y) => {
     const action = hitTestLobby(lobby.layout, x, y);
@@ -456,23 +525,40 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
     return b;
   };
 
-  onTouch((t) => {
+  onTouch((e) => {
     if (!battle) {
-      if (t.type === 'down') tapLobby(t.x, t.y);
+      // 大厅那一屏自己按视口缩放布局（`layoutLobby`），所以它的坐标就是画布坐标
+      if (e.type === 'down' && !viewportNotice()) tapLobby(e.x, e.y);
       drawFrame();
       return;
     }
     const b = battle;
+    // 战场 HUD 是设计单位居中摆的：触摸坐标减掉同一个偏移，后面一律按设计单位算
+    const o = hudOffset();
+    const t = { ...e, x: e.x - o.x, y: e.y - o.y };
     const sheetOpen = !!b.ui.sheetKind || b.ui.selectedSlot != null || b.ui.panelSlot != null;
+    /**
+     * 触点登记：小游戏只给 changedTouches，所以「现在有几根手指、都在哪」得自己攒。
+     * `tapped` 记的是「这一下的『按下』已经当成一次点击处理过了」——松手时不能再点一次，
+     * 否则一次点击会连点两下（第一版就没有这个标记：点塔位会「开面板 + 立刻点到面板里那一行」）。
+     */
+    let upTapped = false;
+    let upPinched = false;
+    if (t.type === 'up') {
+      const entry = pointers.get(t.id);
+      upTapped = !!entry?.tapped;
+      upPinched = !!entry?.pinched;
+      pointers.delete(t.id);
+      if (pointers.size < 2) pinchDist = null;
+    }
     /**
      * 防守多一层：**左侧 45% 的拖动 = 摇杆**（§1.9.1），松手时若几乎没动就补一次「点地移动」
      * （浏览器版 `stick.owns()` 那套的同一件事）。其余地方仍然是「点」。
      */
     if (b.m.mode === 'defense' && !sheetOpen) {
       if (t.type === 'down' && inStickZone(b.layout, t.x, t.y)) {
-        // 注意：`size` 是 viewport() 的形状（width/height/dpr），stickBase 要的是 {w,h}——
-        // 传错形状时底座坐标会变成 NaN，表现是「推杆推不动」（第一版就是这么踩的）
-        const base = stickBase(defModel(b), { w: size.width, h: size.height });
+        // 底座按**设计单位**摆（左下的 16% / 78%），触摸坐标上面已经换算成设计单位了
+        const base = stickBase(defModel(b));
         b.stick = { active: true, id: t.id, origin: base, start: { x: t.x, y: t.y }, dir: { x: 0, y: 0, mag: 0 } };
         drawFrame();
         return;
@@ -490,7 +576,88 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
         return;
       }
     }
+    /** TD 的镜头操作（§2.5 / §171）：单指拖空白处平移、双指缩放、双击回核心。暂停 / 已结算时不接管。 */
+    const camBase = b.m.mode !== 'defense' && !b.paused && !b.m.result;
+    if (camBase) {
+      if (t.type === 'down') pointers.set(t.id, { x: t.x, y: t.y, tapped: false });
+      // 移动只更新坐标：**别换一个新对象**，`tapped` / `pinched` 这两个标记要留着
+      // （第一版这里写的是 `set(id, {x,y})`，于是拖一下就把「按下已经点过」的标记丢了——
+      //  松手会再点一次，表现为「拖完地图顺手弹出一张建造面板」）
+      else if (t.type === 'move' && pointers.has(t.id)) {
+        const p = pointers.get(t.id);
+        p.x = t.x; p.y = t.y;
+      }
+      if (pointers.size >= 2) {
+        // 两根手指 = 缩放（以两指中点为锚点，和桌面滚轮走同一个 `zoomAt` 出口）
+        const [a, c] = [...pointers.values()];
+        const dist = Math.hypot(a.x - c.x, a.y - c.y);
+        if (t.type === 'down') {
+          // 两根手指一起抬起时**不要**再补一次「点」：不然缩放完松手会顺手开出一张面板
+          for (const p of pointers.values()) p.pinched = true;
+          drag = null;
+          b.ui = { selectedSlot: null, panelSlot: null, sellArmed: false };
+        }
+        if (pinchDist && dist > 40) {
+          if (settings.tdFitAll) { settings = { ...settings, tdFitAll: false }; saveSettings(settings); }
+          const next = Math.min(2.2, Math.max(0.4, b.renderer.scale * (dist / pinchDist)));
+          b.renderer.zoomAt(next, (a.x + c.x) / 2, (a.y + c.y) / 2);
+        }
+        pinchDist = dist;
+        drawFrame();
+        return;
+      }
+    }
+    /**
+     * 拖动与「点」：弹层开着时那几下仍然要归弹层（这条不能跟双指缩放共用判据——
+     * 缩放要能在面板开着时也能用，玩家可能一边看面板一边把镜头拉远）。
+     */
+    if (camBase && !sheetOpen) {
+      // 放大档下的空白处：这一下先当「拖地图」，松手没动才算点（整图档本来就没有可拖的余地）
+      if (t.type === 'down' && settings.tdFitAll === false && emptyTapAt(b, t.x, t.y)) {
+        drag = { x: t.x, y: t.y };
+        dragMoved = false;
+        drawFrame();
+        return;
+      }
+      if (t.type === 'move' && drag) {
+        if (Math.hypot(t.x - drag.x, t.y - drag.y) > 4) dragMoved = true;
+        b.renderer.panBy(t.x - drag.x, t.y - drag.y);
+        drag = { x: t.x, y: t.y };
+        drawFrame();
+        return;
+      }
+      if (t.type === 'up') {
+        const wasDrag = dragMoved;
+        drag = null;
+        dragMoved = false;
+        // 拖过 / 按下那一下已经点过（塔位、摇杆）/ 这一下本来是双指缩放：松手都不再补点
+        if (wasDrag || upTapped || upPinched) { drawFrame(); return; }
+        if (emptyTapAt(b, t.x, t.y)) {
+          const now = Date.now();
+          if (lastEmptyTap && now - lastEmptyTap.t < 300 && Math.hypot(t.x - lastEmptyTap.x, t.y - lastEmptyTap.y) < 30) {
+            lastEmptyTap = null;
+            backToCore(b);
+            drawFrame();
+            return;
+          }
+          lastEmptyTap = { t: now, x: t.x, y: t.y };
+        }
+        tapBattle(b, t.x, t.y);
+        drawFrame();
+        return;
+      }
+      if (t.type === 'down') {
+        const p = pointers.get(t.id);
+        if (p) p.tapped = true;
+        tapBattle(b, t.x, t.y);   // 塔位 / HUD 上的那一下照旧按下就响应
+        drawFrame();
+        return;
+      }
+    }
     if (t.type !== 'down') return;     // 其余情况这一版只要「点」
+    // 「按下即点击」：这一下标记过之后，松手那一笔不会再点一次（见上面 `upTapped` 那段）
+    const entry = pointers.get(t.id);
+    if (entry) entry.tapped = true;
     tapBattle(b, t.x, t.y);
     drawFrame();
   });
@@ -500,6 +667,9 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
   const drawFrame = () => {
     const { width, height } = viewport();
     if (`${width}x${height}` !== lastSize) resize();
+    // 竖屏 / 屏幕太小：只画那一句说明（右上角胶囊那种细节在这里毫无意义），触摸也不接
+    const notice = viewportNotice();
+    if (notice) { drawNotice(notice); return; }
     if (!battle) { drawLobby(ctx, lobby.model, lobby.layout); return; }
     const b = battle;
     const message = b.m.time < b.until ? b.message : null;
@@ -507,7 +677,8 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
       b.layout = layoutDefense(b.m, defModel(b));
       // 跟随相机由 drawDefense 自己算（它拿 `scale`）；我们只把缩放档递进去
       b.renderer.draw({ m: b.m, scale: settings.zoom ?? 1.5, now: b.m.time });
-      ctx.setTransform(size.dpr, 0, 0, size.dpr, 0, 0);
+      const o = hudOffset();
+      ctx.setTransform(size.dpr, 0, 0, size.dpr, size.dpr * o.x, size.dpr * o.y);
       drawDefenseHud(ctx, b.m, b.layout, { message, stick: b.stick.active ? { base: b.stick.origin, dir: b.stick.dir } : { base: b.layout.stick, dir: { x: 0, y: 0, mag: 0 } } });
     } else {
       b.layout = layoutBattle(b.model());
@@ -516,7 +687,9 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
         m: b.m, selectedSlot: null, selectedTower: null, localSlot: 0, now: b.m.time, pulses: false,
         hintSlots: b.tutorial?.hintSlotCount() ?? 0,
       });
-      ctx.setTransform(size.dpr, 0, 0, size.dpr, 0, 0);   // renderer 可能重设过变换，这里再对齐一次
+      // renderer 可能重设过变换，这里再对齐一次（并按大屏把 HUD 居中）
+      const o = hudOffset();
+      ctx.setTransform(size.dpr, 0, 0, size.dpr, size.dpr * o.x, size.dpr * o.y);
       drawBattleHud(ctx, b.m, b.layout, { selectedTower: b.selectedTower, message });
     }
     // 结算面板：内核出结果之后盖上来（内容是浏览器版那个 resultPanelModel，一份模型两个渲染器）
