@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 
 import { CAPSULE, DEFAULT_HINT, DESIGN, applyLobbyAction, drawLobby, hitTestLobby, layoutLobby } from '../src/minigame/lobby.js';
 import { emptyProfile, recordResult } from '../src/profile.js';
+import { createLobbyModel } from '../src/minigame/game.js';
 
 /** 记录型 ctx：把画法记下来，够断言「画了什么」 */
 const fakeCtx = () => {
@@ -121,4 +122,38 @@ test('小游戏大厅：提示文案不会溢出提示框（第一版就是这�
   // 提示框本身也不能和任何可点元素重叠（尤其是右下那颗开始按钮）
   const hit = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
   for (const it of L.items) assert.ok(!hit(L.hint, it), `提示框与 ${it.id} 重叠`);
+});
+
+test('小游戏大厅：上次那套配置（§2.1）要能一键沿用，脏值一律落回默认（§177）', () => {
+  const base = emptyProfile();
+  // 上次打的是防守：模式 / 难度 / 英雄 / 时长 都要照它选
+  const last = createLobbyModel({
+    ...base,
+    lastChoice: { mode: 'defense', map: 'def_01', difficulty: 'nightmare', hero: 'hero_mage', length: 'long' },
+  });
+  assert.equal(last.mode, 'defense');
+  assert.equal(last.map, 'def_01');
+  assert.equal(last.difficulty, 'nightmare');
+  assert.equal(last.hero, 'hero_mage');
+  assert.equal(last.length, 'long');
+
+  // 上次那张图**这号人物没解锁**时落回该模式的第一张（不是照搬一个点不了的图）
+  const locked = createLobbyModel({
+    ...base,
+    lastChoice: { mode: 'td', map: 'map_06', difficulty: 'hard', hero: 'hero_warrior', length: 'long' },
+  });
+  assert.equal(locked.mode, 'td');
+  assert.ok(locked.unlocked.includes(locked.map), `落回的那张要解锁（实际 ${locked.map}）`);
+  assert.equal(locked.difficulty, 'hard', '图不合法只影响图，难度照旧沿用');
+
+  // 跨版本的脏值：不抛、也不用它（§177 那条边界）
+  const dirty = createLobbyModel({
+    ...base,
+    lastChoice: { mode: 'bogus', map: 'nope', difficulty: 'impossible', hero: 'hero_nobody', length: 'endless' },
+  });
+  assert.equal(dirty.mode, 'td');
+  assert.equal(dirty.map, 'map_01');
+  assert.equal(dirty.difficulty, 'normal');
+  assert.equal(dirty.hero, 'hero_warrior');
+  assert.equal(dirty.length, 'short');
 });

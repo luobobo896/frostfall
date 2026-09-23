@@ -94,7 +94,7 @@ if (page === 'lobby') {
     });
     window.__previewReady = true;
   } else {
-  const { createMatch, buildTower, update, startWaveEarly } = await import('/src/match.js');
+  const { createMatch, buildTower, update, startWaveEarly, skillLevel } = await import('/src/match.js');
   const { createRenderer } = await import('/src/render.js');
   const { layoutBattle, drawBattleHud, layoutSheet, drawSheet, layoutResult, drawResult } = await import('/src/minigame/battle.js');
   const { TICK_STEP } = await import('/src/data.js');
@@ -118,7 +118,12 @@ if (page === 'lobby') {
   const model = {
     wave: m.wave.index, phase: m.wave.phase, timer: m.wave.timer, gold: Math.round(m.gold),
     core: m.core.hp, coreMax: m.core.maxHp, result: m.result, length: m.length,
-    canEarly: false, skills: m.hero.skillUnlocked, selectedTower: 'tw_arrow',
+    canEarly: false, selectedTower: 'tw_arrow',
+    // 技能键的模型形状与游戏入口那边（describeBattleModel）一致：名字 + Lv / 冷却秒数
+    skills: [...m.hero.def.skills, m.hero.def.thirdSkill].filter(Boolean).map((def, i) => ({
+      name: def.name, locked: !m.hero.skillUnlocked[i], cd: m.hero.skillCd?.[i] ?? 0,
+      lv: skillLevel(m, def),
+    })),
     // 战场那张顺手把**新手引导条**也摆上：第一局进 TD 就是这个样子（引导文案从状态机那唯一一份取）；
     // 别的几张（商店 / 结算 / 暂停）不摆——真机上它们要么盖住条，要么（结算）本来就把条收掉了
     tutorial: page === 'battle' ? (await import('/src/tutorial.js')).TUTORIAL_STEPS[0].text : null,

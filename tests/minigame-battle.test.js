@@ -2,7 +2,7 @@
 // 前半是纯函数（零 DOM），后半在假 wx 里把打包产物跑起来：点塔位建塔 → 开波 → 跑 90 秒 → 有击杀、波次推进。
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync } from 'node:fs';
+import { copyFileSync, mkdtempSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -21,6 +21,14 @@ import { drawResult, layoutBag, layoutItem, layoutPause, layoutResult, layoutSho
 // 与 minigame-bundle.test.js 同一个道理：**各有各的产物目录**，否则并发跑会互相踩
 const OUT = mkdtempSync(join(tmpdir(), 'ff-mini-battle-'));
 process.env.FF_MINIGAME_OUT = OUT;
+
+/** 复制成新文件名再 require：ESM 缓存按路径走，于是能拿到一个**全新的大厅开局**（老用例共用实例，不能选英雄） */
+const loadFreshApp = (require, n) => {
+  const p = join(OUT, `game-${n}.js`);
+  copyFileSync(join(OUT, 'game.js'), p);
+  require(p);
+  return globalThis.__frostfallLobby;
+};
 
 const BATTLE_MODEL = {
   wave: 3, phase: 'prep', timer: 12, gold: 200, core: 2400, coreMax: 2400,
@@ -442,5 +450,73 @@ test('小游戏暂停与倍速：暂停时内核一步不走，倍速按倍数�
     const t1 = m.time;
     app.tick(10);
     assert.ok(Math.abs((m.time - t1) - 10) < 0.2, `倍速下 tick(10) 该走 10 秒（实际 ${(m.time - t1).toFixed(1)}）`);
+  } finally { fake.uninstall(); }
+});
+
+test('小游戏技能键：名字 / 等级 / 冷却都从内核取，解锁几个就画几个（写死两个是不行的）', () => {
+  const L = layoutBattle({
+    ...BATTLE_MODEL,
+    skills: [
+      { name: '旋风斩', lv: 1, cd: 0, locked: false },
+      { name: '战吼', lv: 1, cd: 7.4, locked: false },
+      { name: '破甲突刺', lv: 2, cd: 0, locked: false },
+    ],
+  });
+  assert.ok(L.byId['skill-0'] && L.byId['skill-1'] && L.byId['skill-2'], '三个技能要三颗键');
+  assert.equal(L.byId['skill-2'].label, '破甲突刺', '键上写的是技能名，不是「技能 3」');
+  assert.equal(L.byId['skill-0'].sub, 'Lv1', '不在冷却就写等级');
+  assert.equal(L.byId['skill-1'].sub, '8s', '冷却中写剩余秒数（向上取整）');
+  assert.equal(L.byId['skill-1'].disabled, true, '冷却中那颗要灰掉');
+  assert.equal(L.byId['skill-2'].disabled, false);
+  // 三颗键不许互相压住，也不许压到「回大厅」
+  const hit = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+  for (const id of ['skill-0', 'skill-1', 'skill-2']) {
+    assert.ok(!hit(L.byId[id], L.byId.lobby), `${id} 压到了「回大厅」`);
+  }
+  // 只有两个技能的英雄：第三颗键不该凭空出现
+  const two = layoutBattle({ ...BATTLE_MODEL, skills: [{ name: '旋风斩', lv: 1 }, { name: '战吼', locked: true }] });
+  assert.ok(two.byId['skill-1'] && !two.byId['skill-2']);
+  assert.equal(two.byId['skill-1'].label, '战吼', '没解锁的技能也要写名字（灰掉表示还不能用）');
+  assert.equal(two.byId['skill-1'].disabled, true);
+});
+
+test('小游戏技能键：商店买了「技能书·秘传」之后，第三颗键真的出现而且能放', async () => {
+  await import('../tools/build-minigame.mjs');
+  const fake = installFakeWx();
+  try {
+    const require = createRequire(import.meta.url);
+    const app = loadFreshApp(require, 9);
+    /**
+     * 选法师再开局：他的第三技能是「时间扭曲」（以自身为中心减速），**空场也能放**；
+     * 战士那颗「破甲突刺」要够得着怪，备战期没怪会返回 false——测不出「键到底能不能用」。
+     */
+    const mage = app.layout().byId['hero-hero_mage'];
+    app.tap(mage.x + mage.w / 2, mage.y + mage.h / 2);
+    app.startMatch();
+    const m = app.match();
+    m.gold = 5000;
+    m.lumber[0] = 99;
+    // 与浏览器版一致：第三个技能键**一开始就在那儿，但是灰的**（玩家知道有这么个东西、书能解锁它）
+    assert.equal(app.layout().byId['skill-2'].disabled, true, '前提：没买书之前第三颗键是灰的');
+
+    // 商店 → 买技能书·秘传（内核会把第三个技能解锁）
+    const shop = app.layout().byId.shop;
+    app.tap(shop.x + shop.w / 2, shop.y + shop.h / 2);
+    const buy = app.getModel().sheet.byId['buy-book_secret'];
+    app.tap(buy.x + buy.w / 2, buy.y + buy.h / 2);
+    assert.equal(m.hero.skillUnlocked[2], true, '前提：书买到手就要解锁第三个技能');
+    const close = app.getModel().sheet.byId.close;
+    app.tap(close.x + close.w / 2, close.y + close.h / 2);
+
+    // 底部那排要多出一颗键（名字是内核里那个技能名），点了真的能放
+    app.drawFrame();
+    const third = app.layout().byId['skill-2'];
+    assert.ok(third, '第三颗键要在（以前只画两个死键，买书的人根本找不到它）');
+    assert.equal(third.label, m.hero.def.thirdSkill.name);
+    assert.equal(third.disabled, false, '买了书之后要能点（以前这颗键压根不存在）');
+    app.tap(third.x + third.w / 2, third.y + third.h / 2);
+    assert.ok(m.hero.skillCd[2] > 0, '点下去要真的进冷却（放出来了）');
+    app.drawFrame();   // 布局是每帧重算的：读副标之前先画一帧
+    assert.equal(app.layout().byId['skill-2'].sub, `${Math.ceil(m.hero.skillCd[2])}s`, '键上要写剩余冷却');
   } finally { fake.uninstall(); }
 });

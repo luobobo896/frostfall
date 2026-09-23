@@ -77,10 +77,17 @@ export function layoutBattle(model = {}) {
   items.push(model.result
     ? item('restart', 258, 315, 92, 48, '再开一局', { type: 'restart' })
     : item('early', 258, 315, 92, 48, '开波', { type: 'early' }, { disabled: !model.canEarly }));
-  for (let i = 0; i < 2; i += 1) {
-    items.push(item(`skill-${i}`, 358 + i * 66, 315, 58, 48, i === 0 ? '技能 1' : '技能 2',
-      { type: 'skill', index: i }, { disabled: !(model.skills?.[i] ?? i === 0) }));
-  }
+  /**
+   * 技能键：模型里给几个就画几个（首发 2 个 + 技能书解锁的第 3 个）。**写死两个是不行的**——
+   * 商店里卖的「技能书·秘传」会把第三个技能解锁，可按钮不存在的话玩家买了等于白买。
+   * 每颗键写：技能名 + 一行副标（冷却中写秒数，否则写等级）——与浏览器版技能键同一套读数（§132）。
+   */
+  const skills = model.skills ?? [{ name: '技能 1' }, { name: '技能 2' }];
+  skills.forEach((sk, i) => {
+    items.push(item(`skill-${i}`, 358 + i * 66, 315, 58, 48, sk.name ?? `技能 ${i + 1}`,
+      { type: 'skill', index: i },
+      { disabled: !!sk.locked || sk.cd > 0, sub: sk.cd > 0 ? `${Math.ceil(sk.cd)}s` : (sk.lv ? `Lv${sk.lv}` : '') }));
+  });
   items.push(item('lobby', 588, 315, 67, 48, '回大厅', { type: 'lobby' }));
   /**
    * 顶栏右侧那两个键：**倍速**与**暂停**（§1.9.3 的设置、§1.9.4 的「随时能停」）。
@@ -153,9 +160,15 @@ export function drawBattleHud(ctx, m, L, { selectedTower = 'tw_arrow', message =
     ctx.strokeStyle = on ? COLORS.accent : COLORS.panelLine;
     ctx.lineWidth = on ? 2 : 1;
     ctx.stroke();
-    text(ctx, it.label, it.x + it.w / 2, it.y + it.h / 2, {
-      size: 13, align: 'center', color: it.disabled ? COLORS.dim : COLORS.ink, weight: 'bold',
+    // 有副标就两行写（技能键的「名字 + Lv/冷却秒数」）；没有副标的键位置与以前一模一样
+    const cx = it.x + it.w / 2, cy = it.y + it.h / 2;
+    text(ctx, it.label, cx, it.sub ? cy - 9 : cy, {
+      size: it.label.length > 3 ? 12 : 13, align: 'center',
+      color: it.disabled ? COLORS.dim : COLORS.ink, weight: 'bold',
     });
+    if (it.sub) {
+      text(ctx, it.sub, cx, cy + 11, { size: 10, align: 'center', color: COLORS.dim });
+    }
   }
 
   if (message) {

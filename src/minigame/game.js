@@ -4,10 +4,10 @@
 // `index.html` + `styles.css` + `ui.js` 那套 DOM+CSS。这一步做的是把**平台差异**与**打包**解决掉，
 // 并把不依赖 DOM 的那一大半（内核、数据表、存档、联机协议、平台适配）先在小游戏里跑通。
 // 界面换 Canvas 是第 3 步，见 docs/minigame-port.md。
-import { DEFENSE_MAPS, MAPS, TICK_STEP } from '../data.js';
+import { DEFENSE_MAPS, MAPS, TICK_STEP, normalizeChoice } from '../data.js';
 import {
   buildTower, buyItem, castSkill, craftEquipment, createMatch, describe as describeMatch, equipItem,
-  enhanceItem, potionCount, repairTower, sellItem, sellTower, setPriority, startWaveEarly,
+  enhanceItem, potionCount, repairTower, sellItem, sellTower, setPriority, skillLevel, startWaveEarly,
   towerAtSlot, update, upgradeTower, usePotion,
 } from '../match.js';
 import { isMiniGame, onHide, onTouch, storage, viewport } from '../platform.js';
@@ -50,14 +50,20 @@ export function createLobbyModel(profile = loadProfile()) {
     const lock = mapLocked(profile, id);
     if (lock) locked[id] = lock.text;
   }
-  const mode = 'td';
+  /**
+   * §2.1「上次配置一键开局」：档案里存着上一局用过的模式 / 地图 / 难度 / 英雄 / 时长，就照它选。
+   * 过一遍 `normalizeChoice`（`data.js` 那一份归一化）——跨版本的脏值不许把大厅带崩（§177 的同一道边界）。
+   * 上次那张图要**这会儿还解锁着**才用：档案被重置过、或者版本换了锁法时落回该模式的第一张。
+   */
+  const last = normalizeChoice(profile.lastChoice ?? {});
+  const mode = last.mode;
   const pool = mode === 'defense' ? unlockedDef : unlockedTd;
   return {
     mode,
-    map: pool[0] ?? 'map_01',
-    difficulty: 'normal',
-    length: 'short',
-    hero: 'hero_warrior',
+    map: pool.includes(last.map) ? last.map : (pool[0] ?? (mode === 'defense' ? 'def_01' : 'map_01')),
+    difficulty: last.difficulty,
+    length: last.length,
+    hero: last.hero,
     profile,
     unlocked: [...unlockedTd, ...unlockedDef],
     locked,
@@ -192,6 +198,16 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
     const tutorial = m.mode === 'defense' || !isFirstRun(lobby.model.profile)
       ? null
       : createTutorial({ startedAt: 0 });
+    /**
+     * §2.1「上次配置一键开局」：把这一局用的那套配置记进档案（浏览器版 `main.js` 在 `startMatch`
+     * 里同一处干这件事）。下次打开大厅就照着选——小游戏以前从来不记，所以「上次选了噩梦难度」
+     * 每次重开都回到普通。存不了不影响这一局（与记档同一套写法）。
+     */
+    lobby.model = {
+      ...lobby.model,
+      profile: { ...lobby.model.profile, lastChoice: { ...pickLobbyKeys(lobby.model) } },
+    };
+    try { saveProfile(lobby.model.profile); } catch { /* 存不了就只在这一次生效 */ }
     return buildBattle(m, { tutorial });
   };
 
@@ -844,10 +860,22 @@ const describeBattleModel = (m) => ({
   gold: Math.round(m.gold), core: m.core.hp, coreMax: m.core.maxHp,
   result: m.result, length: m.length,
   canEarly: m.wave.phase === 'prep' && m.wave.timer > 0,
-  skills: m.hero.skillUnlocked,
   // 底部那排要显示的数量：药品格数（§5.5.3：共 3 格）与背包件数
   potionCount: potionCount(m),
   bagCount: m.inventory?.length ?? 0,
+  /**
+   * 技能键：**名字 / 等级 / 冷却都走内核那一个出口**（与浏览器版 `ui.js` 的 `renderSkills` 同一套：
+   * `hero.def.skills` + `thirdSkill`、`skillUnlocked`、`skillCd`、`skillLevel(m, def)`）。
+   *
+   * 小游戏这边以前只画两个写死的「技能 1 / 技能 2」——于是商店里卖的**技能书·秘传
+   * 把第三个技能解锁了，玩家却找不到那个按钮**（买了等于白买，界面上一个字都没提）。
+   */
+  skills: [...m.hero.def.skills, m.hero.def.thirdSkill].filter(Boolean).map((def, i) => ({
+    name: def.name,
+    locked: !m.hero.skillUnlocked[i],
+    cd: m.hero.skillCd?.[i] ?? 0,
+    lv: skillLevel(m, def),
+  })),
 });
 
 /** 回大厅时保留玩家刚选的模式/地图/难度/英雄（大厅的状态在进局那一刻被 Battle 接管了） */
