@@ -180,3 +180,48 @@ test('小游戏防守：摇杆切「浮动」之后左半屏都归摇杆、底�
     fake.fireTouch(420, 320, 'up');
   } finally { fake.uninstall(); }
 });
+
+test('小游戏防守：守住 4 轮转无尽之后，「继续（无尽）」真的能接着玩（§131 / §190）', async () => {
+  await import('../tools/build-minigame.mjs');
+  const fake = installFakeWx();
+  try {
+    const require = createRequire(import.meta.url);
+    const app = loadFreshApp(require, 4);
+    const tapBtn = (id) => {
+      const b = app.layout().byId[id];
+      assert.ok(b, `HUD 上找不到 ${id}`);
+      return app.tap(b.x + b.w / 2, b.y + b.h / 2);
+    };
+    tapBtn('mode-def');
+    tapBtn('start');
+    const m = app.match();
+
+    // 真打满 4 轮要十几分钟，这里直接把内核在 `checkDefenseWin` 之后的状态摆出来
+    m.stats.roundsCleared = 4;
+    m.assault.endless = true;
+    m.result = 'win';
+    app.drawFrame();
+
+    // §131：转无尽那一局**不能停在结算那一刻**（以前小游戏 `tick` 一见 result 就返回 0，无尽根本玩不到）
+    const t0 = m.time;
+    app.tick(2);
+    assert.ok(m.time > t0, `转无尽之后时间要继续走（${t0.toFixed(1)} → ${m.time.toFixed(1)}）`);
+
+    // 面板还在时给一颗出口；点了就收起来，那颗键也不再挂着（它只在面板还在时出现）
+    const btn = app.layout().byId.endless;
+    assert.ok(btn, '结算面板还在时要给「继续（无尽）」');
+    app.tap(btn.x + btn.w / 2, btn.y + btn.h / 2);
+    app.drawFrame();
+    assert.ok(!app.layout().byId.endless, '收掉面板之后不再挂那颗键');
+    const t1 = m.time;
+    app.tick(2);
+    assert.ok(m.time > t1, '收掉面板之后当然还在跑');
+
+    // 反面：不是无尽的那种结束（城堡陷落）仍然停表——「面板 ≠ 停表」这条只给无尽开
+    m.assault.endless = false;
+    m.result = 'lose';
+    const t2 = m.time;
+    app.tick(3);
+    assert.equal(m.time, t2, '城堡陷落之后内核不该再走');
+  } finally { fake.uninstall(); }
+});

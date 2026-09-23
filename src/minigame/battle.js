@@ -209,6 +209,13 @@ export function layoutResult(m, extra = {}) {
       : '',
     repLine: model.reputationGain ? `声望 +${model.reputationGain}` : '',
     levelLine: model.leveledUp ? `人物等级 → ${model.commanderLevel}` : '',
+    /**
+     * 出口那句话（面板右下角那行小字）要按模式说：防守的底排没有「再开一局」——
+     * 它的出口是暂停面板里的「回大厅」，转无尽时则是下面那颗「继续（无尽）」。
+     */
+    exitHint: model.endless ? '出口在下面：继续（无尽） · 回大厅在暂停面板里'
+      : model.mode === 'defense' ? '出口：暂停面板里的「回大厅」 / 再开一局'
+        : '出口在下面：再开一局 / 回大厅',
   };
 }
 
@@ -255,7 +262,7 @@ export function drawResult(ctx, R) {
   if (R.equippedLine) { text(ctx, R.equippedLine, box.x + 20, y, { size: 10, color: COLORS.dim }); y += 18; }
   const rep = [R.repLine, R.levelLine].filter(Boolean).join(' · ');
   if (rep) text(ctx, rep, box.x + 20, y, { size: 12, color: COLORS.gold });
-  text(ctx, '出口在下面：再开一局 / 回大厅', box.x + box.w - 20, box.y + box.h - 14,
+  text(ctx, R.exitHint, box.x + box.w - 20, box.y + box.h - 14,
     { size: 10, color: COLORS.dim, align: 'right' });
 }
 

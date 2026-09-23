@@ -103,6 +103,15 @@ export function layoutDefense(m, model = {}) {
   rows.forEach(([id, label, action, disabled], i) => {
     items.push(item(id, col, 60 + i * 52, 80, 44, label, action, { disabled: !!disabled, small: true }));
   });
+  /**
+   * §131 / §190：守住 4 轮之后转**无尽**（城堡剩余血量排行，§12.5）。结算面板弹出来时，
+   * 那一局其实还在跑（内核只是 `m.over` 之后不再推进）——所以这时要有一个「继续（无尽）」的出口，
+   * 不然玩家只能眼睁睁看面板、无尽根本玩不到。放在底排（防守本来没有底排），
+   * 它在摇杆区里但摇杆的 `inStickZone` 会跳过 HUD 键（下面那一条同一处代码）。
+   */
+  if (model.endlessExit) {
+    items.push(item('endless', 20, 315, 200, 48, '继续（无尽）', { type: 'endless' }));
+  }
   return {
     w: DESIGN.w, h: DESIGN.h,
     capsule: { x: DESIGN.w - CAPSULE.w - 8, y: 6, w: CAPSULE.w, h: CAPSULE.h },

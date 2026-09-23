@@ -229,6 +229,7 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
       extra: null,     // 结算那一下记档的收获（声望 / 升级），画面板用
       paused: false, rate: 1,
       saveClock: 0,    // §10.3 单人局自动存档：每 5 秒一次 + 切后台补一次
+      resultDismissed: false,   // §131：防守转无尽之后玩家关掉结算面板（那一局继续跑）
       tutorial: null,  // 新手引导状态机（null = 这一局不挂）
       waveSeen: 0,     // 引导要的「上一波是第几波」——开波/清波两个事件由它算出来
       // 防守：摇杆状态（浮动模式下底座跟手指）+ 正在建的那个工事位
@@ -370,6 +371,15 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
         return action;
       case 'lobby': backToLobby(); return action;
       case 'restart': startMatch(); return action;
+      case 'endless': {
+        /**
+         * §131 / §190：守住 4 轮转无尽——结算面板收起来，那一局接着跑（内核在 `m.over` 之后
+         * 才真的停）。浏览器版是 `view.resultDismissed = true` + 帧循环里那条 `canPlayOn`，同一件事。
+         */
+        b.resultDismissed = true;
+        note(b, '进入无尽：按城堡剩余血量排行', 3);
+        return action;
+      }
       case 'close':
         b.ui = { selectedSlot: null, panelSlot: null, sellArmed: false };
         return action;
@@ -746,7 +756,12 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
     }
     // 结算面板：内核出结果之后盖上来（内容是浏览器版那个 resultPanelModel，一份模型两个渲染器）
     recordIfFinished(b);
-    if (b.m.result) drawResult(ctx, layoutResult(b.m, b.extra ?? {}));
+    /**
+     * 结算面板盖上来。转无尽时底部那颗「继续（无尽）」在 y=315（面板底边 302），两者不重叠，
+     * 所以画的先后无所谓；它是 `L.items` 里的一项，命中测试照样能拿到（§131）。
+     * `resultDismissed` = 玩家已经点了「继续（无尽）」，面板收起来、那一局接着跑。
+     */
+    if (b.m.result && !b.resultDismissed) drawResult(ctx, layoutResult(b.m, b.extra ?? {}));
     // 弹层画在最后（压住 HUD 与战场）：正在建塔 / 看塔面板时，它就是焦点
     drawSheet(ctx, b.model().sheet);
   };
@@ -754,10 +769,16 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
   /** 推进内核（小游戏里由帧循环按真实时间驱动；本地验收里手动调它） */
   const tick = (seconds) => {
     if (!battle) return 0;
-    if (battle.paused || battle.m.result) return 0;   // 真暂停：内核一步都不走
+    /**
+     * 真暂停：内核一步都不走。**但结算面板不等于停表**——防守守住 4 轮转无尽之后那一局还要继续跑
+     * （浏览器版帧循环里的 `canPlayOn = !match.result || !!match.assault?.endless` 就是这条；
+     * 「城堡陷落」那种彻底结束由内核自己 `m.over` 挡住）。
+     */
+    if (battle.paused || (battle.m.result && !battle.m.assault?.endless)) return 0;
     const steps = Math.round(seconds / TICK_STEP);
     const step = battle.m.mode === 'defense' ? updateDefense : update;
-    for (let i = 0; i < steps && !battle.m.result; i += 1) {
+    for (let i = 0; i < steps; i += 1) {
+      if (battle.m.result && !battle.m.assault?.endless) break;   // 同上：无尽里 `result` 不再等于「停下」
       // 防守：摇杆推着走 = 每帧重发同一条移动指令（换格时才重发，别每帧重算 A*，与浏览器版同源）
       if (battle.m.mode === 'defense' && battle.stick.dir.mag > 0) {
         const goal = steerGoal(battle.m, battle.stick.dir);
@@ -887,6 +908,9 @@ const pickLobbyKeys = (model) => ({
 const defModel = (b) => ({
   paused: b.paused, rate: b.rate, potionCount: potionCount(b.m),
   round: b.m.assault?.round ?? 0, warning: !!b.m.assault?.warning,
+  // §131：守住 4 轮转无尽之后，玩家还得能接着玩——**结算面板还在时**才给那颗「继续（无尽）」
+  // （点了它就 `resultDismissed`，面板收起来、那一局接着跑）
+  endlessExit: !!b.m.assault?.endless && !b.resultDismissed,
   stickFloating: (b.stickFloating ?? false),
   stickOrigin: b.stick.active ? b.stick.origin : null,
   stick: b.stick,   // 调试/验收用：能断言「推着走了没有」
