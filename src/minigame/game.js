@@ -399,8 +399,14 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
       // ---- 商店 / 背包 / 物品 ----
       case 'buy': {
         const ok = buyItem(b.m, action.itemId, 0);
-        const item = b.model().sheet?.byId?.[`buy-${action.itemId}`];
-        note(b, ok ? `买了 ${item?.label ?? action.itemId}` : '买不了（金币不足 / 已买满 / 药品格已满）');
+        const row = b.model().sheet?.byId?.[`buy-${action.itemId}`];
+        /**
+         * 买不了时说**真正**那条原因：行上那句就已经是它（已撤柜 / 已买满 / 药品格已满 / 回基地再买），
+         * 没有原因就只剩「钱（或木材）不够」（§3.1 #20：说清为什么）。以前这里是一律列一遍
+         * 「金币不足 / 已买满 / 药品格已满」——防守局的商店在基地里（§3.1 #14），
+         * 人走远了点购买明明是「先回基地」，却被说成没钱。
+         */
+        note(b, ok ? `买了 ${row?.label ?? action.itemId}` : (row?.reason ?? '资源不足'));
         return action;
       }
       case 'item':

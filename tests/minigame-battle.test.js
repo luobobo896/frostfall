@@ -13,7 +13,7 @@ import {
 } from '../src/minigame/battle.js';
 import { installFakeWx } from '../tools/fake-wx.mjs';
 import { TOWER_MAX_LEVEL } from '../src/data.js';
-import { createMatch, makeEquipment, potionCount, update } from '../src/match.js';
+import { buyItem, createMatch, makeEquipment, potionCount, update } from '../src/match.js';
 import { createDefenseMatch } from '../src/defense.js';
 import { SHOP_ITEMS } from '../src/data.js';
 import { drawResult, layoutBag, layoutItem, layoutPause, layoutResult, layoutShop } from '../src/minigame/battle.js';
@@ -220,6 +220,30 @@ test('小游戏商店：每件商品一行（含撤柜与买不起的灰态）�
   m.gold = 5000;
   const rich = layoutShop(m, {});
   assert.ok(rich.rows.filter((r) => r.id.startsWith('buy-') && !r.disabled).length >= 4, '钱够了大部分商品要可点');
+
+  // 木材：秘传书要 20 木材——只有金币时也要灰（以前只比金币，点了才发现买不了）
+  const tm = createMatch({ seed: 5 });
+  tm.gold = 5000;
+  tm.lumber[0] = 0;
+  assert.equal(layoutShop(tm, {}).byId['buy-book_secret'].disabled, true, '木材不够也要灰掉');
+  tm.lumber[0] = 20;
+  assert.equal(layoutShop(tm, {}).byId['buy-book_secret'].disabled, false, '木材补上就恢复可点');
+});
+
+test('小游戏商店：防守「走远了」要说「回基地再买」（§3.1 #14 的商店在基地里）', () => {
+  const dm = createDefenseMatch({ seed: 5 });
+  dm.gold = 5000;
+  const near = dm.shopNear;
+  dm.hero.cell = { x: Math.min(dm.grid.w - 1, near.x + near.r + 3), y: near.y };
+  const far = layoutShop(dm, {});
+  const row = far.byId['buy-pot_small'];
+  assert.equal(row.reason, '回基地再买', '走远了那一行要说清原因，而不是让玩家点了才发现');
+  assert.equal(row.disabled, true);
+  assert.match(far.hint, /商店在基地里/);
+  // 回到基地就恢复可点；而且内核也不再让你买（两处同一条规则）
+  dm.hero.cell = { x: near.x, y: near.y };
+  assert.equal(layoutShop(dm, {}).byId['buy-pot_small'].disabled, false, '回基地就该恢复可点');
+  assert.ok(buyItem(dm, 'pot_small', 0), '回到基地之后内核也要真的卖给你');
 });
 
 test('小游戏背包：列出已装备与最近掉落、可合成时给「一键合成」、点一件进详情', () => {

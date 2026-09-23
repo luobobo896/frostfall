@@ -10,8 +10,7 @@ import {
   EQUIP_SELL_BONUS_LUMBER, EQUIP_SELL_REFUND, EQUIP_SLOTS, QUALITY, QUALITY_ORDER,
   SHOP_ITEMS, TARGET_PRIORITIES, TOWERS, TOWER_SELL_REFUND,
 } from '../data.js';
-import { attackHint } from '../hud-model.js';
-import { resultPanelModel } from '../hud-model.js';
+import { attackHint, resultPanelModel, shopRows } from '../hud-model.js';
 import {
   TOWER_REPAIR_GOLD, craftableSlots, enhanceCostOf, potionCount, shopPriceOf, towerStatsAt, upgradeCost,
 } from '../match.js';
@@ -348,31 +347,37 @@ const itemLabel = (it) =>
  */
 export function layoutShop(m, ui = {}) {
   const rows = [];
-  SHOP_ITEMS.forEach((it, i) => {
+  /**
+   * 「能不能买 / 为什么不能」**直接取浏览器版那份 `shopRows`**（`hud-model.js`）——一份判断两个渲染器。
+   * 这一版以前自己重算了一遍，于是漏了两条：**§3.1 #14 的「回基地再买」**（防守局的商店在基地里）
+   * 与**木材**（秘传书要木材，只比金币的话点下去才发现买不了，提示还写着「金币不足或已买满」）。
+   */
+  const cast = m.shopCast ?? null;
+  shopRows(m, (id) => shopPriceOf(m, id)).forEach((it, i) => {
     const col = i % 2, row = Math.floor(i / 2);
-    const price = shopPriceOf(m, it.id) ?? { gold: it.priceGold, lumber: it.priceLumber ?? 0 };
-    const blocked = m.shopBlocked?.[it.id];
-    const bought = m.shopBought?.[it.id] ?? 0;
-    const maxed = it.limit != null && bought >= it.limit;
-    const bagFull = it.type === 'potion' && potionCount(m) >= POTION_BAG_SLOTS;
-    const sub = blocked ? '已撤柜'
-      : maxed ? '已买满'
-        : bagFull ? '药品格已满'
-          : `${price.gold} 金${price.lumber ? ` + ${price.lumber} 木` : ''}`;
+    const price = it.price ?? { gold: 0, lumber: 0 };
+    /** 买不了的那句原因（`null` = 只是钱不够）——行上写它，点了买不了时也原样说它 */
+    const reason = it.blockedReason ? '已撤柜'
+      : it.soldOut ? '已买满'
+        : it.bagFull ? '药品格已满'
+          : it.tooFar ? '回基地再买' : null;
+    const sub = reason ?? (cast && cast.itemId === it.id ? '读条中…'
+      : `${price.gold} 金${price.lumber ? ` + ${price.lumber} 木` : ''}`);
     rows.push({
-      id: `buy-${it.id}`, label: it.name, sub,
+      id: `buy-${it.id}`, label: it.name, sub, reason,
       x: 20 + col * 314, y: 96 + row * 50, w: 300, h: 44,
-      disabled: !!blocked || maxed || bagFull || m.gold < price.gold,
+      disabled: !!it.blockedReason || it.soldOut || it.bagFull || it.tooFar || !it.affordable || !!cast,
       action: { type: 'buy', itemId: it.id },
     });
   });
   const closeY = 96 + Math.ceil(SHOP_ITEMS.length / 2) * 50;
   rows.push({ id: 'close', label: '关闭', x: 20, y: closeY, w: 614, h: 44, action: { type: 'close' } });
-  const cast = m.shopCast ? ` · 读条中 ${Math.max(0, (m.shopCast.until ?? 0) - m.time).toFixed(1)}s` : '';
+  const castLabel = cast ? ` · 读条中 ${Math.max(0, (cast.until ?? 0) - m.time).toFixed(1)}s` : '';
   return {
     kind: 'shop',
-    title: `商店 · 金币 ${Math.round(m.gold)}${cast}`,
-    hint: `药品 ${potionCount(m)}/${POTION_BAG_SLOTS} 格 · 波次中下单读条 3 秒`,
+    title: `商店 · 金币 ${Math.round(m.gold)}${castLabel}`,
+    hint: `药品 ${potionCount(m)}/${POTION_BAG_SLOTS} 格 · 波次中下单读条 3 秒`
+      + (m.shopNear ? ' · 商店在基地里' : ''),
     box: { x: 12, y: 62, w: 643, h: closeY - 6 },
     rows, byId: Object.fromEntries(rows.map((r) => [r.id, r])),
   };
