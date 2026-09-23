@@ -172,7 +172,7 @@ npm run minigame         # 先打包再跑本地验收（假 wx）
 ```bash
 npm run minigame          # 打包 + 假 wx 验收（含「大厅画出来了 / 触摸能选中」6 条）
 npm run minigame:preview  # 出八张样张（大厅 / 战场 / 塔 / 商店 / 结算 / 暂停 / 防守 / 英雄详情）
-npm test                  # 347 项：小游戏这一层的大厅 / 战场 / 建造 / 商店 / 结算 / 暂停 / 继续上局 / 防守 / 新手引导 / 相机
+npm test                  # 348 项：小游戏这一层的大厅 / 战场 / 建造 / 商店 / 结算 / 暂停 / 继续上局 / 防守 / 新手引导 / 相机
 ```
 
 ## 6. 发布前还差什么（非代码，都要你那边办）
@@ -228,7 +228,7 @@ npm test                  # 347 项：小游戏这一层的大厅 / 战场 / 建
 ```bash
 npm run minigame          # 打包 + 假 wx 本地验收（6 条：环境自检 / 内核等价性 / 模块清单 / 大厅画出来了 / 触摸能选中 / 点开局能进局）
 npm run minigame:preview  # 本机 Chrome 出八张样张（docs/testing/screenshots/minigame-*.png）
-npm test                  # 347 项，含小游戏这几屏的布局 / 命中 / 状态迁移 / 记档
+npm test                  # 348 项，含小游戏这几屏的布局 / 命中 / 状态迁移 / 记档
 npm run smoke             # 378 条真浏览器断言（浏览器那一侧的界面仍然按浏览器验）
 ```
 

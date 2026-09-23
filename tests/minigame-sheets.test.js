@@ -121,3 +121,34 @@ test('小游戏 HUD 互不重叠：同一帧里同时出现的那几块（含「
     ['提示行', line(300, 300, 200)],
     ...DL.items.map((it) => [it.id, box(it)])]);
 });
+
+test('小游戏弹层：每一行的 id 都不重复（重复了 `byId` 会指向另一个，命中测试与用例都会指错人）', () => {
+  const td = createMatch({ seed: 5 });
+  td.gold = 5000;
+  buildTower(td, 0, 'tw_arrow');
+  const items = [makeEquipment(td, 'weapon', 'blue', 6), makeEquipment(td, 'armor', 'blue', 6)];
+  td.inventory.push(...items, makeEquipment(td, 'weapon', 'blue', 6), makeEquipment(td, 'weapon', 'blue', 6));
+  const dm = createDefenseMatch({ seed: 5 });
+  dm.gold = 5000;
+
+  const sheets = [
+    ['建造', layoutSheet(td, { selectedSlot: 1 })],
+    ['塔面板', layoutSheet(td, { panelSlot: 0 })],
+    ['商店', layoutShop(td, {})],
+    ['背包', layoutBag(td, {})],
+    ['物品详情', layoutItem(td, { itemUid: items[0].uid })],
+    ['暂停（TD）', layoutPause(td, { settings: {} })],
+    ['暂停（防守）', layoutPause(dm, { settings: {} })],
+    ['工事', fortSheet(dm, { freeSlots: 2 })],
+  ];
+  for (const [label, sheet] of sheets) {
+    const ids = sheet.rows.map((r) => r.id);
+    assert.equal(new Set(ids).size, ids.length, `${label}：行 id 有重复（${ids.join('、')}）`);
+    assert.equal(Object.keys(sheet.byId).length, ids.length, `${label}：byId 与 rows 数量对不上`);
+  }
+  // HUD 也一样（两套 HUD 都用 `byId` 找按钮）
+  const L = layoutBattle({ wave: 1, phase: 'prep', timer: 9, gold: 200, core: 2400, coreMax: 2400, result: null,
+    length: 'short', canEarly: true, skills: [{ name: '旋风斩', lv: 1 }], potionCount: 1, potionReady: true,
+    bagCount: 0, hero: { level: 1, dead: false }, lumber: 0, tutorial: 'x', rate: 1, paused: false });
+  assert.equal(new Set(L.items.map((it) => it.id)).size, L.items.length, 'TD HUD：按钮 id 有重复');
+});
