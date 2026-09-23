@@ -28,11 +28,11 @@ npm run waves   # §8.5 逐波余量（4 人基准）
 npm run matrix  # 参考打法矩阵 6 图 × 3 难度 × 4 英雄（并检查「首发三图 + 普通：8-12 分钟」，超了 exit 1）
 npm run defense # 防守 def_01 自走
 npm run defense-matrix # 防守 3 图 × 3 难度 × 4 英雄（并检查「def_01/def_02 普通 4/4 守住」，掉了 exit 1；§195/§208.3）
-npm run potions # 药品平衡：72 局用药/不用药对照（§85）
-npm run books   # 技能书购买率（附录清单那条）：72 局参考打法买了几本、什么时候买得起却不买（只报数、exit 0；§129）
+npm run potions # 药品平衡：72 局用药/不用药对照（§85）；**检查「单局用药 ≤ 6 次」**，超了 exit 1
+npm run books   # 技能书购买率（附录 B.1 那条）：72 局参考打法买了几本、什么时候买得起却不买；**检查「≥ 30%」**，低于就 exit 1
 npm run tutorial # 新手引导的两条时延验收（三种新手节奏；§1.8）
 npm run bench / bandwidth   # 容量 / 带宽预算（§110/§111：两个工具都补了「空样本就 exit 1」的闸——带宽工具曾量着一条空连接还报达标）
-npm run potions / books  # §112 起测量工具明说「只报数」（永远 exit 0、结尾自己声明）；有结论的工具（test / smoke / soak / waves / defense / bench / bandwidth / tutorial / **matrix** / **defense-matrix**）红了就 exit 1
+# 口径：**有结论的线就由工具守着**（红了 exit 1）——test / smoke / soak / waves / defense / bench / bandwidth / tutorial / matrix / defense-matrix / **potions / books**（后两个是 §3.1 拍板、附录 B.1 勾上之后才成为门槛的）；没有结论的那几行仍在结尾自己声明「只报数」
 ```
 
 **跑这些工具时别同时干重活**（编译 / 截图 / 另一个冒烟）：冒烟是时序敏感的，机器被抢 CPU 时
