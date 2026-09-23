@@ -11,6 +11,7 @@ import { readFileSync } from 'node:fs';
 import { layoutBag, layoutBattle, layoutItem, layoutPause, layoutShop, layoutSheet } from '../src/minigame/battle.js';
 import { layoutDefense, layoutFortSheet } from '../src/minigame/defense-screen.js';
 import { applyLobbyAction, layoutLobby } from '../src/minigame/lobby.js';
+import { defModel, describeBattleModel } from '../src/minigame/game.js';
 import { buildTower, createMatch, makeEquipment } from '../src/match.js';
 import { createDefenseMatch } from '../src/defense.js';
 import { emptyProfile } from '../src/profile.js';
@@ -123,5 +124,43 @@ test('小游戏接线：每个弹层都有出口（别把玩家困在面板里�
       continue;
     }
     assert.ok(sheet.rows.some((r) => exits.has(r.action?.type)), `${label}：没有出口（关不掉）`);
+  }
+});
+
+/**
+ * 模型 ↔ 布局的对齐：布局从模型里读的每个字段，模型都得**真的给**。
+ *
+ * 这一族错已经踩过两次（`skills`、`potionReady`）：内核加了字段、布局开始读它，而某个调用点
+ * （样板工具、某条用例）手拼的模型没跟上——字段是 undefined，那一格就按「不可用 / 空」画，
+ * 而且**不会报错**。这里把「布局读了什么」与「模型提供了什么」摆在一起对账：
+ * 读到的字段要么由模型构造器给，要么在这个白名单里（那几个是 game.js 组装时补的）。
+ */
+test('小游戏模型对齐：布局读的每个字段，模型都提供了（新字段要么进模型、要么进白名单）', () => {
+  const srcOf = (p) => readFileSync(new URL(p, import.meta.url), 'utf8');
+  const section = (text, from, to) => {
+    const i = text.indexOf(from);
+    const j = to ? text.indexOf(to, i + 1) : text.length;
+    return text.slice(i, j > i ? j : text.length);
+  };
+  const modelReads = (text) => [...new Set([...text.matchAll(/model\.([A-Za-z_][A-Za-z0-9_]*)/g)].map((m) => m[1]))].sort();
+
+  // TD 的 HUD：布局读的字段来自 describeBattleModel，加上 game.js 组装时补的那几个
+  const td = createMatch({ seed: 5 });
+  const tdModel = Object.keys(describeBattleModel(td));
+  const tdExtra = ['paused', 'rate', 'tutorial', 'ui', 'sheet'];
+  const tdReads = modelReads(section(srcOf('../src/minigame/battle.js'), 'export function layoutBattle', '/** 触点 → HUD 动作'));
+  for (const key of tdReads) {
+    assert.ok(tdModel.includes(key) || tdExtra.includes(key),
+      `layoutBattle 读了 model.${key}，但 describeBattleModel 没给、也不在白名单里——那一格会静默画成空`);
+  }
+
+  // 防守的 HUD：字段来自 defModel（它自己就是 game.js 里那个构造器）
+  const dm = createDefenseMatch({ seed: 5 });
+  const defModelKeys = Object.keys(defModel({ m: dm, paused: false, rate: 1, stick: { active: false, origin: null }, ui: {} }));
+  const defExtra = ['ui'];
+  const defReads = modelReads(section(srcOf('../src/minigame/defense-screen.js'), 'export function layoutDefense', '/** HUD 的命中测试'));
+  for (const key of defReads) {
+    assert.ok(defModelKeys.includes(key) || defExtra.includes(key),
+      `layoutDefense 读了 model.${key}，但 defModel 没给、也不在白名单里`);
   }
 });
