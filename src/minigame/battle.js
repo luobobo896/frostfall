@@ -11,6 +11,7 @@ import {
   SHOP_ITEMS, TARGET_PRIORITIES, TOWERS, TOWER_SELL_REFUND,
 } from '../data.js';
 import { attackHint } from '../hud-model.js';
+import { resultPanelModel } from '../hud-model.js';
 import {
   TOWER_REPAIR_GOLD, craftableSlots, enhanceCostOf, potionCount, shopPriceOf, towerStatsAt, upgradeCost,
 } from '../match.js';
@@ -136,22 +137,88 @@ export function drawBattleHud(ctx, m, L, { selectedTower = 'tw_arrow', message =
     text(ctx, message, L.w / 2, 60, { size: 12, align: 'center', color: COLORS.gold });
   }
 
-  // 结算：内核出结果之后盖一块面板（这一版只有「再开一局 / 回大厅」两个出口）
-  if (m.result) {
-    const r = L.result;
-    ctx.fillStyle = 'rgba(5,8,14,0.86)';
-    roundRect(ctx, r.x - 12, r.y - 12, r.w + 24, r.h + 24, 12);
-    ctx.fill();
-    ctx.strokeStyle = COLORS.panelLine;
-    ctx.stroke();
-    text(ctx, m.result === 'win' ? '守住了！' : '核心被摧毁', r.x + r.w / 2, r.y + 26,
-      { size: 20, weight: 'bold', align: 'center', color: m.result === 'win' ? COLORS.gold : COLORS.danger });
-    text(ctx, `单局时长 ${(m.time / 60).toFixed(1)} 分钟 · 漏怪 ${m.stats.leaks}`, r.x + r.w / 2, r.y + 54,
-      { size: 12, align: 'center', color: COLORS.dim });
-    text(ctx, '（这一版的出口在下面：回大厅 / 再开一局）', r.x + r.w / 2, r.y + 78,
-      { size: 10, align: 'center', color: COLORS.dim });
-  }
   return L;
+}
+
+/* ---------- 结算面板 ---------- */
+
+/**
+ * 结算面板的几何与文案（纯函数）。
+ *
+ * **内容全部来自浏览器版那个 `resultPanelModel`**（`hud-model.js`）：结果行、伤害占比、掉落与合成、
+ * 声望与人物等级——一份视图模型两个渲染器，省得两边各写一套「本局数据」，也就不会出现
+ * 「浏览器里写的是稀有武器 ilvl6、小游戏里印的是 weapon blue15」这种两个面板两种说法（§151 的原话）。
+ */
+export function layoutResult(m, extra = {}) {
+  const model = resultPanelModel(m, extra);
+  if (!model) return null;
+  const box = { x: 12, y: 62, w: 643, h: 240 };
+  return {
+    kind: 'result',
+    box,
+    model,
+    rows: model.rows,
+    damageLine: model.damage.total > 0
+      ? model.damage.rows.slice(0, 4).map((r) => `${r.label} ${Math.round(r.pct * 100)}%`).join(' · ')
+      : '',
+    // 品质明细来自「手上还有的那些」（合成/穿戴会把它们挪走），所以明细可能是空的——
+    // 那时只写件数，别留一个孤零零的「·」
+    lootLine: [`掉落 ${model.loot.drops} 件`,
+      ...model.loot.byQuality.filter((q) => q.count).map((q) => `${q.name} ${q.count}`)].join(' · '),
+    craftLine: model.loot.crafts ? `合成 ${model.loot.crafts} 次` : '',
+    equippedLine: model.loot.equipped.length
+      ? '已装备：' + model.loot.equipped.map((e) => `${e.qualityName}${e.slotName} ilvl${e.ilvl}`).join(' · ')
+      : '',
+    repLine: model.reputationGain ? `声望 +${model.reputationGain}` : '',
+    levelLine: model.leveledUp ? `人物等级 → ${model.commanderLevel}` : '',
+  };
+}
+
+/** 画结算面板（出口是底部那排的「再开一局 / 回大厅」，这里只画内容） */
+export function drawResult(ctx, R) {
+  if (!R) return;
+  const { box, model } = R;
+  ctx.fillStyle = 'rgba(6,10,18,0.94)';
+  roundRect(ctx, box.x, box.y, box.w, box.h, 12);
+  ctx.fill();
+  ctx.strokeStyle = COLORS.panelLine;
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  text(ctx, model.title, box.x + box.w / 2, box.y + 24, {
+    size: 20, weight: 'bold', align: 'center', color: model.win ? COLORS.gold : COLORS.danger,
+  });
+  // 结果行：两列 × 三行
+  model.rows.forEach((row, i) => {
+    const col = i % 2, line = Math.floor(i / 2);
+    const x = box.x + 20 + col * 308, y = box.y + 56 + line * 22;
+    text(ctx, row.label, x, y, { size: 11, color: COLORS.dim });
+    text(ctx, row.value, x + 150, y, { size: 12, align: 'right' });
+  });
+  let y = box.y + 132;
+  if (R.damageLine) {
+    text(ctx, `伤害占比：${R.damageLine}`, box.x + 20, y, { size: 11, color: COLORS.dim });
+    // 一条细横条：按占比切色块，比一串百分号好认
+    const barW = box.w - 40, x0 = box.x + 20;
+    ctx.fillStyle = 'rgba(0,0,0,.45)';
+    ctx.fillRect(x0, y + 10, barW, 6);
+    const palette = ['#5aa9e6', '#e8c15a', '#b07de0', '#7fc08a', '#d1503f'];
+    let cx = x0;
+    model.damage.rows.slice(0, 5).forEach((r, i) => {
+      const w = Math.max(1, barW * r.pct);
+      ctx.fillStyle = palette[i % palette.length];
+      ctx.fillRect(cx, y + 10, w, 6);
+      cx += w;
+    });
+    y += 26;
+  }
+  text(ctx, [R.lootLine, R.craftLine].filter(Boolean).join(' · '), box.x + 20, y, { size: 11 });
+  y += 18;
+  if (R.equippedLine) { text(ctx, R.equippedLine, box.x + 20, y, { size: 10, color: COLORS.dim }); y += 18; }
+  const rep = [R.repLine, R.levelLine].filter(Boolean).join(' · ');
+  if (rep) text(ctx, rep, box.x + 20, y, { size: 12, color: COLORS.gold });
+  text(ctx, '出口在下面：再开一局 / 回大厅', box.x + box.w - 20, box.y + box.h - 14,
+    { size: 10, color: COLORS.dim, align: 'right' });
 }
 
 /* ---------- 弹层：建造选塔 / 塔面板 ---------- */

@@ -15,7 +15,7 @@ import { installFakeWx } from '../tools/fake-wx.mjs';
 import { TOWER_MAX_LEVEL } from '../src/data.js';
 import { createMatch, makeEquipment, potionCount, update } from '../src/match.js';
 import { SHOP_ITEMS } from '../src/data.js';
-import { layoutBag, layoutItem, layoutShop } from '../src/minigame/battle.js';
+import { drawResult, layoutBag, layoutItem, layoutResult, layoutShop } from '../src/minigame/battle.js';
 
 // 与 minigame-bundle.test.js 同一个道理：**各有各的产物目录**，否则并发跑会互相踩
 const OUT = mkdtempSync(join(tmpdir(), 'ff-mini-battle-'));
@@ -278,5 +278,62 @@ test('小游戏商店闭环：在假 wx 里点开商店 → 买药 → 点药品
     assert.equal(app.getModel().sheet, null, '关掉之后不该再有弹层');
     tapBtn('potion');
     assert.equal(potionCount(m), 0, '药品键要把药喝掉');
+  } finally { fake.uninstall(); }
+});
+
+test('小游戏结算面板：内容取自浏览器版那个 resultPanelModel（结果行 / 伤害占比 / 掉落 / 声望）', () => {
+  const m = createMatch({ seed: 5 });
+  m.time = 480;
+  m.stats.leaks = 2;
+  m.stats.drops = 12;
+  m.stats.kills = 88;
+  m.stats.damage = { hero: 640, tw_arrow: 320, tw_cannon: 90 };
+  m.result = 'win';
+  const R = layoutResult(m, { gain: 120, leveledUp: true, commanderLevel: 4 });
+  assert.equal(R.kind, 'result');
+  assert.equal(R.model.title, '通关！');
+  assert.ok(R.rows.some((r) => r.label === '单局时长' && r.value === '8.0 分钟'));
+  assert.ok(R.rows.some((r) => r.label === '漏怪' && r.value === '2 只'));
+  assert.match(R.damageLine, /英雄 \d+% · 箭塔 \d+% · 炮塔 \d+%/);
+  assert.match(R.lootLine, /掉落 12 件/);
+  assert.equal(R.repLine, '声望 +120');
+  assert.equal(R.levelLine, '人物等级 → 4');
+  // 画一帧：标题 / 伤害占比 / 掉落 / 声望都要落在这份记录里
+  const ctx = fakeCtx();
+  drawResult(ctx, R);
+  for (const needle of ['通关！', '伤害占比', '掉落 12 件', '声望 +120', '再开一局']) {
+    assert.ok(ctx.texts.some((t) => t.includes(needle)), `结算面板缺「${needle}」`);
+  }
+  // 没结束的局没有面板
+  assert.equal(layoutResult(createMatch({ seed: 5 }), {}), null);
+});
+
+test('小游戏结算：一局结束后真的记档（声望 +120、解锁与大厅那行都跟着变），且只记一次', async () => {
+  await import('../tools/build-minigame.mjs');
+  const fake = installFakeWx();
+  try {
+    const require = createRequire(import.meta.url);
+    require(join(OUT, 'game.js'));
+    const app = globalThis.__frostfallLobby;
+    app.startMatch();
+    const m = app.match();
+    m.time = 420;
+    m.stats.leaks = 1;
+    m.result = 'win';
+    app.drawFrame();
+    const saved = JSON.parse(globalThis.wx.getStorageSync('frostfall:profile') || '{}');
+    assert.equal(saved.reputation, 120, '通关普通档 +120 声望要落到档案里');
+    assert.equal(saved.clears?.map_01?.wins, 1, '战绩要记这一局');
+    // 再画几帧不许重复记（§188 的「一局只记一次」）
+    app.drawFrame();
+    app.tick(5);
+    app.drawFrame();
+    const again = JSON.parse(globalThis.wx.getStorageSync('frostfall:profile') || '{}');
+    assert.equal(again.reputation, 120, '同一局不许记第二次');
+    assert.equal(again.playCount, 1);
+    // 回大厅之后，大厅那行读到的就是新档案（人物等级 / 声望 / 可玩地图）
+    app.backToLobby();
+    assert.equal(app.screen(), 'lobby');
+    assert.equal(app.getModel().profile.reputation, 120);
   } finally { fake.uninstall(); }
 });

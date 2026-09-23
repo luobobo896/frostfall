@@ -22,6 +22,7 @@ const SHOTS = [
   { file: 'minigame-battle.png', w: Number(w), h: Number(h), page: 'battle' },
   { file: 'minigame-tower.png', w: Number(w), h: Number(h), page: 'tower' },
   { file: 'minigame-shop.png', w: Number(w), h: Number(h), page: 'shop' },
+  { file: 'minigame-result.png', w: Number(w), h: Number(h), page: 'result' },
 ];
 
 if (!existsSync(CHROME)) {
@@ -66,7 +67,7 @@ if (page === 'lobby') {
 } else {
   const { createMatch, buildTower, update, startWaveEarly } = await import('/src/match.js');
   const { createRenderer } = await import('/src/render.js');
-  const { layoutBattle, drawBattleHud, layoutSheet, drawSheet } = await import('/src/minigame/battle.js');
+  const { layoutBattle, drawBattleHud, layoutSheet, drawSheet, layoutResult, drawResult } = await import('/src/minigame/battle.js');
   const { TICK_STEP } = await import('/src/data.js');
   const m = createMatch({ mapId: 'map_02', difficulty: 'normal', heroId: 'hero_ranger', seed: 7, players: 1 });
   const renderer = createRenderer(canvas, { size: () => ({ w, h }) });
@@ -75,6 +76,16 @@ if (page === 'lobby') {
   for (const i of [0, 1, 2, 3, 4, 5]) buildTower(m, i, i % 3 === 2 ? 'tw_frost' : 'tw_arrow', 0);
   startWaveEarly(m, 0);
   for (let i = 0; i < Math.round(70 / TICK_STEP); i += 1) update(m, TICK_STEP);
+  // 结算那张样张：**先把结果摆上再画 HUD**，这样底部那排也跟真机一致（「开波」会变成「再开一局」）
+  if (page === 'result') {
+    m.time = 486;
+    m.stats.leaks = 2;
+    m.stats.drops = 12;
+    m.stats.crafts = 1;
+    m.stats.kills = 88;
+    m.stats.damage = { hero: 640, tw_arrow: 320, tw_cannon: 90 };
+    m.result = 'win';
+  }
   const model = {
     wave: m.wave.index, phase: m.wave.phase, timer: m.wave.timer, gold: Math.round(m.gold),
     core: m.core.hp, coreMax: m.core.maxHp, result: m.result, length: m.length,
@@ -94,6 +105,8 @@ if (page === 'lobby') {
     m.bag = { pot_small: 1 };   // 让「药品格」看起来有东西
     drawSheet(ctx, layoutSheet(m, { sheetKind: 'shop' }));
   }
+  // 第五张：结算面板（内容与浏览器版同一个 resultPanelModel）
+  if (page === 'result') drawResult(ctx, layoutResult(m, { gain: 120, leveledUp: true, commanderLevel: 4 }));
 }
 window.__previewReady = true;
 </script></body></html>`;

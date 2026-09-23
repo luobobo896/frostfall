@@ -13,10 +13,16 @@ import {
 } from '../match.js';
 import { createDefenseMatch, describeDefense, updateDefense } from '../defense.js';
 import { isMiniGame, onTouch, storage, viewport } from '../platform.js';
-import { loadProfile, mapLocked, unlockedMaps } from '../profile.js';
+import {
+  loadProfile, mapLocked, recordResult, reviveMulOf, saveProfile, startGoldOf, unlockedMaps,
+} from '../profile.js';
+import { resultSummary } from '../result.js';
 import { createRenderer } from '../render.js';
 import { applyLobbyAction, drawLobby, hitTestLobby, layoutLobby } from './lobby.js';
-import { drawBattleHud, drawSheet, hitTestBattle, hitTestSheet, layoutBattle, layoutSheet } from './battle.js';
+import {
+  drawBattleHud, drawResult, drawSheet, hitTestBattle, hitTestSheet,
+  layoutBattle, layoutResult, layoutSheet,
+} from './battle.js';
 
 export const version = '0.1.0';
 
@@ -103,12 +109,16 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
     const m = createMatch({
       mapId: lobby.model.map, difficulty: lobby.model.difficulty, heroId: lobby.model.hero,
       seed: Date.now() % 1e6 || 7, players: 1, length: lobby.model.length ?? 'short',
+      // §3.6：人物等级的便利（初始金币 + 复活加速）在浏览器版里是这么传进来的，小游戏这边同样接上——
+      // 以前 mini-game 里这两项**根本没生效**（开局永远是裸的 200 金、复活永远 15 秒）
+      startGold: startGoldOf(lobby.model.profile), reviveMul: reviveMulOf(lobby.model.profile),
     });
     const renderer = createRenderer(canvas, { size: () => ({ w: size.width, h: size.height }) });
     renderer.fit(m.map.grid);
     const b = {
       m, renderer, selectedTower: 'tw_arrow', message: null, until: 0, layout: null,
       ui: { selectedSlot: null, panelSlot: null, sellArmed: false },
+      extra: null,     // 结算那一下记档的收获（声望 / 升级），画面板用
     };
     b.model = () => ({
       ...describeBattleModel(m), selectedTower: b.selectedTower,
@@ -288,6 +298,9 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
       selectedTower: b.selectedTower,
       message: b.m.time < b.until ? b.message : null,
     });
+    // 结算面板：内核出结果之后盖上来（内容是浏览器版那个 resultPanelModel，一份模型两个渲染器）
+    recordIfFinished(b);
+    if (b.m.result) drawResult(ctx, layoutResult(b.m, b.extra ?? {}));
     // 弹层画在最后（压住 HUD 与战场）：正在建塔 / 看塔面板时，它就是焦点
     drawSheet(ctx, b.model().sheet);
   };
@@ -297,7 +310,27 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
     if (!battle) return 0;
     const steps = Math.round(seconds / TICK_STEP);
     for (let i = 0; i < steps && !battle.m.result; i += 1) update(battle.m, TICK_STEP);
+    recordIfFinished(battle);
     return steps;
+  };
+
+  /**
+   * 一局结束 → **记档一次**（§188 的教训：只在「回大厅」复位那个闸，连打两局第二局就不记了）。
+   * 小游戏这边以前压根没记档：打完一局声望与解锁纹丝不动，而大厅那行「人物 Lv / 声望 / 可玩地图」
+   * 又是从档案读的——一个永远不动的数字摆在那儿比不摆更糟。
+   */
+  const recordIfFinished = (b) => {
+    if (!b || b.extra || !b.m.result) return;
+    const summary = resultSummary(b.m);
+    const { profile: next, gain, leveledUp } = recordResult(lobby.model.profile, summary);
+    lobby.model = { ...lobby.model, profile: next };
+    b.extra = { gain, leveledUp, commanderLevel: next.commanderLevel };
+    lobby.model = {
+      ...lobby.model,
+      unlocked: [...unlockedMaps(next, 'td'), ...unlockedMaps(next, 'defense')],
+      unlockedCount: new Set([...unlockedMaps(next, 'td'), ...unlockedMaps(next, 'defense')]).size,
+    };
+    try { saveProfile(next); } catch { /* 存不了就只在这一次生效（§183 的提示在浏览器版那边） */ }
   };
 
   let last = 0;
