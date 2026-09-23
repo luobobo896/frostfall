@@ -538,7 +538,12 @@ export function layoutPause(m, ui = {}) {
     id: 'replayTutorial', label: '重看新手引导', sub: '下一局生效', x: 334, y: 246, w: 300, h: 44,
     action: { type: 'replayTutorial' },
   });
-  rows.push({ id: 'close', label: '收起面板', x: 20, y: 296, w: 614, h: 44, action: { type: 'close' } });
+  // 「重置进度」与「收起面板」并排放在最后一行：前者不可逆（§1.9.2），所以点一次只转到「再点一次确认」
+  rows.push({
+    id: 'resetProgress', label: ui.resetArmed ? '再点一次确认重置' : '重置进度', sub: ui.resetArmed ? '' : '清空声望与解锁',
+    x: 20, y: 296, w: 300, h: 44, on: !!ui.resetArmed, action: { type: 'resetProgress' },
+  });
+  rows.push({ id: 'close', label: '收起面板', x: 334, y: 296, w: 300, h: 44, action: { type: 'close' } });
   return {
     kind: 'pause',
     title: '已暂停',

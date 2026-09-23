@@ -13,8 +13,8 @@ import {
 import { isMiniGame, onHide, onTouch, storage, viewport } from '../platform.js';
 import { clearSave, hasSave, loadFromStorage, saveToStorage } from '../save.js';
 import {
-  isFirstRun, loadProfile, mapLocked, markTutorialDone, recordResult, reviveMulOf, saveProfile, startGoldOf,
-  unlockedMaps,
+  clearProfile, isFirstRun, loadProfile, mapLocked, markTutorialDone, recordResult, reviveMulOf, saveProfile,
+  startGoldOf, unlockedMaps,
 } from '../profile.js';
 import { resultSummary } from '../result.js';
 // 新手引导：**状态机与浏览器版是同一份**（`src/tutorial.js` 里没有 DOM），只有那条提示条是 Canvas 重画的
@@ -404,6 +404,24 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
         try { saveProfile(lobby.model.profile); } catch { /* 存不了就只在这一次生效 */ }
         note(b, '下次开局会重新显示引导', 2);
         return action;
+      case 'resetProgress': {
+        /**
+         * 「重置进度」（浏览器版在设置面板里，带一个 confirm）：清空声望 / 人物等级 / 解锁。
+         * 不可逆，所以走两步确认（与出售 / 合成同一个习惯，§1.9.2）——第一次点只把这一行变成
+         * 「再点一次确认重置」。清完之后大厅那行档案立刻按新档案算（这一局本身照打，不影响正在玩的人）。
+         */
+        if (!b.ui.resetArmed) {
+          b.ui = { ...b.ui, resetArmed: true };
+          note(b, '再点一次确认重置（清空声望 / 人物等级 / 解锁）', 2.4);
+          return action;
+        }
+        clearProfile();
+        lobby.model = { ...createLobbyModel(), ...pickLobbyKeys(lobby.model) };
+        lobby.layout = layoutLobby(size.width, size.height, lobby.model);
+        b.ui = { selectedSlot: null, panelSlot: null, sellArmed: false };
+        note(b, '进度已清空（回大厅之后按新档案算）', 2.4);
+        return action;
+      }
       case 'lobby': backToLobby(); return action;
       case 'restart': startMatch(); return action;
       case 'endless': {

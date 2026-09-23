@@ -410,7 +410,7 @@ test('小游戏暂停面板：行都在画布内且 ≥44，倍速/镜头/震动
   const m = createMatch({ seed: 5 });
   const sheet = layoutPause(m, { rate: 2, settings: { tdFitAll: false, sfx: false } });
   assert.equal(sheet.kind, 'pause');
-  assert.equal(sheet.rows.length, 8, '继续 / 倍速 / 镜头 / 震动 / 波次预告 / 回大厅 / 重看引导 / 收起面板');
+  assert.equal(sheet.rows.length, 9, '继续 / 倍速 / 镜头 / 震动 / 波次预告 / 回大厅 / 重看引导 / 重置进度 / 收起面板');
   for (const r of sheet.rows) {
     assert.ok(r.h >= 44 && r.y + r.h <= DESIGN.h, `${r.id} 行高或位置不达标`);
     assert.ok(!(r.x < 448 && r.y < 52 && r.x + r.w > 396), `${r.id} 压到顶栏那两个键上`);
@@ -422,6 +422,9 @@ test('小游戏暂停面板：行都在画布内且 ≥44，倍速/镜头/震动
   assert.ok(sheet.byId.replayTutorial, '§153 的「重看新手引导」要在这儿（浏览器版在设置面板里同一个动作）');
   assert.ok(sheet.byId.wavePreview, '§154：TD 这边摆「波次预告」');
   assert.ok(!sheet.byId.autoPickup, 'TD 不摆「自动拾取」（那是防守专用）');
+  assert.equal(sheet.byId.resetProgress.label, '重置进度', '不可逆的动作走两步确认');
+  const armed = layoutPause(m, { settings: {}, resetArmed: true }).byId.resetProgress;
+  assert.match(armed.label, /再点一次确认/);
 });
 
 test('小游戏暂停与倍速：暂停时内核一步不走，倍速按倍数走，镜头/震动落进设置', async () => {
@@ -570,5 +573,50 @@ test('小游戏波次预告：开波前那一行来自波次表，设置里关�
     app.tap(resume.x + resume.w / 2, resume.y + resume.h / 2);
     app.drawFrame();
     assert.match(String(line()), /已在设置里关闭/, '关掉之后那一行要说清是「我关了」，不是把这行藏起来');
+  } finally { fake.uninstall(); }
+});
+
+test('小游戏「重置进度」：两步确认之后真的清空声望与解锁（不可逆动作的老规矩）', async () => {
+  await import('../tools/build-minigame.mjs');
+  const fake = installFakeWx();
+  try {
+    const require = createRequire(import.meta.url);
+    const app = loadFreshApp(require, 11);
+    app.startMatch();
+    const m = app.match();
+    // 先攒一点进度：打完一局（记档那一步会写声望与解锁）
+    m.time = 400;
+    m.stats.kills = 40;
+    m.result = 'win';
+    app.drawFrame();
+    const saved = JSON.parse(globalThis.wx.getStorageSync('frostfall:profile') || '{}');
+    assert.ok(saved.reputation > 0, `前提：这一局记了档（声望 ${saved.reputation}）`);
+
+    // 暂停面板里那一行：第一次点只转到「再点一次确认」，档案一个字都不能动
+    const pause = app.layout().byId.pause;
+    app.tap(pause.x + pause.w / 2, pause.y + pause.h / 2);
+    const tapSheet = (id) => {
+      const r = app.getModel().sheet.byId[id];
+      assert.ok(r, `面板上找不到 ${id}`);
+      app.tap(r.x + r.w / 2, r.y + r.h / 2);
+    };
+    tapSheet('resetProgress');
+    assert.match(app.getModel().sheet.byId.resetProgress.label, /再点一次确认/);
+    assert.ok(JSON.parse(globalThis.wx.getStorageSync('frostfall:profile') || '{}').reputation > 0,
+      '第一次点不许真的清掉');
+    // 第二次点：清空（不可逆动作两步确认，§1.9.2）
+    tapSheet('resetProgress');
+    const after = globalThis.wx.getStorageSync('frostfall:profile');
+    assert.ok(!after || JSON.parse(String(after)).reputation === 0, `档案要清掉（实际 ${after}）`);
+    // 回大厅：那行档案按新档案算（声望 0、可玩 1 张）
+    // 重置之后面板收起了（这一局还是暂停态）：先「继续」再「暂停」，把面板重新摊开
+    app.tap(pause.x + pause.w / 2, pause.y + pause.h / 2);
+    assert.equal(app.getModel().paused, false, '那一下是「继续」');
+    app.tap(pause.x + pause.w / 2, pause.y + pause.h / 2);
+    tapSheet('lobby');
+    assert.equal(app.screen(), 'lobby');
+    assert.equal(app.getModel().profile.reputation, 0, '大厅那行要按新档案算');
+    // 起点就是「一张 TD + 一张防守」（新档案默认解锁 map_01 / def_01）
+    assert.equal(app.getModel().unlockedCount, 2, '解锁也回到起点');
   } finally { fake.uninstall(); }
 });
