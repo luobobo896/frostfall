@@ -286,7 +286,15 @@ export function spawnAssaultWave(m) {
   for (const g of roundDef.groups) {
     for (let i = 0; i < g.count; i++) {
       const def = MONSTERS[g.mobId];
-      const hp = def.hp * m.diff.hp * (m.assault.endless ? ENDLESS_HP_GROWTH ** (m.assault.round - rounds.length + 1) : 1);
+      /**
+       * STATUS §3.1 #27 的第二段（2026-09-23，实测回填）：**无尽第 1 波的强度 = 刚刚守住的那一波**
+       * （指数从 `n` 改成 `n-1`，即第 1 波 ×1.00、第 2 波 ×1.15…）。
+       *
+       * 原来的第 1 波直接就是 ×1.15×难度——**比刚刚勉强守住的那一波更硬**，于是高难下守满 4 轮之后
+       * 中位只有 1 波就陷落（验证记录 §213 的实测表）。「无尽」本该是「守住之后再往上爬」，
+       * 不该是「一上来就比你刚过关的那波更狠」。
+       */
+      const hp = def.hp * m.diff.hp * (m.assault.endless ? ENDLESS_HP_GROWTH ** (m.assault.round - rounds.length) : 1);
       // 多路地图：出怪在几条进攻路线之间轮流，逼玩家分兵（§2.6 的「进攻路线」列）
       const spawn = m.def.assaultSpawns[n % m.def.assaultSpawns.length];
       n += 1;
@@ -334,6 +342,17 @@ export function checkDefenseWin(m) {
   m.assault.endless = true;
   if (!m.result) m.result = 'win';
   addLog(m, '通关！进入无尽，按城堡剩余血量排行');
+  /**
+   * STATUS §3.1 #27 的第二段：**通关那一刻基地回一口血**（`milestoneHealPct`，实测标定，见验证记录 §213）。
+   * 为什么需要它：高难下守满 4 轮时城堡中位只剩 56%（困难）/ 28%（噩梦），而无尽第一波
+   * 比刚刚勉强守住的那一波更硬（×1.15 × 难度）——中位 1 波就陷落，「无尽」在高难等于不存在。
+   * 这一口血是**通关奖励**，只发生在 `result` 已经记了之后，所以它不可能改变任何一局的胜负或已有验收线。
+   */
+  const heal = Math.round(m.castle.maxHp * DEFENSE_RULES.milestoneHealPct);
+  if (m.castle.hp > 0 && m.castle.hp < m.castle.maxHp) {
+    m.castle.hp = Math.min(m.castle.maxHp, m.castle.hp + heal);
+    addLog(m, `基地抢修：城堡 +${heal}（无尽第 1 波前）`);
+  }
   return true;
 }
 

@@ -125,6 +125,33 @@ test('通关：守住第 4 轮判胜，之后转无尽继续跑（不结束对�
   assert.ok(m.stats.roundsCleared >= DEFENSE_RULES.roundsToWin);
 });
 
+test('§3.1 #27 通关那一刻基地回一口血（无尽才有得打；通关判定不受影响）', () => {
+  const m = createDefenseMatch({ seed: 6 });
+  // 先把城堡打到只剩一半以下，再看通关那一下会不会补
+  m.castle.hp = Math.round(m.castle.maxHp * 0.4);
+  const low = m.castle.hp;
+  for (let round = 1; round <= DEFENSE_RULES.roundsToWin; round++) {
+    spawnAssaultWave(m);
+    for (const mon of m.monsters) mon.dead = true;
+    m.monsters = [];
+    advance(m, 0.5);
+  }
+  const heal = Math.round(m.castle.maxHp * DEFENSE_RULES.milestoneHealPct);
+  assert.equal(m.result, 'win', '通关判定不变');
+  assert.equal(m.castle.hp, low + heal, `通关时该补 ${heal}（实测 ${low} → ${m.castle.hp}）`);
+  assert.ok(m.events.some((e) => e.text.includes('基地抢修')), '这件事要说给玩家听（日志里有一条）');
+  // 边界：满血的城堡不该被补到超过上限
+  const m2 = createDefenseMatch({ seed: 6 });
+  m2.castle.hp = m2.castle.maxHp;
+  for (let round = 1; round <= DEFENSE_RULES.roundsToWin; round++) {
+    spawnAssaultWave(m2);
+    for (const mon of m2.monsters) mon.dead = true;
+    m2.monsters = [];
+    advance(m2, 0.5);
+  }
+  assert.equal(m2.castle.hp, m2.castle.maxHp, '满血时不许超上限');
+});
+
 test('拾取：走到掉落物旁自动入包，属性更好时自动换上', () => {
   const m = createDefenseMatch({ seed: 7 });
   const attackBefore = defenseHeroStats(m).attack;
