@@ -89,12 +89,19 @@ export function layoutBattle(model = {}) {
    */
   items.push(item('speed', 380, 8, 84, 44, model.rate === 2 ? '倍速 2×' : '倍速 1×', { type: 'speed' }, { on: model.rate === 2 }));
   items.push(item('pause', 470, 8, 84, 44, model.paused ? '继续' : '暂停', { type: 'pause' }, { on: !!model.paused }));
+  /**
+   * 新手引导条（§14.3 稿 11）：压在底排上方，**条本身不吃触摸**——浏览器版那边靠 `.hud` 的
+   * `pointer-events: none` 做到同一件事，所以它盖在战场上也不挡点塔位，只有「跳过」那颗键接触摸。
+   */
+  const tutorial = model.tutorial ?? null;
+  if (tutorial) items.push(item('tutorialSkip', 574, 261, 81, 44, '跳过', { type: 'tutorialSkip' }));
   return {
     w: DESIGN.w, h: DESIGN.h,
     capsule: { x: DESIGN.w - CAPSULE.w - 8, y: 6, w: CAPSULE.w, h: CAPSULE.h },
     // 顶栏只到 x=368：右边要留给倍速/暂停两个键（再往右是右上角胶囊区，官方要求避开）
     top: { x: 12, y: 8, w: 356, h: 30 },
     result: { x: 173, y: 120, w: 320, h: 130 },
+    tutorial: tutorial ? { x: 12, y: 261, w: 643, h: 44, text: tutorial } : null,
     items,
     byId: Object.fromEntries(items.map((it) => [it.id, it])),
   };
@@ -127,6 +134,17 @@ export function drawBattleHud(ctx, m, L, { selectedTower = 'tw_arrow', message =
   text(ctx, `金 ${Math.round(m.gold)}`, L.top.x + 150, L.top.y + 15, { size: 12, color: COLORS.gold });
   text(ctx, `木 ${Math.round(m.lumber?.[0] ?? 0)}`, L.top.x + 210, L.top.y + 15, { size: 12, color: COLORS.wood });
   text(ctx, `核心 ${core}`, L.top.x + 258, L.top.y + 15, { size: 11, color: m.core.hp / m.core.maxHp < 0.35 ? COLORS.danger : COLORS.ink });
+
+  // 引导条先画底、再画键：`items` 那一轮在它上面（跳过键就压在条的右端）
+  if (L.tutorial) {
+    ctx.fillStyle = COLORS.panel;
+    roundRect(ctx, L.tutorial.x, L.tutorial.y, L.tutorial.w, L.tutorial.h, 8);
+    ctx.fill();
+    ctx.strokeStyle = COLORS.accent;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    text(ctx, L.tutorial.text, L.tutorial.x + 12, L.tutorial.y + L.tutorial.h / 2, { size: 13 });
+  }
 
   for (const it of L.items) {
     const on = !!it.on;
@@ -429,9 +447,12 @@ export function layoutPause(m, ui = {}) {
     x: 20, y: 196, w: 300, h: 44, on: sv.sfx !== false, action: { type: 'sfx' },
   });
   rows.push({ id: 'lobby', label: '回大厅', x: 334, y: 196, w: 300, h: 44, action: { type: 'lobby' } });
+  // §153 的「重看」：门槛只认 `profile.tutorialDone` 这一个标记，「重看」就是把它置回 false（下一局再挂）
   rows.push({
-    id: 'close', label: '关掉面板（仍是暂停）', x: 20, y: 246, w: 614, h: 44, action: { type: 'close' },
+    id: 'replayTutorial', label: '重看新手引导', sub: '下一局生效', x: 20, y: 246, w: 300, h: 44,
+    action: { type: 'replayTutorial' },
   });
+  rows.push({ id: 'close', label: '收起面板', x: 334, y: 246, w: 300, h: 44, action: { type: 'close' } });
   return {
     kind: 'pause',
     title: '已暂停',

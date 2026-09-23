@@ -52,10 +52,11 @@ try {
    */
   const text = await readFile(BUNDLE, 'utf8');
   const mods = [...text.matchAll(/__def\("([^"]+)"/g)].map((m) => m[1]);
-  // `render.js` / `hud-model.js` **允许**进主包：它们是纯 Canvas 与纯逻辑（大厅缩略图就复用 render.js）。
+  // `render.js` / `hud-model.js` / `tutorial.js` **允许**进主包：它们是纯 Canvas 与纯逻辑（大厅缩略图
+  // 就复用 render.js，引导那四步的推进规则复用 tutorial.js——一份代码两个渲染器）。
   // 真正进不去的是 DOM 那一层：`ui.js`（getElementById 全套）与 `main.js`（整页启动流程）。
-  const uiMods = mods.filter((id) => /(^|\/)(ui|main|joystick|tutorial)\.js$/.test(id));
-  check(uiMods.length === 0, '主包里没有 DOM 界面模块（ui/main/joystick/tutorial）',
+  const uiMods = mods.filter((id) => /(^|\/)(ui|main|joystick)\.js$/.test(id));
+  check(uiMods.length === 0, '主包里没有 DOM 界面模块（ui/main/joystick）',
     uiMods.length ? `混进了 ${uiMods.join('、')}` : `装了 ${mods.length} 个模块：${mods.map((m) => m.replace('src/', '')).join('、')}`);
   const domCalls = ['getElementById', 'querySelector', 'createElement', 'innerHTML', 'classList'].filter((k) => text.includes(k));
   check(domCalls.length === 0, '主包里没有界面专用的 DOM 调用', domCalls.length ? `命中 ${domCalls.join('/')}` : `${(text.length / 1024).toFixed(0)} KB`);

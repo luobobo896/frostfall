@@ -46,10 +46,12 @@ test('小游戏包：假 wx 下能加载、内核与源码逐字段等价、主�
     // 主包里不许有界面模块：小游戏没有 DOM，ui/main/render 那一层得等第 3 步换 Canvas
     const text = await readFile(BUNDLE, 'utf8');
     const mods = [...text.matchAll(/__def\("([^"]+)"/g)].map((x) => x[1]);
-    // render.js / hud-model.js 允许进主包（纯 Canvas 与纯逻辑，大厅缩略图就复用 render.js）；
-    // DOM 那一层（ui.js / main.js / 摇杆 / 引导）不许进来。
-    const ui = mods.filter((id) => /(^|\/)(ui|main|joystick|tutorial)\.js$/.test(id));
+    // render.js / hud-model.js / tutorial.js 允许进主包：它们是纯 Canvas 与纯逻辑（引导那条状态机
+    // 一份代码两边用，小游戏只重画提示条）；DOM 那一层（ui.js / main.js / 摇杆）不许进来。
+    const ui = mods.filter((id) => /(^|\/)(ui|main|joystick)\.js$/.test(id));
     assert.deepEqual(ui, [], `主包里混进了界面模块：${ui.join('、')}`);
+    assert.ok(mods.some((id) => /(^|\/)tutorial\.js$/.test(id)),
+      '引导状态机要走 src/tutorial.js（否则说明有人在小游戏里抄了第二份）');
     for (const call of ['getElementById', 'querySelector', 'innerHTML', 'classList']) {
       assert.ok(!text.includes(call), `主包里出现了界面专用的 DOM 调用：${call}`);
     }

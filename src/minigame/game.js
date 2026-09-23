@@ -13,9 +13,12 @@ import {
 import { isMiniGame, onHide, onTouch, storage, viewport } from '../platform.js';
 import { clearSave, hasSave, loadFromStorage, saveToStorage } from '../save.js';
 import {
-  loadProfile, mapLocked, recordResult, reviveMulOf, saveProfile, startGoldOf, unlockedMaps,
+  isFirstRun, loadProfile, mapLocked, markTutorialDone, recordResult, reviveMulOf, saveProfile, startGoldOf,
+  unlockedMaps,
 } from '../profile.js';
 import { resultSummary } from '../result.js';
+// 新手引导：**状态机与浏览器版是同一份**（`src/tutorial.js` 里没有 DOM），只有那条提示条是 Canvas 重画的
+import { createTutorial, tutorialPasses } from '../tutorial.js';
 import { gridDist } from '../core.js';
 import { loadSettings, saveSettings } from '../settings.js';
 import { createHaptics } from '../feedback.js';
@@ -142,6 +145,14 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
         startGold: startGoldOf(lobby.model.profile), reviveMul: reviveMulOf(lobby.model.profile),
       });
     if (m.mode === 'defense') m.autoPickup = settings.autoPickup !== false;   // §12.5：走到掉落物上自动捡
+    /**
+     * 新手引导（§14.3 稿 11）：**只在第一局的 TD 上挂**——那四步全是塔防的（建塔 → 提前开波 → 旋风斩 →
+     * 撑住一波），防守局挂上去就是驴唇不对马嘴。与浏览器版是同一条控制流（那边防守在 `startMatch`
+     * 开头就 return 了，所以「防守不挂引导」不需要额外写判断）。
+     */
+    const tutorial = m.mode === 'defense' || !isFirstRun(lobby.model.profile)
+      ? null
+      : createTutorial({ startedAt: 0 });
     const renderer = createRenderer(canvas, { size: () => ({ w: size.width, h: size.height }) });
     renderer.fit(m.map?.grid ?? m.grid);
     const b = {
@@ -150,6 +161,8 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
       extra: null,     // 结算那一下记档的收获（声望 / 升级），画面板用
       paused: false, rate: 1,
       saveClock: 0,    // §10.3 单人局自动存档：每 5 秒一次 + 切后台补一次
+      tutorial,        // 新手引导状态机（null = 这一局不挂）
+      waveSeen: 0,     // 引导要的「上一波是第几波」——开波/清波两个事件由它算出来
       // 防守：摇杆状态（浮动模式下底座跟手指）+ 正在建的那个工事位
       stick: { active: false, id: null, origin: null, dir: { x: 0, y: 0, mag: 0 }, start: null },
       fortSlot: null,
@@ -159,6 +172,8 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
       ? { ...defModel(b), sheet: sheetFor(m, b) }
       : {
         ...describeBattleModel(m), selectedTower: b.selectedTower, paused: b.paused, rate: b.rate,
+        // 结算面板一出来就收掉提示条（浏览器版 `view.tutorial` 同源）
+        tutorial: m.result ? null : (b.tutorial?.current()?.text ?? null),
         ui: b.ui, sheet: sheetFor(m, b),
       });
     b.layout = m.mode === 'defense' ? layoutDefense(m, defModel(b)) : layoutBattle(b.model());
@@ -174,6 +189,15 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
   };
 
   const note = (b, text, seconds = 1.6) => { b.message = text; b.until = b.m.time + seconds; };
+
+  /**
+   * 引导收尾（§153）：**只由这一处**把「已看过」写进档案——收尾条件只看 `tutorial.done`，
+   * 「档案里已经记过」不是「这一段不用跑」的理由。存档失败不该把这一局弄崩（与记档同一套写法）。
+   */
+  const saveTutorialDone = () => {
+    lobby.model = { ...lobby.model, profile: markTutorialDone(lobby.model.profile) };
+    try { saveProfile(lobby.model.profile); } catch { /* 存不了就只在这一次生效 */ }
+  };
 
   /** 一次「点」：弹层 → HUD → 战场（翻成最近的塔位） */
   const tapBattle = (b, x, y) => {
@@ -246,9 +270,23 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
       }
       case 'skill': {
         const ok = castSkill(b.m, action.index);
+        if (ok) b.tutorial?.onSkillCast();   // 引导第三步靠「真的放了技能」推进
         note(b, ok ? '技能已放' : '技能冷却中或还没解锁');
         return action;
       }
+      case 'tutorialSkip': {
+        b.tutorial?.skip();
+        b.tutorial = null;
+        saveTutorialDone();
+        note(b, '引导已跳过 · 暂停面板里可以重看', 2);
+        return action;
+      }
+      case 'replayTutorial':
+        // §153 的「重看」= 只把「已看过」那一个标记置回 false（门槛现在只看它），下一局再挂上
+        lobby.model = { ...lobby.model, profile: { ...lobby.model.profile, tutorialDone: false } };
+        try { saveProfile(lobby.model.profile); } catch { /* 存不了就只在这一次生效 */ }
+        note(b, '下次开局会重新显示引导', 2);
+        return action;
       case 'lobby': backToLobby(); return action;
       case 'restart': startMatch(); return action;
       case 'close':
@@ -256,6 +294,7 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
         return action;
       case 'build': {
         const ok = buildTower(b.m, action.slot, action.towerId, 0);
+        if (ok) b.tutorial?.onTowerBuilt(b.m.time);   // 引导第一步/第二步靠「真的建了塔」推进
         note(b, ok ? `建了 ${action.towerId}` : '金币不足或这里不能建');
         if (ok) b.ui = { selectedSlot: null, panelSlot: action.slot, sellArmed: false };
         return action;
@@ -472,7 +511,11 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
       drawDefenseHud(ctx, b.m, b.layout, { message, stick: b.stick.active ? { base: b.stick.origin, dir: b.stick.dir } : { base: b.layout.stick, dir: { x: 0, y: 0, mag: 0 } } });
     } else {
       b.layout = layoutBattle(b.model());
-      b.renderer.draw({ m: b.m, selectedSlot: null, selectedTower: null, localSlot: 0, now: b.m.time, pulses: false });
+      // `hintSlots`：引导第一步/第二步在战场上圈出「建这里」（render.js 本来就有这段，直接复用）
+      b.renderer.draw({
+        m: b.m, selectedSlot: null, selectedTower: null, localSlot: 0, now: b.m.time, pulses: false,
+        hintSlots: b.tutorial?.hintSlotCount() ?? 0,
+      });
       ctx.setTransform(size.dpr, 0, 0, size.dpr, 0, 0);   // renderer 可能重设过变换，这里再对齐一次
       drawBattleHud(ctx, b.m, b.layout, { selectedTower: b.selectedTower, message });
     }
@@ -502,6 +545,23 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
         battle.stickGoal = null;
       }
       step(battle.m, TICK_STEP);
+    }
+    // 引导要喂两个事件：开波 / 清波（浏览器版 main.js 里那一段同源，`waveSeen` 就是 `lastWaveSeen`）
+    if (battle.tutorial && battle.m.mode !== 'defense') {
+      if (battle.m.wave.index !== battle.waveSeen) {
+        const cleared = battle.waveSeen;
+        battle.waveSeen = battle.m.wave.index;
+        if (battle.m.wave.index > 0) battle.tutorial.onWaveStarted(battle.m.wave.index, battle.m.time);
+        if (cleared > 0) battle.tutorial.onWaveCleared(cleared, battle.m.time);
+        if (battle.tutorial.done) {
+          const s = battle.tutorial.summary();
+          const v = tutorialPasses(s);
+          note(battle, `引导完成：建塔 ${s.secondsToFirstTower ?? '—'}s · 首波 ${s.secondsToWaveCleared ?? '—'}s`
+            + `（目标 ≤90 / ≤180，${v.firstTowerOk && v.firstWaveOk ? '达标' : '超标'}）`, 4);
+          battle.tutorial = null;
+          saveTutorialDone();
+        }
+      }
     }
     maybeAutosave(battle, seconds);
     recordIfFinished(battle);

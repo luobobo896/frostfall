@@ -119,8 +119,11 @@ if (page === 'lobby') {
     wave: m.wave.index, phase: m.wave.phase, timer: m.wave.timer, gold: Math.round(m.gold),
     core: m.core.hp, coreMax: m.core.maxHp, result: m.result, length: m.length,
     canEarly: false, skills: m.hero.skillUnlocked, selectedTower: 'tw_arrow',
+    // 战场那张顺手把**新手引导条**也摆上：第一局进 TD 就是这个样子（引导文案从状态机那唯一一份取）；
+    // 别的几张（商店 / 结算 / 暂停）不摆——真机上它们要么盖住条，要么（结算）本来就把条收掉了
+    tutorial: page === 'battle' ? (await import('/src/tutorial.js')).TUTORIAL_STEPS[0].text : null,
   };
-  renderer.draw({ m, selectedSlot: null, selectedTower: null, localSlot: 0, now: m.time, pulses: false });
+  renderer.draw({ m, selectedSlot: null, selectedTower: null, localSlot: 0, now: m.time, pulses: false, hintSlots: 3 });
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   drawBattleHud(ctx, m, layoutBattle(model), { selectedTower: 'tw_arrow', message: '点塔位建塔 · 点「开波」提前开打' });
   // 第三张样张：把塔面板摊开（点已建的塔就是这个界面）
