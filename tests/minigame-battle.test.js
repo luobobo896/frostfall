@@ -904,3 +904,54 @@ test('小游戏战场：正在操作的那个塔位要在画面上高亮（空�
     assert.deepEqual(seen.at(-1), { slot: null, tower: null }, '关掉面板之后不该还描着边');
   } finally { fake.uninstall(); }
 });
+
+test('小游戏战场：伤害飘字（§14.3）——两帧血量差算出来、低特效档不画、过期就收', async () => {
+  await import('../tools/build-minigame.mjs');
+  const fake = installFakeWx();
+  try {
+    const require = createRequire(import.meta.url);
+    const app = loadFreshApp(require, 20);
+    app.startMatch();
+    const m = app.match();
+    const r = app.renderer();
+    const seen = [];
+    const orig = r.draw;
+    r.draw = (view) => { seen.push(view.floaters); return orig(view); };
+
+    // 建两座塔 + 提前开波，跑到怪被真的打伤
+    for (const i of [0, 1]) {
+      const p = r.toScreen(m.map.slots[i].x, m.map.slots[i].y);
+      app.tap(p.x, p.y);
+      const row = app.getModel().sheet.byId['build-tw_arrow'];
+      app.tap(row.x + row.w / 2, row.y + row.h / 2);
+      const close = app.getModel().sheet.byId.close;
+      app.tap(close.x + close.w / 2, close.y + close.h / 2);
+    }
+    const early = app.layout().byId.early;
+    app.tap(early.x + early.w / 2, early.y + early.h / 2);
+    app.drawFrame();          // 先画一帧：飘字靠「上一帧的血量快照」算，第一帧只是记住快照
+    /**
+     * 一秒一步地推、每步画一帧：飘字看的是**相邻两帧**的血量差，一口推 30 秒会把
+     * 「出怪 → 被打 → 死亡」都压在同一个间隔里，差值看不出来（真机每帧 16ms，不会有这问题）。
+     */
+    for (let i = 0; i < 90 && app.floaters().length === 0; i += 1) { app.tick(1); app.drawFrame(); }
+    assert.ok(app.floaters().length > 0, `该有飘字（实际 ${app.floaters().length} 条）`);
+    assert.match(String(app.floaters()[0].text), /^\d+$/, '飘字上写的是伤害数字');
+    assert.equal(seen.at(-1).length, app.floaters().length, '飘字要真的传给渲染器');
+
+    // 低特效档：不传给渲染器（§116 那一档关的就是飘字与脉冲）
+    const pause = app.layout().byId.pause;
+    app.tap(pause.x + pause.w / 2, pause.y + pause.h / 2);
+    const fx = app.getModel().sheet.byId.effects;
+    app.tap(fx.x + fx.w / 2, fx.y + fx.h / 2);
+    const resume = app.getModel().sheet.byId.resume;
+    app.tap(resume.x + resume.w / 2, resume.y + resume.h / 2);
+    app.drawFrame();
+    assert.equal(seen.at(-1).length, 0, '低特效档不该再画飘字');
+
+    // 过期的飘字会被收掉（时间基准是墙上时钟，暂停也不会卡住）
+    app.floaters().push({ uid: 1, cell: { x: 0, y: 0 }, text: '999', kind: 'big', until: 0 });
+    app.drawFrame();
+    assert.ok(!app.floaters().some((f) => f.text === '999'), '过期的飘字要收掉');
+  } finally { fake.uninstall(); }
+});

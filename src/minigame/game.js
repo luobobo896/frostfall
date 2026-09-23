@@ -28,7 +28,7 @@ import { loadSettings, saveSettings } from '../settings.js';
 import { createHaptics } from '../feedback.js';
 import { createCue } from '../audio.js';
 import { createMinimap, createRenderer } from '../render.js';
-import { wavePreview } from '../hud-model.js';
+import { damageFloaters, wavePreview } from '../hud-model.js';
 import {
   buildFort, createDefenseMatch, describeDefense, orderMove, repairCastle, steerGoal, teleportHome, updateDefense,
 } from '../defense.js';
@@ -286,6 +286,8 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
       // 防守：摇杆状态（浮动模式下底座跟手指）+ 正在建的那个工事位
       stick: { active: false, id: null, origin: null, dir: { x: 0, y: 0, mag: 0 }, start: null },
       fortSlot: null,
+      floaters: [],        // 伤害飘字（§14.3：打出去多少看得见）；`lastMonsters` 是算它用的上一帧快照
+      lastMonsters: [],
       /**
        * 防守的小地图（§2.6）。小游戏里**第二张 `wx.createCanvas()` 就是离屏画布**：
        * 用小地图那套现成的绘制（`render.js` 的 `createMinimap`，与浏览器版共用一份）画在它上面，
@@ -858,6 +860,20 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
     if (!battle) { drawLobby(ctx, lobby.model, lobby.layout); return; }
     const b = battle;
     const message = b.m.time < b.until ? b.message : null;
+    /**
+     * 伤害飘字（§14.3：打出去多少看得见）：与浏览器版同一套算法——**两帧血量差**
+     * （`damageFloaters`），不依赖伤害事件（联机也不下发它们）。时间基准用**墙上时钟**而不是 `m.time`：
+     * 暂停时 `m.time` 冻住，飘字就会一直挂在屏幕上（浏览器那边用的也是墙上时钟）。
+     */
+    const nowSec = Date.now() / 1000;
+    const monsters = b.m.monsters.map((x) => ({ uid: x.uid, hp: x.hp, cell: x.cell }));
+    if (b.lastMonsters.length || monsters.length) {
+      for (const f of damageFloaters(b.lastMonsters, monsters)) b.floaters.push({ ...f, until: nowSec + 0.6 });
+    }
+    b.lastMonsters = monsters;
+    b.floaters = b.floaters.filter((f) => f.until > nowSec).slice(-24);
+    // 低特效档不画飘字（§116：那一档关的就是飘字与脉冲）
+    const floaters = settings.effects === 'low' ? [] : b.floaters;
     if (b.m.mode === 'defense') {
       b.layout = layoutDefense(b.m, defModel(b));
       // 跟随相机由 drawDefense 自己算（它拿 `scale`）；我们只把缩放档递进去
@@ -869,7 +885,7 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
       // 高亮只在**面板开着**的时候给：关掉面板（取消 / 建完 / 去别处）之后不该还留着一个
       // 「你刚才点的这里」的记号（面板状态是唯一来源，用不着另外去清 `b.fortSlot`）
       b.renderer.draw({
-        m: b.m, scale: settings.zoom ?? 1.5, now: b.m.time,
+        m: b.m, scale: settings.zoom ?? 1.5, now: nowSec, floaters,
         selectedFortSlot: b.ui.sheetKind === 'fort' ? b.fortSlot : null,
       });
       const o = hudOffset();
@@ -891,7 +907,8 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
          * `render.js` 会给选中的空位画绿圈、给选中的塔描边——浏览器版一直传这两个值，
          * 小游戏以前写死 null，于是「点塔位 → 面板」这条路里画面上什么都没变。
          */
-        m: b.m, selectedSlot: b.ui.selectedSlot, selectedTower: b.ui.panelSlot, localSlot: 0, now: b.m.time,
+        m: b.m, selectedSlot: b.ui.selectedSlot, selectedTower: b.ui.panelSlot, localSlot: 0, now: nowSec,
+        floaters,
         pulses: settings.effects !== 'low',
         hintSlots: b.tutorial?.hintSlotCount() ?? 0,
       });
@@ -1018,6 +1035,8 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
     renderer: () => battle?.renderer ?? null,
     /** 调试/验收用：防守的小地图（离屏画布 + `render.js` 那套绘制）——离线验收要断言它真的画了 */
     minimap: () => battle?.minimap ?? null,
+    /** 调试/验收用：伤害飘字（与浏览器版同一套「两帧血量差」算法） */
+    floaters: () => battle?.floaters ?? [],
     tap: (x, y) => (battle ? tapBattle(battle, x, y) : tapLobby(x, y)),
     startMatch,
     backToLobby,
