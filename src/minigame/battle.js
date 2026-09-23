@@ -6,12 +6,15 @@
 // 这一屏的交互是**简化版**：点塔位 = 用当前选中的塔种建塔（已有塔则升级），点「开波」提前开波，
 // 点技能键放技能，点「回大厅」退回去。浏览器版那一套「点塔位 → 轮盘选塔 → 塔面板（升级/出售/优先级）」
 // 还没搬过来——真机手感确认之后再决定照搬还是换成更适合拇指的两步式（见 docs/minigame-port.md §5.2）。
-import { TOWERS } from '../data.js';
+import { TARGET_PRIORITIES, TOWERS } from '../data.js';
+import { attackHint } from '../hud-model.js';
+import { TOWER_REPAIR_GOLD, towerStatsAt, upgradeCost } from '../match.js';
 
 export const DESIGN = { w: 667, h: 375 };
 /** 右上角胶囊按钮的禁区（和 lobby 同一条要求） */
 export const CAPSULE = { w: 96, h: 32 };
 export const TOWER_ORDER = ['tw_arrow', 'tw_cannon', 'tw_frost', 'tw_static'];
+export const PRIORITY_LABEL = { front: '最靠前', strongest: '最强', weakest: '最弱', air_first: '空中优先' };
 
 const COLORS = {
   panel: 'rgba(12, 20, 34, 0.86)',
@@ -145,4 +148,128 @@ export function drawBattleHud(ctx, m, L, { selectedTower = 'tw_arrow', message =
       { size: 10, align: 'center', color: COLORS.dim });
   }
   return L;
+}
+
+/* ---------- 弹层：建造选塔 / 塔面板 ---------- */
+
+/**
+ * 点塔位之后弹出来的那张**底部面板**（两种：空地→选塔种，已有塔→塔面板）。
+ *
+ * 为什么不用浏览器版那个**轮盘**：轮盘要绕触点画一圈、拇指得精确瞄准，而小游戏的屏幕更小、
+ * 手指更粗。这里先给「两步式」——点塔位 → 面板里选/操作，行高 44pt（§1.9.2）。
+ * 真机手感确认之后如果轮盘更顺手，再换（换的时候这一层的四件套不用动）。
+ */
+export function layoutSheet(m, ui = {}) {
+  const slot = ui.panelSlot ?? ui.selectedSlot ?? null;
+  if (slot == null) return null;
+  const t = m.towers.find((x) => x.slot === slot) ?? null;
+  const cell = m.map.slots[slot];
+  const rows = [];
+
+  if (!t) {
+    // 建造：4 种塔两列排（比单列省一半高度）
+    TOWER_ORDER.forEach((id, i) => {
+      const col = i % 2, row = Math.floor(i / 2);
+      rows.push({
+        id: `build-${id}`, label: TOWERS[id].name, sub: `${TOWERS[id].cost} 金`,
+        x: 20 + col * 314, y: 96 + row * 50, w: 300, h: 44,
+        disabled: m.gold < TOWERS[id].cost,
+        action: { type: 'build', slot, towerId: id },
+      });
+    });
+    rows.push({
+      id: 'cancel', label: '取消', x: 20, y: 200, w: 614, h: 44, action: { type: 'close' },
+    });
+    return {
+      kind: 'build',
+      title: `在这里建塔（第 ${slot + 1} 号塔位 · 金币 ${Math.round(m.gold)}）`,
+      hint: cell ? `格 ${cell.x},${cell.y}` : '',
+      box: { x: 12, y: 62, w: 643, h: 194 },
+      rows, byId: Object.fromEntries(rows.map((r) => [r.id, r])),
+    };
+  }
+
+  // 塔面板：读数 + 升级 / 出售（两步）/ 优先级 / 修塔（只在攻城图）/ 关闭
+  const s = t.stats ?? towerStatsAt(m.map, t.cell, t.towerId, t.level);
+  const cost = upgradeCost(t.towerId, t.level);
+  const refund = Math.floor(t.invested * 0.5);
+  const canRepair = !!m.map.def.siege && t.maxHp && t.hp < t.maxHp;
+  const info = `Lv${t.level} · 伤害 ${s.damage.toFixed(1)} · 攻速 ${s.atkSpeed.toFixed(2)} · 射程 ${s.range.toFixed(1)}`
+    + (s.hitsAir ? ' · 对空' : ' · 不对空') + ` · ${attackHint(s.attackType)}`;
+
+  rows.push({
+    id: 'upgrade', label: cost == null ? '已满级' : `升级 → Lv${t.level + 1}`, sub: cost == null ? '' : `${cost} 金`,
+    x: 20, y: 96, w: 300, h: 44, disabled: cost == null || m.gold < cost,
+    action: { type: 'upgrade', slot },
+  });
+  rows.push({
+    id: 'sell', label: ui.sellArmed ? '确认出售' : '出售', sub: `返还 ${refund} 金`,
+    x: 334, y: 96, w: 300, h: 44, danger: !!ui.sellArmed,
+    action: { type: 'sell', slot },
+  });
+  // 竖直节奏跟着「有没有修塔那一行」走：没有它就往上收，不留一条空带（第一版固定坐标，样张里一眼看得出来）
+  const prioY = canRepair ? 196 : 146;
+  const closeY = canRepair ? 246 : 196;
+  if (canRepair) {
+    rows.push({
+      id: 'repair', label: '修塔', sub: `${TOWER_REPAIR_GOLD} 金`,
+      x: 20, y: 146, w: 300, h: 44, disabled: m.gold < TOWER_REPAIR_GOLD,
+      action: { type: 'repair', slot },
+    });
+  }
+  TARGET_PRIORITIES.forEach((p, i) => {
+    rows.push({
+      id: `prio-${p}`, label: PRIORITY_LABEL[p], x: 20 + i * 157, y: prioY, w: 148, h: 44,
+      on: t.priority === p, action: { type: 'priority', slot, value: p },
+    });
+  });
+  rows.push({
+    id: 'close', label: '关闭', x: 20, y: closeY, w: 614, h: 44,
+    action: { type: 'close' },
+  });
+  return {
+    kind: 'tower',
+    title: `${TOWERS[t.towerId].name} · Lv${t.level}`,
+    hint: info,
+    box: { x: 12, y: 62, w: 643, h: canRepair ? 240 : 190 },
+    rows, byId: Object.fromEntries(rows.map((r) => [r.id, r])),
+  };
+}
+
+/** 弹层上的命中测试（弹层开着时，触点先问它） */
+export function hitTestSheet(sheet, x, y) {
+  if (!sheet) return null;
+  for (const r of sheet.rows) {
+    if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) return r.action;
+  }
+  return { type: 'close' };   // 点弹层空白处 = 关掉（比"必须点准关闭"友好）
+}
+
+/** 画弹层 */
+export function drawSheet(ctx, sheet) {
+  if (!sheet) return;
+  const b = sheet.box;
+  ctx.fillStyle = 'rgba(6,10,18,0.94)';
+  roundRect(ctx, b.x, b.y, b.w, b.h, 12);
+  ctx.fill();
+  ctx.strokeStyle = COLORS.panelLine;
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  text(ctx, sheet.title, b.x + 12, b.y + 18, { size: 13, weight: 'bold' });
+  if (sheet.hint) text(ctx, sheet.hint, b.x + b.w - 12, b.y + 18, { size: 11, color: COLORS.dim, align: 'right' });
+  for (const r of sheet.rows) {
+    ctx.fillStyle = r.on ? 'rgba(90,169,230,0.24)' : (r.danger ? 'rgba(209,80,63,0.28)' : 'rgba(18,28,44,0.92)');
+    roundRect(ctx, r.x, r.y, r.w, r.h, 8);
+    ctx.fill();
+    ctx.strokeStyle = r.on ? COLORS.accent : (r.danger ? COLORS.danger : COLORS.panelLine);
+    ctx.lineWidth = r.on || r.danger ? 2 : 1;
+    ctx.stroke();
+    const dim = r.disabled ? COLORS.dim : (r.danger ? COLORS.danger : COLORS.ink);
+    if (r.sub) {
+      text(ctx, r.label, r.x + 12, r.y + r.h / 2, { size: 13, color: dim });
+      text(ctx, r.sub, r.x + r.w - 12, r.y + r.h / 2, { size: 11, color: r.disabled ? COLORS.dim : COLORS.gold, align: 'right' });
+    } else {
+      text(ctx, r.label, r.x + r.w / 2, r.y + r.h / 2, { size: 13, color: dim, align: 'center' });
+    }
+  }
 }

@@ -6,13 +6,16 @@
 // 界面换 Canvas 是第 3 步，见 docs/minigame-port.md。
 import { TICK_STEP } from '../data.js';
 import { DEFENSE_MAPS, MAPS } from '../data.js';
-import { buildTower, castSkill, createMatch, describe as describeMatch, startWaveEarly, towerAtSlot, update, upgradeTower } from '../match.js';
+import {
+  buildTower, castSkill, createMatch, describe as describeMatch, repairTower,
+  sellTower, setPriority, startWaveEarly, towerAtSlot, update, upgradeTower,
+} from '../match.js';
 import { createDefenseMatch, describeDefense, updateDefense } from '../defense.js';
 import { isMiniGame, onTouch, storage, viewport } from '../platform.js';
 import { loadProfile, mapLocked, unlockedMaps } from '../profile.js';
 import { createRenderer } from '../render.js';
 import { applyLobbyAction, drawLobby, hitTestLobby, layoutLobby } from './lobby.js';
-import { drawBattleHud, hitTestBattle, layoutBattle } from './battle.js';
+import { drawBattleHud, drawSheet, hitTestBattle, hitTestSheet, layoutBattle, layoutSheet } from './battle.js';
 
 export const version = '0.1.0';
 
@@ -102,8 +105,14 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
     });
     const renderer = createRenderer(canvas, { size: () => ({ w: size.width, h: size.height }) });
     renderer.fit(m.map.grid);
-    const b = { m, renderer, selectedTower: 'tw_arrow', message: null, until: 0, layout: null };
-    b.model = () => ({ ...describeBattleModel(m), selectedTower: b.selectedTower });
+    const b = {
+      m, renderer, selectedTower: 'tw_arrow', message: null, until: 0, layout: null,
+      ui: { selectedSlot: null, panelSlot: null, sellArmed: false },
+    };
+    b.model = () => ({
+      ...describeBattleModel(m), selectedTower: b.selectedTower,
+      ui: b.ui, sheet: layoutSheet(m, b.ui),
+    });
     b.layout = layoutBattle(b.model());
     battle = b;
     return b;
@@ -115,10 +124,15 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
     lobby.layout = layoutLobby(size.width, size.height, lobby.model);
   };
 
-  const note = (m, text, seconds = 1.6) => { m.message = text; m.until = m.m.time + seconds; };
+  const note = (b, text, seconds = 1.6) => { b.message = text; b.until = b.m.time + seconds; };
 
-  /** 一次「点」：先问 HUD，再问战场（翻成最近的塔位） */
+  /** 一次「点」：弹层 → HUD → 战场（翻成最近的塔位） */
   const tapBattle = (b, x, y) => {
+    // 弹层开着时它最优先（关掉 / 选塔 / 升级 …）
+    if (b.ui.selectedSlot != null || b.ui.panelSlot != null) {
+      const action = hitTestSheet(layoutSheet(b.m, b.ui), x, y);
+      return applySheetAction(b, action);
+    }
     const action = hitTestBattle(b.layout, x, y);
     if (action) {
       switch (action.type) {
@@ -149,13 +163,55 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
     if (best < 0 || bestD > 4) { note(b, '这一格不是塔位'); return null; }
     const existing = towerAtSlot(b.m, best);
     if (existing) {
-      const ok = upgradeTower(b.m, best);
-      note(b, ok ? `升级到 ${existing.level + 1} 级` : '金币不足或已满级');
-      return { type: 'upgrade', slot: best };
+      b.ui = { selectedSlot: null, panelSlot: best, sellArmed: false };
+      return { type: 'openTower', slot: best };
     }
-    const ok = buildTower(b.m, best, b.selectedTower, 0);
-    note(b, ok ? `建了 ${b.selectedTower}` : '金币不足或这里不能建');
-    return { type: 'build', slot: best };
+    b.ui = { selectedSlot: best, panelSlot: null, sellArmed: false };
+    return { type: 'openBuild', slot: best };
+  };
+
+  /** 弹层上的动作 → 内核调用 */
+  const applySheetAction = (b, action) => {
+    if (!action) return null;
+    const slot = b.ui.panelSlot ?? b.ui.selectedSlot;
+    switch (action.type) {
+      case 'close':
+        b.ui = { selectedSlot: null, panelSlot: null, sellArmed: false };
+        return action;
+      case 'build': {
+        const ok = buildTower(b.m, action.slot, action.towerId, 0);
+        note(b, ok ? `建了 ${action.towerId}` : '金币不足或这里不能建');
+        if (ok) b.ui = { selectedSlot: null, panelSlot: action.slot, sellArmed: false };
+        return action;
+      }
+      case 'upgrade': {
+        const ok = upgradeTower(b.m, action.slot);
+        note(b, ok ? '升级完成' : '金币不足或已满级');
+        return action;
+      }
+      case 'sell': {
+        // 不可逆操作要两步（§1.9.2）：先变「确认出售」，再点一次才真卖
+        if (!b.ui.sellArmed) { b.ui = { ...b.ui, sellArmed: true }; note(b, '再点一次确认出售', 2); return action; }
+        const ok = sellTower(b.m, action.slot);
+        note(b, ok ? '已出售' : '这座塔已经没了');
+        b.ui = { selectedSlot: null, panelSlot: null, sellArmed: false };
+        return action;
+      }
+      case 'priority': {
+        const ok = setPriority(b.m, action.slot, action.value);
+        note(b, ok ? `优先级：${action.value}` : '设置失败');
+        return action;
+      }
+      case 'repair': {
+        const ok = repairTower(b.m, action.slot);
+        note(b, ok ? '塔已修复' : '金币不足或无需修复');
+        return action;
+      }
+      case 'tower':   // 底部那排塔种按钮（快捷改默认建造种类）
+        b.selectedTower = action.value;
+        return action;
+      default: return action;
+    }
   };
 
   /** 一次「点」（大厅）：应用选择，并在「单人开局」上真的进局 */
@@ -191,6 +247,8 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
       selectedTower: b.selectedTower,
       message: b.m.time < b.until ? b.message : null,
     });
+    // 弹层画在最后（压住 HUD 与战场）：正在建塔 / 看塔面板时，它就是焦点
+    drawSheet(ctx, b.model().sheet);
   };
 
   /** 推进内核（小游戏里由帧循环按真实时间驱动；本地验收里手动调它） */

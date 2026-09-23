@@ -20,6 +20,7 @@ const SHOTS_DIR = join(ROOT, 'docs/testing/screenshots');
 const SHOTS = [
   { file: 'minigame-lobby.png', w: Number(w), h: Number(h), page: 'lobby' },
   { file: 'minigame-battle.png', w: Number(w), h: Number(h), page: 'battle' },
+  { file: 'minigame-tower.png', w: Number(w), h: Number(h), page: 'tower' },
 ];
 
 if (!existsSync(CHROME)) {
@@ -64,7 +65,7 @@ if (page === 'lobby') {
 } else {
   const { createMatch, buildTower, update, startWaveEarly } = await import('/src/match.js');
   const { createRenderer } = await import('/src/render.js');
-  const { layoutBattle, drawBattleHud } = await import('/src/minigame/battle.js');
+  const { layoutBattle, drawBattleHud, layoutSheet, drawSheet } = await import('/src/minigame/battle.js');
   const { TICK_STEP } = await import('/src/data.js');
   const m = createMatch({ mapId: 'map_02', difficulty: 'normal', heroId: 'hero_ranger', seed: 7, players: 1 });
   const renderer = createRenderer(canvas, { size: () => ({ w, h }) });
@@ -81,6 +82,11 @@ if (page === 'lobby') {
   renderer.draw({ m, selectedSlot: null, selectedTower: null, localSlot: 0, now: m.time, pulses: false });
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   drawBattleHud(ctx, m, layoutBattle(model), { selectedTower: 'tw_arrow', message: '点塔位建塔 · 点「开波」提前开打' });
+  // 第三张样张：把塔面板摊开（点已建的塔就是这个界面）
+  if (page === 'tower') {
+    m.gold = 420;   // 让「升级」是亮着的，样张里能看出可点状态
+    drawSheet(ctx, layoutSheet(m, { panelSlot: 1, sellArmed: false }));
+  }
 }
 window.__previewReady = true;
 </script></body></html>`;

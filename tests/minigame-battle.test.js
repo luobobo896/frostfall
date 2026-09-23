@@ -7,8 +7,12 @@ import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { CAPSULE, DESIGN, TOWER_ORDER, drawBattleHud, hitTestBattle, layoutBattle } from '../src/minigame/battle.js';
+import {
+  CAPSULE, DESIGN, PRIORITY_LABEL, TOWER_ORDER,
+  drawBattleHud, drawSheet, hitTestBattle, hitTestSheet, layoutBattle, layoutSheet,
+} from '../src/minigame/battle.js';
 import { installFakeWx } from '../tools/fake-wx.mjs';
+import { TOWER_MAX_LEVEL } from '../src/data.js';
 
 // 与 minigame-bundle.test.js 同一个道理：**各有各的产物目录**，否则并发跑会互相踩
 const OUT = mkdtempSync(join(tmpdir(), 'ff-mini-battle-'));
@@ -105,9 +109,17 @@ test('小游戏战场：在假 wx 里真的能打起来（点塔位建塔 → �
     for (const i of [0, 1]) {
       const p = r.toScreen(m.map.slots[i].x, m.map.slots[i].y);
       const action = app.tap(p.x, p.y);
-      assert.equal(action?.type, 'build', `点第 ${i} 个塔位应该建塔（实际 ${JSON.stringify(action)}）`);
+      assert.equal(action?.type, 'openBuild', `点第 ${i} 个空塔位应该弹出建造面板（实际 ${JSON.stringify(action)}）`);
+      const sheet = app.getModel().sheet;
+      assert.equal(sheet.kind, 'build', '弹出来的应该是「选塔种」那张');
+      const row = sheet.byId['build-tw_arrow'];
+      app.tap(row.x + row.w / 2, row.y + row.h / 2);
+      // 建完会自动切到这座塔的面板 —— 关掉它，否则下一个塔位那一下会被弹层吃掉
+      const close = app.getModel().sheet.byId.close;
+      app.tap(close.x + close.w / 2, close.y + close.h / 2);
     }
-    assert.equal(m.towers.length, 2, '两座塔要真的建出来');
+    assert.equal(m.towers.length, 2, '在弹层里选塔之后，两座塔要真的建出来');
+    assert.equal(app.getModel().sheet, null, '关掉面板之后就不该再有弹层');
 
     // 开波（提前开波只把 timer 清零，下一 tick 才真的出怪）→ 跑 90 秒
     const early = app.layout().byId.early;
@@ -122,4 +134,65 @@ test('小游戏战场：在假 wx 里真的能打起来（点塔位建塔 → �
     assert.ok(texts.some((t) => /金 \d+/.test(t)), '战场 HUD 要画在这一帧里');
     assert.ok(texts.some((t) => t.includes('回大厅')), '出口要在这一帧里');
   } finally { fake.uninstall(); }
+});
+
+test('小游戏弹层：建造面板 4 种塔 + 取消，行的热区 ≥44 且在画布内', () => {
+  const m = { gold: 200, towers: [], map: { slots: [{ x: 3, y: 4 }], def: {} } };
+  const sheet = layoutSheet(m, { selectedSlot: 0 });
+  assert.equal(sheet.kind, 'build');
+  assert.equal(sheet.rows.length, TOWER_ORDER.length + 1, '四种塔 + 取消');
+  for (const id of TOWER_ORDER) assert.ok(sheet.byId[`build-${id}`], `缺少 ${id} 的建造行`);
+  for (const r of sheet.rows) {
+    assert.ok(r.h >= 44, `${r.id} 行高 ${r.h} < 44（§1.9.2）`);
+    assert.ok(r.x >= 0 && r.y >= 0 && r.x + r.w <= DESIGN.w && r.y + r.h <= DESIGN.h, `${r.id} 出界`);
+  }
+  // 买不起的塔要灰掉（不给「点了没反应」）
+  const poor = layoutSheet({ gold: 10, towers: [], map: { slots: [{ x: 1, y: 1 }], def: {} } }, { selectedSlot: 0 });
+  assert.ok(poor.rows.filter((r) => r.id.startsWith('build-')).every((r) => r.disabled), '钱不够时四种塔都该是灰的');
+  // 命中：点取消 = 关掉；点面板外 = 也当成关掉（比要求点准关闭友好）
+  assert.deepEqual(hitTestSheet(sheet, sheet.byId.cancel.x + 4, sheet.byId.cancel.y + 4), { type: 'close' });
+  assert.deepEqual(hitTestSheet(sheet, 700, 370), { type: 'close' });
+});
+
+test('小游戏弹层：塔面板给读数 + 升级 / 出售 / 四档优先级，满级与买不起都灰掉', () => {
+  const tower = {
+    slot: 0, towerId: 'tw_arrow', level: 2, invested: 120, priority: 'front', cell: { x: 3, y: 4 },
+    stats: { damage: 18, atkSpeed: 1.5, range: 5, hitsAir: true, attackType: 'normal' },
+  };
+  const m = {
+    gold: 500, towers: [tower], map: { def: {}, slots: [tower.cell] },
+  };
+  const sheet = layoutSheet(m, { panelSlot: 0 });
+  assert.equal(sheet.kind, 'tower');
+  assert.ok(sheet.byId.upgrade && sheet.byId.sell && sheet.byId.close, '升级/出售/关闭都要在');
+  for (const p of ['front', 'strongest', 'weakest', 'air_first']) {
+    assert.ok(sheet.byId[`prio-${p}`], `缺优先级 ${p}`);
+    assert.equal(sheet.byId[`prio-${p}`].label, PRIORITY_LABEL[p]);
+  }
+  assert.ok(sheet.byId['prio-front'].on, '当前优先级要高亮');
+  assert.match(sheet.hint, /伤害 18\.0/, '面板要写清塔的读数');
+  assert.match(sheet.byId.sell.sub, /返还 \d+ 金/);
+  // 满级：升级行灰掉且写「已满级」
+  const maxed = layoutSheet({ ...m, towers: [{ ...tower, level: TOWER_MAX_LEVEL }] }, { panelSlot: 0 });
+  assert.equal(maxed.byId.upgrade.disabled, true);
+  assert.match(maxed.byId.upgrade.label, /已满级/);
+  // 出售两步：armed 之后标签变「确认出售」，颜色转危险色
+  const armed = layoutSheet(m, { panelSlot: 0, sellArmed: true });
+  assert.equal(armed.byId.sell.label, '确认出售');
+  assert.equal(armed.byId.sell.danger, true);
+});
+
+test('小游戏弹层：画一帧把标题 / 读数 / 各行动作画出来（记录型 ctx 作证）', () => {
+  const tower = {
+    slot: 0, towerId: 'tw_frost', level: 1, invested: 120, priority: 'air_first', cell: { x: 3, y: 4 },
+    stats: { damage: 8, atkSpeed: 1.2, range: 4.5, hitsAir: false, attackType: 'magic' },
+  };
+  const sheet = layoutSheet({ gold: 300, towers: [tower], map: { def: {}, slots: [tower.cell] } }, { panelSlot: 0 });
+  const ctx = fakeCtx();
+  drawSheet(ctx, sheet);
+  assert.ok(ctx.calls.length > 60, `弹层这一帧调用太少（${ctx.calls.length}）`);
+  assert.ok(ctx.texts.some((t) => t.includes('冰塔')), '塔名要画出来');
+  assert.ok(ctx.texts.some((t) => t.includes('伤害')), '读数要画出来');
+  assert.ok(ctx.texts.some((t) => t.includes('升级')), '升级按钮要画出来');
+  assert.ok(ctx.texts.some((t) => t.includes('空中优先')), '优先级按钮要画出来');
 });
