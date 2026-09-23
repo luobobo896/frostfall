@@ -5,7 +5,7 @@
 //   ② 操作是**虚拟摇杆**（§1.9.1：固定左下 45%，可切浮动跟手）而不是点选建造；
 //   ③ HUD 换成轮次 / 城堡血 / 预警倒计时（TD 那套波次条在这里没有意义，§115 的口径）。
 // 这一层仍然是纯函数四件套（布局 / 绘制 / 命中 / 摇杆向量），所以能在 Node 里测、也能出样张。
-import { FORTS } from '../data.js';
+import { DEFENSE_RULES, FORTS } from '../data.js';
 import { skillKeys } from './battle.js';
 import { zoneLabel } from '../hud-model.js';
 import { zoneAt } from '../defense.js';
@@ -118,7 +118,14 @@ export function layoutDefense(m, model = {}) {
     ['teleport', '回城', { type: 'teleport' },
       !!m.hero?.dead || (teleportCd > 0 && scrolls === 0),
       teleportCd > 0 ? `${teleportCd}s${scrolls > 0 ? ' 卷轴' : ''}` : (scrolls > 0 ? `卷轴 ×${scrolls}` : '')],
-    ['repair', '修城', { type: 'repairCastle' }, m.castle.hp >= m.castle.maxHp],
+    /**
+     * 「修城」的读数与灰态照浏览器版（`ui.js` 那颗按钮）：钱不够或城堡满血都灰掉，
+     * 并且把**多少钱、回多少血**写在副标上——以前只有一个「修城」两个字，
+     * 玩家得点一下才知道买不起（提示还说「金币不足或城堡已满血」，两头都要猜）。
+     */
+    ['repair', '修城', { type: 'repairCastle' },
+      m.gold < DEFENSE_RULES.repairGold || m.castle.hp >= m.castle.maxHp,
+      `${DEFENSE_RULES.repairGold} 金 · +${Math.round(m.castle.maxHp * DEFENSE_RULES.repairPct)}`],
     ['fort', '工事', { type: 'fort' }, false],
     ['shop', '商店', { type: 'shop' }, false],
     ['bag', `背包${(m.inventory?.length ?? 0) ? `(${m.inventory.length})` : ''}`, { type: 'bag' }, false],

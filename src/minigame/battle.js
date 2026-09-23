@@ -11,6 +11,7 @@ import {
   SHOP_ITEMS, TARGET_PRIORITIES, TOWERS, TOWER_SELL_REFUND,
 } from '../data.js';
 import { attackHint, resultPanelModel, shopRows, wavePreview } from '../hud-model.js';
+import { fitText } from '../render.js';
 import {
   REVIVE_LUMBER, TOWER_REPAIR_GOLD, craftableSlots, enhanceCostOf, potionCount, shopPriceOf, skillLevel,
   towerStatsAt, upgradeCost,
@@ -78,12 +79,6 @@ export const skillKeys = (m) => [...m.hero.def.skills, m.hero.def.thirdSkill].fi
  * （怪物名与护甲标签都是可变的），量一量再画比「估个字数」靠谱——小游戏没有 CSS 的 `text-overflow`。
  * 用不上 `measureText` 的假 ctx（Node 用例）会给出按字数估的宽度，行为一致。
  */
-const fitText = (ctx, str, maxW) => {
-  if (ctx.measureText(str).width <= maxW) return str;
-  let cut = str;
-  while (cut.length > 1 && ctx.measureText(`${cut}…`).width > maxW) cut = cut.slice(0, -1);
-  return `${cut}…`;
-};
 
 /**
  * 战场 HUD 的布局（设计单位 667×375）。战场本身占满整屏，HUD 是压在上面的浮层：

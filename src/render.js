@@ -27,6 +27,18 @@ const COLORS = {
  */
 export const hintPulseAlpha = (now, pulses = true) => (pulses ? 0.35 + 0.35 * Math.sin(now * 4) : 0.7);
 
+/**
+ * 把一句话裁到给定宽度（不够就加省略号）：小游戏没有 CSS 的 `text-overflow`，
+ * 而这几处文案的长度取决于**数据表**（怪物名、护甲标签、地图名）。量一量再画比「估字数」靠谱。
+ * 假 ctx（Node 用例）的 `measureText` 按字数估宽，行为与真机一致。
+ */
+export const fitText = (ctx, str, maxW) => {
+  if (ctx.measureText(str).width <= maxW) return str;
+  let cut = str;
+  while (cut.length > 1 && ctx.measureText(`${cut}…`).width > maxW) cut = cut.slice(0, -1);
+  return `${cut}…`;
+};
+
 export function createRenderer(canvas, { size = null } = {}) {
   const ctx = canvas.getContext('2d');
   let view = { scale: 1, ox: 0, oy: 0, w: 0, h: 0 };

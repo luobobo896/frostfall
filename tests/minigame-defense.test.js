@@ -13,7 +13,7 @@ import {
 } from '../src/minigame/defense-screen.js';
 import { REVIVE_LUMBER } from '../src/match.js';
 import { createDefenseMatch } from '../src/defense.js';
-import { FORTS } from '../src/data.js';
+import { DEFENSE_RULES, FORTS } from '../src/data.js';
 import { gridDist } from '../src/core.js';
 
 const OUT = mkdtempSync(join(tmpdir(), 'ff-mini-defense-'));
@@ -450,6 +450,20 @@ test('小游戏防守：回防预警响一声（§2.6 的提示音 / §178 要�
     app.tick(0.1);
     assert.equal(fake.audio.oscillators, played, '关掉之后不该再排蜂鸣');
   } finally { fake.uninstall(); }
+});
+
+test('小游戏防守：「修城」那一格——钱不够/满血都灰，副标写清多少钱、回多少血', () => {
+  const m = createDefenseMatch({ seed: 5 });
+  m.gold = DEFENSE_RULES.repairGold - 1;
+  m.castle.hp = m.castle.maxHp - 100;
+  const poor = layoutDefense(m, { rate: 1 });
+  assert.equal(poor.byId.repair.disabled, true, '钱不够要灰（浏览器版那颗按钮同一个判据）');
+  assert.match(poor.byId.repair.sub, new RegExp(`${DEFENSE_RULES.repairGold} 金`), '副标要写价格');
+  assert.match(poor.byId.repair.sub, /\+/, '副标要写回多少血');
+  m.gold = DEFENSE_RULES.repairGold;
+  assert.equal(layoutDefense(m, { rate: 1 }).byId.repair.disabled, false, '钱够了就能修');
+  m.castle.hp = m.castle.maxHp;
+  assert.equal(layoutDefense(m, { rate: 1 }).byId.repair.disabled, true, '满血也要灰（修了没意义）');
 });
 
 test('小游戏防守：回城卷轴（§5.5.1）——冷却中也能回，那一格不该被灰掉', () => {

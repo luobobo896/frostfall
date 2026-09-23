@@ -11,8 +11,8 @@
 // 坐标：全部按**逻辑像素**（= 小游戏里的 pt，`wx.getWindowInfo().windowWidth/Height`），
 // 以 667×375（§14.3 的设计画布）为基准等比缩放并居中 —— §1.9.2 的 44pt 热区下限在这一层直接成立。
 import { DEFENSE_MAPS, HEROES, MAPS } from '../data.js';
-import { heroCard } from '../hud-model.js';
-import { drawMapThumb } from '../render.js';
+import { heroCard, recordLabel } from '../hud-model.js';
+import { drawMapThumb, fitText } from '../render.js';
 
 export const DESIGN = { w: 667, h: 375 };
 /** 右上角胶囊按钮要留出来的区域（官方布局要求：关键 UI 避开它） */
@@ -94,12 +94,21 @@ export function layoutLobby(w, h, model = {}) {
 
   Object.keys(table).forEach((id, i) => {
     const col = i % 2, row = Math.floor(i / 2);
+    /**
+     * 卡面那行小字与浏览器版**同一套口径**（`ui.js` 的 `.mmeta`）：
+     * 路线数 · 通关 wins/clears · 战绩。战绩取 `recordLabel`——TD 写「最快 mm:ss」、
+     * 防守写「守住 N 轮 · 城堡 HP」（§12.3 / §12.6：两个模式的成绩不可比，别混着写）。
+     * 太长就按宽度裁到「…」（`fitText`）——小游戏没有 CSS 的 `text-overflow`。
+     */
+    const rec = model.profile?.clears?.[id] ?? null;
+    const rate = rec?.clears ? `通关 ${rec.wins}/${rec.clears} · ` : '';
+    const lanes = mode === 'defense' ? `${DEFENSE_MAPS[id].assaultSpawns.length} 条进攻路线`
+      : `${MAPS[id].pathCount} 条路${MAPS[id].airPath ? ' + 1 空中' : ''}`;
     raw.push(btn(`map-${id}`, 348 + col * 152, 84 + row * 68, 144, 62, table[id].name,
       { type: 'map', value: id },
       {
         on: model.map === id, locked: !!model.locked?.[id], stars: table[id].stars,
-        lanes: mode === 'defense' ? `${DEFENSE_MAPS[id].assaultSpawns.length} 条进攻路线`
-          : `${MAPS[id].pathCount} 条路${MAPS[id].airPath ? ' + 1 空中' : ''}`,
+        meta: `${lanes} · ${rate}${recordLabel(id, rec ?? {})}`,
         thumb: { mode, mapId: id },
       }));
   });
@@ -221,7 +230,8 @@ export function drawLobby(ctx, model, L) {
       drawMapThumb(null, it.thumb.mode, it.thumb.mapId, { ctx, w: th.w, h: th.h });
       ctx.restore();
       text(ctx, `${it.label} ${'★'.repeat(it.stars ?? 1)}`, th.x, th.y + th.h + S(11), { size: S(11) });
-      text(ctx, it.lanes ?? '', th.x, th.y + th.h + S(22), { size: S(9), color: COLORS.dim });
+      // 卡面那行小字按宽度裁（它由数据表拼出来：路线数 + 通关率 + 战绩，长短不一）
+      text(ctx, fitText(ctx, it.meta ?? '', it.w), th.x, th.y + th.h + S(22), { size: S(9), color: COLORS.dim });
       if (it.locked) {
         text(ctx, '未解锁', th.x + th.w - S(4), th.y + th.h + S(11), { size: S(10), color: COLORS.gold, align: 'right' });
       }

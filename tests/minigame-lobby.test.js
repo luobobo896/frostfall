@@ -236,3 +236,43 @@ test('小游戏大厅闭环：点英雄卡摊开详情、点「关闭」收起�
     assert.equal(app.screen(), 'battle', '收起来之后「单人开局」要能用');
   } finally { fake.uninstall(); }
 });
+
+test('小游戏大厅：地图卡那行小字与浏览器版同口径（路线数 · 通关率 · 战绩）', () => {
+  const profile = {
+    ...emptyProfile(),
+    clears: {
+      map_01: { clears: 3, wins: 2, bestTimeSec: 444 },
+      def_01: { clears: 2, wins: 1, bestRounds: 4, bestCoreHp: 1200 },
+    },
+  };
+  const unlocked = ['map_01', 'def_01'];
+
+  // TD 图：路线数 + 通关率 + 「最快 mm:ss」（§12.3 的 TD 口径）
+  const td = layoutLobby(DESIGN.w, DESIGN.h, model({ profile, unlocked, unlockedCount: 2 }));
+  const card = td.byId['map-map_01'].meta;
+  assert.match(card, /条路/, `要写路线数（实际「${card}」）`);
+  assert.match(card, /通关 2\/3/, '要写通关率');
+  assert.match(card, /最快 7:24/, '要写最快通关（§12.6 的 TD 口径）');
+
+  // 防守图：同一个位置换成防守的读数——进攻路线 + 「守住 N 轮 · 城堡 HP」
+  const def = layoutLobby(DESIGN.w, DESIGN.h, model({ mode: 'defense', map: 'def_01', profile, unlocked, unlockedCount: 2 }));
+  const defCard = def.byId['map-def_01'].meta;
+  assert.match(defCard, /进攻路线/, '防守图写几条进攻路线');
+  assert.match(defCard, /守住 4 轮/, '防守战绩写守住轮次（不是「最快」）');
+  assert.match(defCard, /城堡 1200/, '还要写城堡剩余');
+
+  // 没打过：写「还没通关」，不留空
+  const fresh = layoutLobby(DESIGN.w, DESIGN.h, model());
+  assert.match(fresh.byId['map-map_01'].meta, /还没通关/);
+
+  // 画一帧：那行小字太长时要裁到「…」收尾（卡只有 144 宽）
+  const long = model({
+    profile: { ...emptyProfile(), clears: { map_01: { clears: 99, wins: 88, bestTimeSec: 1234 } } },
+    unlocked, unlockedCount: 2,
+  });
+  const L = layoutLobby(DESIGN.w, DESIGN.h, long);
+  const ctx = fakeCtx();
+  drawLobby(ctx, long, L);
+  const line = ctx.texts.find((t) => t.includes('通关 88/99'));
+  assert.ok(line && line.endsWith('…'), `卡面那行该裁到「…」（实际「${line}」）`);
+});
