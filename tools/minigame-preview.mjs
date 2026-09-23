@@ -87,7 +87,13 @@ if (page === 'lobby' || page === 'hero') {
     buildFort(m, 0, 'fort_arrow');
     buildFort(m, 1, 'fort_wall');
     for (let i = 0; i < Math.round(12 / TICK_STEP); i += 1) updateDefense(m, TICK_STEP);
-    const model = { rate: 1, paused: false, potionCount: 2 };
+    /**
+     * 模型直接用游戏入口那份（game.js 导出的 defModel），不再手拼：
+     * 手拼的副本会随着内核加字段慢慢对不上（skills、potionReady 都踩过一次），
+     * 样张于是画成与真机不一样的第二张脸。
+     */
+    const { defModel } = await import('/src/minigame/game.js');
+    const model = defModel({ m, paused: false, rate: 1, stick: { active: false, origin: null }, ui: {} });
     const L = layoutDefense(m, model);
     renderer.draw({ m, scale: 1.5, now: m.time });
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -123,15 +129,11 @@ if (page === 'lobby' || page === 'hero') {
     m.stats.damage = { hero: 640, tw_arrow: 320, tw_cannon: 90 };
     m.result = 'win';
   }
+  // 模型直接用游戏入口那份（game.js 导出的 describeBattleModel）：手拼的副本会随内核加字段而漂
+  const { describeBattleModel } = await import('/src/minigame/game.js');
   const model = {
-    wave: m.wave.index, phase: m.wave.phase, timer: m.wave.timer, gold: Math.round(m.gold),
-    core: m.core.hp, coreMax: m.core.maxHp, result: m.result, length: m.length,
-    canEarly: false, selectedTower: 'tw_arrow',
-    // 技能键的模型形状与游戏入口那边（describeBattleModel）一致：名字 + Lv / 冷却秒数
-    skills: [...m.hero.def.skills, m.hero.def.thirdSkill].filter(Boolean).map((def, i) => ({
-      name: def.name, locked: !m.hero.skillUnlocked[i], cd: m.hero.skillCd?.[i] ?? 0,
-      lv: skillLevel(m, def),
-    })),
+    ...describeBattleModel(m),
+    selectedTower: 'tw_arrow', rate: 1, paused: false,
     // 战场那张顺手把**新手引导条**也摆上：第一局进 TD 就是这个样子（引导文案从状态机那唯一一份取）；
     // 别的几张（商店 / 结算 / 暂停）不摆——真机上它们要么盖住条，要么（结算）本来就把条收掉了
     tutorial: page === 'battle' ? (await import('/src/tutorial.js')).TUTORIAL_STEPS[0].text : null,

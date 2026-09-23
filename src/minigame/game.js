@@ -1050,7 +1050,7 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
 }
 
 /** HUD 需要的那点战场状态（不给整局对象，免得 HUD 顺手读不该读的东西） */
-const describeBattleModel = (m) => ({
+export const describeBattleModel = (m) => ({
   wave: m.wave.index, phase: m.wave.phase, timer: m.wave.timer,
   gold: Math.round(m.gold), core: m.core.hp, coreMax: m.core.maxHp,
   result: m.result, length: m.length,
@@ -1079,7 +1079,12 @@ const pickLobbyKeys = (model) => ({
 });
 
 /** 防守那屏的模型（HUD 只读这些，别顺手读整局对象） */
-const defModel = (b) => ({
+/**
+ * 防守那屏的 HUD 模型。**导出是给样张工具用的**：工具以前自己手拼一份模型，
+ * 于是内核加了字段（技能、potionReady…）它就慢慢对不上，画出来的样张与真机两张脸
+ * （已经踩过两次：`skills` 与 `potionReady`）。导出之后样张直接用它，不可能再漂。
+ */
+export const defModel = (b) => ({
   paused: b.paused, rate: b.rate, potionCount: potionCount(b.m),
   potionReady: Object.keys(b.m.bag ?? {}).some((id) => b.m.bag[id] > 0 && !((b.m.potionCd ?? {})[id] > 0)),
   round: b.m.assault?.round ?? 0, warning: !!b.m.assault?.warning,
