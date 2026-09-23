@@ -1,0 +1,355 @@
+/* 横屏 1334×750 设计基准（§14.3）；HUD 全部做成浮层压在地图上（§14.1.1）。 */
+:root {
+  --ink: #e8eef7;
+  --ink-dim: #93a4bd;
+  --panel: rgba(12, 20, 34, 0.82);
+  --panel-line: rgba(120, 170, 230, 0.25);
+  --gold: #e8c15a;
+  --wood: #7fc08a;
+  --danger: #d1503f;
+  --accent: #5aa9e6;
+  --white: #d8dee9;
+  --blue: #5aa9e6;
+  --purple: #b07de0;
+  --orange: #e8a33d;
+  /* 最小热区 44pt、主按钮 76-88pt（§1.9.2） */
+  --touch: 48px;
+  --btn: 88px;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: #05080e; color: var(--ink);
+  font: 16px/1.4 "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif; }
+body { overflow: hidden; }
+/* §180 真机上的两条「移动端卫生」（本地只能量到规则写没写，真机效果见 STATUS §4）：
+   ① iOS Safari 出于无障碍会把 `user-scalable=no` **忽略**掉，于是「快速连点」任何
+      `touch-action: auto` 的元素都会被浏览器当成**双击缩放**：整页放大、HUD 跟着跑位。
+      技能键是全场点得最多的东西，所以按钮显式写 `manipulation`——拖动/双指缩放照旧，
+      只关掉双击缩放（画布本来就是 `touch-action: none`）。
+   ② 长按会弹选择/查询菜单并选中文字（蓝底），打断操作：连同触控板一起关掉。 */
+
+button { touch-action: manipulation; }
+body { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+/* 例外：房间码是全场唯一一段玩家可能想选中/复制给朋友的文字（好友房就靠它） */
+.net-badge { user-select: text; -webkit-user-select: text; }
+#stage { position: fixed; inset: 0; }
+/**
+ * §185：**竖屏**。§14.1.1 把「横屏」拍死了（附录 A-1），小游戏端能用配置锁方向，**浏览器端锁不住**——
+ * 而手机竖着打开以前什么提示都没有：大厅要滚两屏、局内「玩家面板」直接被切掉 39px（实测 375×667 的
+ * `playerPanel [264,12,414,52]`）。这里给一条全屏的「请横屏」，同时把底下的界面挡住（不给误触：
+ * 伪元素默认就吃指针事件）。用伪元素是省一个 DOM 节点——它不需要被脚本读写。
+ */
+@media (orientation: portrait) {
+  #stage::after {
+    content: '请横屏玩：本作是横屏游戏（手机转一下 / 桌面把窗口拉宽）';
+    position: fixed; inset: 0; z-index: 99;
+    display: flex; align-items: center; justify-content: center; text-align: center;
+    padding: 0 32px; background: #05080e; color: var(--ink); font-size: 16px;
+  }
+}
+/**
+ * STATUS §3.1 #33（已拍板）：**最小支持视口 = 667×375**。更小的屏（568×320 = iPhone SE 一代横屏）
+ * 上防守 HUD 在几何上放不下：320pt 高度里要塞「轮次面板 84 + 技能键 76 + 间距 16 + 操作行两行 120
+ * + 拇指弧底边距 60」= 356pt（§203 量过，差 36pt）。与其在那里砍信息或违反 §1.9.2 的 76-88pt 线，
+ * 不如**明说**：给一条「屏幕太小」（复用 §185 那个伪元素，做法一致）。留一点余量（640×359）
+ * 免得桌面上差几个像素的窗口被误报。
+ */
+@media (max-width: 640px), (max-height: 359px) {
+  #stage::after {
+    content: '屏幕太小：本作按 667×375 pt 以上设计（手机请横屏，iPhone SE 2 代及以上；桌面把窗口拉大）';
+    position: fixed; inset: 0; z-index: 99;
+    display: flex; align-items: center; justify-content: center; text-align: center;
+    padding: 0 32px; background: #05080e; color: var(--ink); font-size: 16px;
+  }
+}
+#game { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+
+/**
+ * §181：真机的**安全区**（刘海 / 圆角 / home 条）。页面用 `viewport-fit=cover` 明确说了
+ * 「我要铺满整块屏」，于是浏览器**不会**替我们躲开刘海——躲的责任在 CSS 这边；而 HUD 的偏移
+ * 全是写死的 12px / 60px。在 iPhone 横屏（安全区左右各 59px）上量出来：顶栏、操作行、技能行、
+ * 防守的轮次面板与小地图**全部压进刘海 47px**（探针用的是 CDP 的 `setSafeAreaInsetsOverride`）。
+ * 四个 inset 收成一组变量，HUD 的边距写成 `max(原值, inset)`——没有安全区的设备（桌面、模拟器）
+ * 取值与原来一字不差。
+ */
+:root {
+  --safe-t: env(safe-area-inset-top, 0px);
+  --safe-r: env(safe-area-inset-right, 0px);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+  --safe-l: env(safe-area-inset-left, 0px);
+}
+.hud { position: absolute; pointer-events: none; }
+.hud > * { pointer-events: auto; }
+/* align-items: flex-start：面板按自己的内容高度走，别被那一行里最高的面板拉长 */
+.hud-top { top: max(12px, var(--safe-t)); left: max(12px, var(--safe-l)); right: max(12px, var(--safe-r)); display: flex; align-items: flex-start;
+  justify-content: space-between; gap: 12px; }
+/* §1.9.2 拇指舒适弧：距底边 60-200pt、距左右边 0-120pt。原来两条底栏都贴在 12px，
+   既不在弧内，也压在 home 条安全区上（§14.3 要求避开刘海与 home 条）。 */
+.hud-bottom-left { left: max(12px, var(--safe-l)); bottom: max(60px, calc(var(--safe-b) + 12px));
+  display: flex; flex-direction: column; gap: 8px; }
+/* §1.9.1：技能在右下拇指弧；§1.9.2：按钮间距 ≥24pt、整行落在距底 60-200pt */
+.hud-bottom-right { right: max(12px, var(--safe-r)); bottom: max(60px, calc(var(--safe-b) + 12px));
+  display: flex; flex-direction: column; align-items: flex-end; gap: 16px; }
+/* §1.9.1 防守的摇杆：左下固定，落在 §1.9.2 的拇指弧里（距底 60-200pt）。
+   直径 128px、最大位移 64px（§1.9.2 的 60-72pt）；底座只做视觉锚点，指针由 window 捕获统一处理。 */
+.stick-base { position: relative; width: 128px; height: 128px; border-radius: 50%;
+  background: radial-gradient(circle at 50% 50%, rgba(90,169,230,0.18), rgba(12,20,34,0.6));
+  border: 2px solid var(--panel-line); touch-action: none; }
+.stick-knob { position: absolute; left: 50%; top: 50%; width: 56px; height: 56px; margin: -28px 0 0 -28px;
+  border-radius: 50%; background: rgba(90,169,230,0.55); border: 2px solid rgba(200,225,255,0.55);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.35); }
+.op-row { display: flex; gap: 24px; align-items: flex-end; }
+/* 左上角一列：波次卡 + 下一波预告（§145：以前预告是 `top: 96px` 的绝对定位，波次卡一长就压上去） */
+.top-left { display: flex; flex-direction: column; align-items: flex-start; gap: 8px;
+  pointer-events: none; }
+.top-left > * { pointer-events: auto; }
+/* 顶中一列：资源卡 + 提示条（§145：两块都绝对定位在正中就必然叠字） */
+.hud-center-top { top: max(12px, var(--safe-t)); left: 0; right: 0; display: flex; flex-direction: column;
+  align-items: center; gap: 8px; }
+.hud-right { right: max(12px, var(--safe-r)); top: 96px; width: 260px; }
+
+.panel { background: var(--panel); border: 1px solid var(--panel-line); border-radius: 12px;
+  padding: 10px 12px; backdrop-filter: blur(6px); }
+.panel .row { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.muted { color: var(--ink-dim); }
+.small { font-size: 13px; }
+.hidden { display: none !important; }
+.center { justify-content: center; }
+.coin { color: var(--gold); }
+.wood { color: var(--wood); }
+
+.wave-panel { min-width: 240px; }
+.economy-panel { min-width: 150px; }
+.net-badge { min-width: 200px; font-size: 13px; color: var(--ink-dim); display: flex; align-items: center; }
+.player-panel { display: flex; flex-direction: column; gap: 4px; min-width: 150px; }
+.player-slot { display: flex; align-items: center; gap: 6px; font-size: 13px; }
+.player-slot .dot { width: 10px; height: 10px; border-radius: 50%; background: #445; flex: none; }
+.player-slot.offline { opacity: .45; }
+.player-slot .who { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* 防守模式小地图（§2.6）：右上、压在轮次面板下面（面板约 206px 高；改按钮热区时这个数会跟着变，
+   smoke 里有一条「小地图顶 ≥ 面板底」的检查盯着它） */
+.hud-minimap { top: 218px; right: max(12px, var(--safe-r)); }
+.hud-minimap canvas { display: block; width: 224px; height: 168px; border-radius: 10px;
+  border: 1px solid var(--panel-line); background: rgba(12, 20, 32, .75); cursor: pointer; }
+.next-wave { font-size: 13px; display: flex; gap: 6px; align-items: baseline; }
+.hud-tutorial { bottom: max(120px, calc(var(--safe-b) + 12px)); left: 0; right: 0; display: flex; justify-content: center; }
+.tutorial { display: flex; align-items: center; gap: 12px; font-size: 15px; max-width: 720px; }
+.tutorial .btn { min-width: 64px; }
+
+/* 防守模式的 HUD：城堡 / 轮次 / 预警（§12.5） */
+.defense-panel { position: absolute; left: max(12px, var(--safe-l)); top: 96px; min-width: 250px; }
+.hud-top .defense-panel { position: static; }
+.defense-panel .bar > i { background: linear-gradient(90deg, #ffb45c, #d1503f); }
+/**
+ * §161：**真机横屏（667×375，设计画布 1334×750 的另一半）下防守 HUD 塞不下**：
+ * 轮次面板 195 + 小地图 168 + 技能 76 + 操作行 120 = 559px，而可用高度只有约 303px
+ * （顶部留 12、底部留 60）。实测四组重叠：小地图压在操作行上（还把底边顶出视口）、
+ * 技能排压在轮次面板的「修城 / 回城」两行上——防守模式的按钮点不到（截图见记录 §161）。
+ * 短屏专用紧凑排布：轮次面板改 2 列网格（6 行 → 3 行，约 84px 高）、小地图挪到左上并缩小
+ * （顶部左侧在防守模式下是空的——TD 的波次条那时是隐藏的），两件都不再压别人。
+ */
+@media (max-height: 520px) {
+  .defense-panel { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 6px; width: 236px; min-width: 0;
+    padding: 4px 8px; font-size: 12px; }
+  /* 短屏上做减法：两条进度条与两条长说明收起来（数字/按钮本身已经说明了一切），
+     6 行压成 2 行（轮次｜城堡 / 修城｜回城）——实测面板从 195px 掉到 ~70px，
+     技能排（y 103 起）与操作行都不再被压。 */
+  .defense-panel .bar { display: none; }
+  .defense-panel .row .muted.small { display: none; }
+  .defense-panel .btn { padding: 0 8px; font-size: 12px; min-height: 32px; }
+  .hud-minimap { top: max(12px, var(--safe-t)); right: auto; left: max(12px, var(--safe-l)); }
+  .hud-minimap canvas { width: 150px; height: 80px; }
+  /* §162：引导条（`.hud-tutorial { bottom: 120px }` 是照 750 高的画布定的）在真机视口下落在
+     y 189~255——正压在**英雄面板**（血条）与**操作行**（商店/背包/暂停）上，而第二步提示恰恰是
+     「点右下『提前开波』马上开打」：让玩家去点被自己盖住的按钮。短屏上收到屏幕最底部
+     （操作行与摇杆都在 y ≤ 315 结束，那里是空的），并压小一号。 */
+  .hud-tutorial { bottom: max(6px, var(--safe-b)); }
+  .tutorial { font-size: 12px; gap: 8px; padding: 4px 10px; max-width: 430px; }
+  .tutorial .btn { min-width: 56px; }
+}
+
+/* 英雄卡片（§14.3 稿 3）：选人时就要看到属性与技能，而不是一个名字 */
+/**
+ * §203：**窄屏再收一档**（568×320 = iPhone SE 一代横屏）。§161 那套紧凑排布是照 667 宽调的，
+ * 568 宽下顶栏三块（波次卡 240 + 资源卡 150 + 玩家面板 150）挤不下，实测**资源卡压住波次卡 43px**；
+ * 防守那边还多了「轮次面板 × 技能行」「小地图 × 英雄面板」两处互压。这里再收：字号/内边距、
+ * 小地图与轮次面板尺寸，只动短屏+窄屏这一档（667 与 1334 两档量过没有变化）。
+ */
+@media (max-height: 520px) and (max-width: 640px) {
+  .wave-panel { min-width: 200px; }
+  .economy-panel { min-width: 0; font-size: 11px; padding: 4px 6px; }
+  .economy-panel .row { gap: 4px; font-size: 11px; }
+  .defense-panel { width: 196px; font-size: 11px; padding: 3px 6px; }
+  .defense-panel .btn { min-height: 28px; padding: 0 6px; font-size: 11px; }
+  .hud-minimap canvas { width: 112px; height: 60px; }
+  .hero-panel { min-width: 140px; }
+}
+
+.hero-cards { display: flex; gap: 8px; flex-wrap: wrap; }
+.hero-card { min-width: 132px; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--panel-line);
+  background: rgba(20, 32, 50, .9); color: var(--ink); text-align: left; cursor: pointer; }
+.hero-card.on { border-color: var(--accent); background: rgba(90, 169, 230, .28); }
+.hero-card .hname { font-size: 15px; font-weight: 700; }
+.hero-card .hrole { font-size: 11px; color: var(--ink-dim); margin-top: 2px; }
+.hero-card .hstat { font-size: 11px; color: var(--ink-dim); margin-top: 4px; }
+.hero-detail { margin: 6px 0 2px; min-height: 34px; line-height: 1.5; }
+.hero-detail b { color: var(--ink); }
+
+/* 结算面板（§14.3 稿 8） */
+.result-panel { width: min(760px, 94vw); text-align: left; }
+.result-panel h2 { text-align: center; }
+.result-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 8px; }
+.result-block { background: rgba(18, 28, 44, .7); border: 1px solid var(--panel-line); border-radius: 10px; padding: 8px 10px; }
+.result-block h4 { margin: 0 0 6px; font-size: 13px; color: var(--ink-dim); font-weight: 600; }
+.result-block .kv { display: flex; justify-content: space-between; font-size: 13px; padding: 2px 0; }
+.dmg-row { display: flex; align-items: center; gap: 6px; font-size: 12px; padding: 2px 0; }
+.dmg-row .bar2 { flex: 1; height: 6px; border-radius: 3px; background: rgba(255,255,255,.12); overflow: hidden; }
+.dmg-row .bar2 > i { display: block; height: 100%; background: var(--accent); }
+.loot-line { display: flex; gap: 8px; font-size: 13px; align-items: center; }
+
+/* 大厅打开时收起战斗 HUD：否则波次条/经济面板会盖在弹窗上 */
+#stage.lobby .hud-top,
+#stage.lobby .hud-bottom-left,
+#stage.lobby .hud-bottom-right,
+#stage.lobby .hud-next-wave,
+#stage.lobby .economy-panel,
+#stage.lobby .hud-tutorial,
+#stage.lobby .hud-right,
+#stage.lobby .hud-minimap { display: none; }
+/* 防守模式：右侧日志面板与防守面板抢位——**用 CSS 表达**，不要每帧去 add('hidden')。
+   以前是在 renderDefense 里 `classList.add('hidden')` 且从不 remove，于是打完一局防守之后
+   回到 TD，日志面板**整页**都不会再出现（验证记录 §94）。 */
+#stage.defense .hud-right { display: none; }
+.hero-panel { min-width: 220px; }
+
+.bar { height: 8px; border-radius: 4px; background: rgba(255,255,255,.12); overflow: hidden; margin: 6px 0; }
+.bar > i { display: block; height: 100%; width: 0%; background: var(--accent); transition: width .12s linear; }
+.bar.core > i { background: linear-gradient(90deg, #63d0ff, #2a6fd6); }
+.bar.hero > i { background: linear-gradient(90deg, #7ce08a, #35a85a); }
+/* §3.7 低血提示：生命 < 20% 时血条转红（小地图那边同步高亮英雄点） */
+.bar.hero > i.low { background: linear-gradient(90deg, #ff8a6a, #d1503f); }
+
+.btn { min-height: var(--touch); min-width: 96px; padding: 0 16px; border-radius: 10px; border: 1px solid var(--panel-line);
+  background: rgba(30, 48, 74, 0.9); color: var(--ink); font-size: 15px; font-weight: 600; cursor: pointer; }
+.btn:active { transform: scale(0.96); }
+.btn.ghost { background: rgba(18, 28, 44, 0.75); font-weight: 500; }
+.btn.danger { background: rgba(120, 40, 32, 0.9); border-color: rgba(220, 110, 90, 0.4); }
+/* 次要按钮也守 44pt 热区（§1.9.2「最小点击热区 ≥44×44」没有例外项） */
+.btn.small { min-height: 44px; min-width: 64px; font-size: 13px; }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+.badge { margin-left: 6px; background: var(--orange); color: #241a08; border-radius: 9px; padding: 1px 6px; font-size: 12px; }
+
+/* 技能与药品：右下拇指弧内（§1.9.2） */
+/* §1.9.2：按钮间距 ≥24pt（防误触） */
+.skill-row { display: flex; gap: 24px; }
+.skill { width: var(--btn); height: var(--btn); border-radius: 50%; border: 2px solid rgba(140, 200, 255, .5);
+  background: radial-gradient(circle at 35% 30%, rgba(90, 169, 230, .55), rgba(12, 22, 38, .95));
+  color: var(--ink); font-size: 13px; font-weight: 700; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 2px; }
+.skill.locked { filter: grayscale(1); opacity: .45; }
+.skill .cd { font-size: 12px; color: var(--ink-dim); font-weight: 500; }
+.skill.bag { border-color: rgba(232, 193, 90, .5); background: radial-gradient(circle at 35% 30%, rgba(232, 193, 90, .5), rgba(12, 22, 38, .95)); }
+
+/* 建造轮盘：以触点为中心，最远 60pt（§1.9.1） */
+.wheel { position: absolute; width: 0; height: 0; pointer-events: none; }
+.wheel .opt { position: absolute; width: 76px; height: 76px; margin: -38px 0 0 -38px; border-radius: 14px;
+  border: 2px solid rgba(140, 200, 255, .55); background: rgba(14, 24, 40, .95); color: var(--ink);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  font-size: 12px; font-weight: 700; pointer-events: auto; }
+.wheel .opt .cost { color: var(--gold); font-weight: 600; }
+.wheel .opt.cant { opacity: .45; }
+.wheel .cancel { position: absolute; width: 60px; height: 60px; margin: -110px 0 0 -30px; border-radius: 50%;
+  background: rgba(60, 20, 20, .9); border: 2px solid rgba(220, 110, 90, .5); color: var(--ink);
+  pointer-events: auto; font-size: 12px; }
+
+.tower-panel { position: absolute; width: 260px; }
+.prio-row { display: flex; gap: 6px; margin: 8px 0; }
+/* 优先级按钮也是可点元素：40px 不满足 §1.9.2 的 44pt 下限 */
+.prio-row button { flex: 1; min-height: 44px; font-size: 12px; border-radius: 8px; border: 1px solid var(--panel-line);
+  background: rgba(24, 38, 58, .9); color: var(--ink); }
+.prio-row button.on { background: rgba(90, 169, 230, .35); border-color: var(--accent); }
+
+.modal { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  width: min(760px, 92vw); max-height: 86vh; overflow: auto; }
+.modal-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.shop-list { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+.shop-item { display: flex; justify-content: space-between; align-items: center; gap: 8px;
+  background: rgba(18, 28, 44, .8); border: 1px solid var(--panel-line); border-radius: 10px; padding: 8px 10px; }
+.shop-item .name { font-weight: 600; }
+.shop-item .desc { font-size: 12px; color: var(--ink-dim); }
+.bag-body { display: grid; grid-template-columns: 200px 1fr; gap: 12px; }
+.equipped, .inv { display: flex; flex-direction: column; gap: 6px; }
+.item { display: flex; justify-content: space-between; gap: 8px; padding: 6px 8px; border-radius: 8px;
+  background: rgba(18, 28, 44, .8); border: 1px solid var(--panel-line); font-size: 13px; }
+.item.craftable { border-color: var(--orange); box-shadow: 0 0 0 1px rgba(232, 163, 61, .35); }
+/* §5.4：每件装备的「穿上 / 强化 / 出售」——换行排，别把一行挤成两半 */
+.item { flex-wrap: wrap; }
+.item-actions { display: flex; gap: 6px; width: 100%; justify-content: flex-end; }
+.item-actions .btn { padding: 2px 8px; font-size: 12px; }
+.q-white { color: var(--white); } .q-blue { color: var(--blue); }
+.q-purple { color: var(--purple); } .q-orange { color: var(--orange); }
+
+.toast { background: rgba(10, 18, 30, .9); border: 1px solid var(--panel-line); border-radius: 999px;
+  padding: 8px 18px; font-size: 15px; opacity: 0; transition: opacity .2s; }
+.toast.show { opacity: 1; }
+
+.log { font-size: 12px; color: var(--ink-dim); display: flex; flex-direction: column; gap: 2px;
+  max-height: 300px; overflow: hidden; text-align: right; }
+.log .warn { color: #f0a08c; }
+
+.overlay { position: absolute; inset: 0; background: rgba(3, 7, 14, .72); display: flex;
+  align-items: center; justify-content: center; overflow-y: auto; }
+/* 内容比视口高时（小屏 + 地图卡面）不要被顶部裁掉：margin:auto 让它能滚，同时保持居中 */
+.overlay > * { margin: auto; }
+/**
+ * §159：真机视口（667×375，正是设计画布 1334×750 的一半）下，大厅面板实测 **971px** 高——
+ * 「单人开局」落在折叠线以下 500 多像素，玩家要滚 2.6 屏才能开局（§14.3 本来把大厅、地图选择、
+ * 英雄选择分成三张稿，实现把它们并进了一页）。不重做分页，先让**动作行粘在视口底部**：
+ * 面板照样能滚，按钮任何时候都在手边——底部本来也是 §1.9.2 说的拇指舒适弧。
+ */
+.panel.start .row.center.gap { position: sticky; bottom: 0; z-index: 2;
+  /* 底色必须**不透明**：var(--panel) 是 .82 的半透明，滚过去的地图卡与难度会从按钮缝里透出来
+     （第一版就是这么写的，截图里能看到「难度」「分钟」从按钮后面冒出来）。 */
+  background: #0d1524; padding: 8px 0 6px; border-top: 1px solid var(--panel-line);
+  border-radius: 0 0 12px 12px; flex-wrap: wrap; }
+/**
+ * §160：**结算面板**在真机视口（667×375）下也一样：面板 424px 高，「再开一局 / 回大厅」在
+ * y=365~413——底边被折叠线切掉，等于每局打完都够不着出口（实测 `in:false`，只有 10px 露在外面）。
+ * 同一个处方：动作行粘在底部（暂停面板共用这个容器，只有「继续」一颗按钮时也不受影响）。
+ */
+#overPanel > .row.center { position: sticky; bottom: 0; z-index: 2; background: #0d1524;
+  padding: 8px 0 6px; border-top: 1px solid var(--panel-line); border-radius: 0 0 12px 12px; flex-wrap: wrap; }
+.result { width: min(560px, 90vw); text-align: center; }
+.result.start { width: min(720px, 92vw); }
+.start-row { display: flex; align-items: center; gap: 10px; margin: 6px 0; }
+.start-row .label { width: 48px; text-align: left; color: var(--ink-dim); font-size: 14px; }
+.opts { display: flex; gap: 8px; flex-wrap: wrap; }
+/* §158：地图从 6 张起一行放不下（4 张一行 → 第二行把「单人开局」挤出视口，实测面板 930px > 750）。
+   地图换横滑条：行高保持一行（面板 779px，按钮留在视口内），滑一下能看到剩下两张——
+   露出半张卡本身就是「还有」的提示。英雄卡只有 4 张，仍然正常换行。 */
+#optMap { flex-wrap: nowrap; overflow-x: auto; }
+.opts button { min-height: 44px; padding: 0 14px; border-radius: 10px; border: 1px solid var(--panel-line);
+  background: rgba(20, 32, 50, .9); color: var(--ink); font-size: 14px; cursor: pointer; }
+.opts button.on { background: rgba(90, 169, 230, .35); border-color: var(--accent); }
+
+/* 地图卡面（§2.7）：缩略图 + 名称 + 路线数 / 通关率 / 最快通关 */
+.opts .map-card { width: 162px; padding: 5px; display: flex; flex-direction: column; gap: 3px;
+  align-items: stretch; text-align: left; min-height: 0; }
+.map-card .thumb { display: block; width: 150px; height: 80px; border-radius: 6px; }
+.map-card .mname { font-size: 13px; line-height: 1.2; }
+.map-card .mmeta { font-size: 10.5px; color: var(--ink-dim); line-height: 1.3; }
+.map-card.locked { opacity: .55; }
+.map-card.locked .thumb { filter: grayscale(1); }
+.row.gap { gap: 12px; margin-top: 8px; }
+.result h2 { margin: 4px 0 8px; }
+
+@media (max-width: 900px) {
+  :root { --btn: 76px; }
+  .log, .hud-right { display: none; }
+  /* §14.3 的设计画布是 1334×750，但真机（1334×750 物理像素 @2x）的 CSS 视口只有 667×375，
+     操作行放不下 6 个按钮——让它折行，并按可用宽度收窄，别把最左那颗挤到屏外。 */
+  .op-row { flex-wrap: wrap; justify-content: flex-end; max-width: calc(100vw - 190px); }
+  .op-row .btn { min-width: 76px; padding: 0 10px; font-size: 13px; }
+  .hero-panel { min-width: 170px; }
+}

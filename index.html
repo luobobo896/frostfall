@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+  <title>冰封二打六 · TD 塔防（M0.5 可玩原型）</title>
+  <link rel="stylesheet" href="./src/styles.css" />
+</head>
+<body>
+  <div id="stage">
+    <canvas id="game"></canvas>
+
+    <!-- 开始界面（§14.3 稿 1-3 的占位版：主城 / 选图 / 选英雄） -->
+    <div id="startScreen" class="overlay hidden">
+      <div class="panel result start">
+        <h2>冰封二打六</h2>
+        <p class="muted small">碎片化的多人协作塔防 · 12 波 · 横屏</p>
+<div id="profileBar" class="profile-bar muted small"></div>
+        <div class="start-row"><span class="label">模式</span><div class="opts" id="optMode"></div></div>
+        <div class="start-row"><span class="label">地图</span><div class="opts" id="optMap"></div></div>
+        <div class="start-row"><span class="label">难度</span><div class="opts" id="optDiff"></div>
+          <span class="label">局内</span><div class="opts" id="optLength"></div></div>
+        <div class="start-row"><span class="label">英雄</span><div class="hero-cards" id="optHero"></div></div>
+        <div id="heroDetail" class="hero-detail muted small"></div>
+        <!-- §3.4 阵容搭配建议（文档要求「写进游戏内引导」）：四档强度都要在，但压成一行——
+             面板比视口高就会把「开局」按钮顶到折叠线以下，那比不写还糟 -->
+        <div class="start-row"><span class="label">推荐阵容</span>
+          <div class="muted small" id="compGuide">4 人局：2 武者+1 游侠+1 圣徒（S）· 四职业各一（S+）· 2 游侠+1 导引者+1 圣徒（A）· 4 导引者（C）</div>
+        </div>
+        <div class="row center gap">
+          <button class="btn" id="btnSolo">单人开局</button>
+          <button class="btn ghost" id="btnMatch">快速匹配</button>
+          <button class="btn" id="btnCreateRoom">创建联机房间</button>
+          <button class="btn ghost" id="btnJoinRoom">加入房间</button>
+          <button class="btn ghost" id="btnResetProfile" title="清空声望、等级与解锁进度">重置进度</button>
+        </div>
+        <p class="muted small" id="startHint">联机为服务端权威同步，最多 4 人；创建后会得到一个 6 位房间码。</p>
+      </div>
+    </div>
+
+    <!-- 顶部：波次与核心 -->
+    <div class="hud hud-top">
+      <!-- 左列：波次卡 + 下一波预告。两者**在同一列里按布局排**——以前预告是 `top:96px` 的绝对定位，
+           波次卡长到 107px 之后就被盖住 23px（核心血条整条压在下面），见验证记录 §145 -->
+      <div class="top-left">
+        <div class="panel wave-panel">
+          <div class="row"><span id="waveLabel">第 0 / 12 波</span><span id="phaseLabel" class="muted">准备</span></div>
+          <div class="bar"><i id="waveTimer"></i></div>
+          <div class="row"><span>核心</span><span id="coreLabel">2400 / 2400</span></div>
+          <div class="bar core"><i id="coreBar"></i></div>
+        </div>
+        <div class="hud-next-wave"><div class="panel next-wave"><span class="muted small">下一波</span> <b id="nextWaveLabel">—</b></div></div>
+      </div>
+      <div id="netBadge" class="panel net-badge hidden"></div>
+      <div id="playerPanel" class="panel player-panel"></div>
+      <!-- 防守模式：轮次 / 预警 / 城堡 -->
+      <div id="defensePanel" class="panel defense-panel hidden">
+        <div class="row"><span>第 <b id="defRound">0</b> 轮</span><span id="defTimer" class="muted">—</span></div>
+        <div class="bar"><i id="defWarnBar"></i></div>
+        <div class="row"><span>城堡</span><span id="defCastle">4000 / 4000</span></div>
+        <div class="bar core"><i id="defCastleBar"></i></div>
+        <div class="row"><button class="btn small" id="btnRepair">修城 200 金</button><span id="defFortCount" class="muted small">工事 0/8</span></div>
+        <div class="row"><button class="btn small" id="btnTeleport">回城</button><span id="defTeleportHint" class="muted small">冷却 30s</span></div>
+      </div>
+    </div>
+
+    <!-- 底部左：英雄状态（§14.3 稿 4：状态在左，技能与操作在右） -->
+    <div class="hud hud-bottom-left">
+      <div class="panel hero-panel">
+        <div class="row"><span id="heroName">霜刃武者</span><span id="heroLevel">Lv1</span></div>
+        <div class="bar hero"><i id="heroHpBar"></i></div>
+        <div class="row small muted"><span id="heroExpLabel">EXP 0 / 40</span><span id="heroState">驻守</span></div>
+      </div>
+      <!-- 防守模式的虚拟摇杆（§1.9.1 左下固定；§1.9.3 可切浮动；§10.1 与点地移动共用一条移动指令） -->
+      <div class="stick-base hidden" id="stickBase"><i class="stick-knob" id="stickKnob"></i></div>
+    </div>
+
+    <!-- 底部右：技能 + 操作（§1.9.1：技能在右下拇指弧；§5.5.4：药品键放在技能旁） -->
+    <div class="hud hud-bottom-right">
+      <div class="skill-row" id="skillRow"></div>
+      <div class="op-row">
+        <button class="btn ghost" id="btnEarly">提前开波 +3木</button>
+        <button class="btn" id="btnShop">商店</button>
+        <button class="btn" id="btnBag">背包<i id="bagBadge" class="badge hidden">0</i></button>
+        <button class="btn ghost" id="btnSpeed">1×</button>
+        <button class="btn ghost" id="btnPause">暂停</button>
+        <button class="btn ghost" id="btnSettings" title="设置">⚙</button>
+      </div>
+    </div>
+
+    <!-- 防守模式的小地图（§2.6 / §14.3 稿 5）：点它 = 回城（与按钮共用 30 秒冷却） -->
+    <div class="hud hud-minimap hidden" id="minimapBox"><canvas id="minimap" title="点地图回城（冷却 30 秒）"></canvas></div>
+    <!-- 新手引导提示条（§14.3 稿 11） -->
+    <div id="tutorialBar" class="hud hud-tutorial hidden"><div class="panel tutorial">
+      <span id="tutorialText">—</span>
+      <button class="btn ghost small" id="btnTutorialSkip">跳过</button>
+    </div></div>
+    <!-- 顶部中央：资源卡 + 提示条。**同一列里按布局排**——两者以前都绝对定位在 `top:12px` 正中，
+       于是每条 toast 都糊在资源卡上（两边都是半透明底，字叠字全看不清），见验证记录 §145 -->
+    <div class="hud hud-center-top">
+      <div class="panel economy-panel">
+        <div class="row"><span class="coin">金</span><span id="goldLabel">200</span></div>
+        <div class="row"><span class="wood">木</span><span id="lumberLabel">0</span></div>
+        <div class="row muted"><span id="rateLabel">1×</span><span id="leakLabel">漏怪 0</span></div>
+      </div>
+      <div id="toast" class="toast"></div>
+    </div>
+    <div class="hud hud-right"><div id="log" class="log"></div></div>
+
+    <!-- 建造轮盘 -->
+    <div id="wheel" class="wheel hidden"></div>
+
+    <!-- 塔面板 -->
+    <div id="towerPanel" class="panel tower-panel hidden">
+      <div class="row"><b id="twName">箭塔</b><span id="twLevel">Lv1</span></div>
+      <div class="row small muted"><span id="twStats">伤害 18 · 攻速 1.5 · 射程 5.0</span></div>
+      <div class="row small">优先级：<span id="twPriority">最靠前</span></div>
+      <div class="prio-row" id="prioRow"></div>
+      <div class="row">
+        <button class="btn" id="btnUpgrade">升级</button>
+        <button class="btn danger" id="btnSell">出售</button>
+      </div>
+      <button class="btn ghost small" id="btnCloseTw">关闭</button>
+    </div>
+
+    <!-- 商店 -->
+    <div id="shopPanel" class="panel modal hidden">
+      <div class="modal-head"><b>商店</b><button class="btn ghost small" data-close>关闭</button></div>
+      <div class="shop-list" id="shopList"></div>
+      <div class="muted small" id="shopHint">同种药品每买一次涨价 20%；药品背包共 3 格。波次进行中补给要读条 3 秒。</div>
+    </div>
+
+    <!-- 背包 -->
+    <div id="bagPanel" class="panel modal hidden">
+      <div class="modal-head"><b>背包</b><button class="btn ghost small" data-close>关闭</button></div>
+      <div class="bag-body">
+        <div class="equipped" id="equippedList"></div>
+        <div class="inv" id="invList"></div>
+      </div>
+      <div class="row"><button class="btn" id="btnCraft">一键合成</button><span class="muted small" id="craftHint">攒够 3 件同部位同品质即可合成</span></div>
+    </div>
+
+    <!-- 设置（§14.3 稿 9）：只放本作真正适用的项 -->
+    <div id="settingsPanel" class="panel modal hidden">
+      <div class="modal-head"><b>设置</b><button class="btn ghost small" data-close>关闭</button></div>
+      <div class="start-row"><span class="label">镜头</span><div class="opts" id="setZoom"></div></div>
+      <div class="start-row"><span class="label">特效</span><div class="opts" id="setEffects"></div></div>
+      <div class="start-row"><span class="label">摇杆</span><div class="opts" id="setStick"></div></div>
+      <div class="start-row"><span class="label">其它</span><div class="opts" id="setToggles"></div></div>
+      <div class="muted small">低特效档会关掉伤害飘字与塔位脉冲，用于低端机保帧（§10.1）。</div>
+      <div class="row"><button class="btn small" id="btnReplayTutorial">重看新手引导</button><button class="btn ghost small" id="btnResetSettings">恢复默认</button></div>
+      <!-- §3.1 #31：联机局中途的出口（单人局里这行整块收起——单人的「回大厅」在暂停面板上） -->
+      <div class="row hidden" id="rowLeaveRoom"><button class="btn ghost small" id="btnLeaveRoom">离开房间（回大厅）</button></div>
+    </div>
+
+    <!-- 暂停 / 结算 -->
+    <div id="overlay" class="overlay hidden"><div class="panel result" id="overPanel">
+      <h2 id="overTitle">暂停</h2>
+      <p id="overBody" class="muted"></p>
+      <div id="resultDetail" class="hidden">
+        <div class="result-cols">
+          <div class="result-block"><h4>本局</h4><div id="resultRows"></div></div>
+          <div class="result-block"><h4>伤害占比</h4><div id="resultDamage"></div></div>
+        </div>
+        <div class="result-block" style="margin-top:8px"><h4>掉落与合成</h4><div id="resultLoot"></div></div>
+      </div>
+      <div class="row center"><button class="btn" id="btnResume">继续</button><button class="btn hidden" id="btnEndless">继续（无尽）</button><button class="btn ghost" id="btnRestart">再开一局</button><button class="btn ghost" id="btnLobby">回大厅</button></div>
+    </div></div>
+  </div>
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>
