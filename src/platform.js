@@ -184,6 +184,27 @@ export function onHide(fn) {
   }
 }
 
+/**
+ * §10.7 的**内存告警**：微信在内存吃紧时会抛 `wx.onMemoryWarning`，接了它就有机会主动降级；
+ * 不接的话系统只会在后面直接杀掉进程。浏览器没有这个事件（那边留了
+ * `__frostfall.simulateMemoryWarning()` 给冒烟用），所以这里安静跳过。
+ */
+export function onMemoryWarning(fn) {
+  try { wxApi()?.onMemoryWarning?.(fn); } catch { /* 老基础库没有这个 API：只是少一层保护 */ }
+}
+
+/**
+ * 玩的时候别让屏幕自己熄掉（小游戏里是 `wx.setKeepScreenOn`）。
+ * 一局 TD 十几分钟、盯塔的时候可能一直不碰屏幕，系统照默认超时锁屏——那比任何 bug 都劝退。
+ * 浏览器没有对应能力（页面自己不动），安静跳过。
+ */
+export function keepScreenOn(on = true) {
+  try {
+    if (isMiniGame() && wxApi()?.setKeepScreenOn) wxApi().setKeepScreenOn({ keepScreenOn: on });
+    return true;
+  } catch { return false; }
+}
+
 /* ---------- 触摸 ---------- */
 
 /**

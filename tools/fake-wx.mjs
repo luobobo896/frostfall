@@ -14,13 +14,15 @@ export function installFakeWx({ windowWidth = 667, windowHeight = 375, pixelRati
    * WebAudio 门面，`audio` 里累计次数——用例据此验「预警真的排了两声蜂鸣」「静音时一声都没排」。
    */
   const audio = { contexts: 0, oscillators: 0, gains: 0, resumes: 0 };
+  /** 平台杂项：屏幕常亮调了几次、内存告警有没有人接（用例据此验这两条接线） */
+  const platform = { keepScreenOn: [], memoryWarning: 0 };
   /**
    * 假 canvas + 记录型 2D 上下文：Node 里没有 canvas，但大厅那一屏要真的画一帧才算验过。
    * 用 Proxy 兜住所有 `ctx.*` 调用（未实现的也记一笔），`fillText` 把文字留下来 ——
    * 于是「这一帧画了什么」可以断言（比如标题「冰封之地」真的被画出来了）。
    */
   const makeCanvas = () => {
-    const rec = { calls: [], texts: [] };
+    const rec = { calls: [], texts: [], styles: [] };
     const state = {};
     const ctx = new Proxy(state, {
       get(target, prop) {
@@ -34,7 +36,12 @@ export function installFakeWx({ windowWidth = 667, windowHeight = 375, pixelRati
           return undefined;
         };
       },
-      set(target, prop, value) { state[prop] = value; return true; },
+      set(target, prop, value) {
+        state[prop] = value;
+        // 记一笔「画的时候用了什么颜色/线宽」：低特效档（脉冲）那种差别只能从样式上看出来
+        if (prop === 'strokeStyle' || prop === 'fillStyle' || prop === 'globalAlpha') rec.styles.push({ [prop]: value });
+        return true;
+      },
     });
     return { width: windowWidth * pixelRatio, height: windowHeight * pixelRatio, getContext: () => ctx, record: rec };
   };
@@ -92,6 +99,8 @@ export function installFakeWx({ windowWidth = 667, windowHeight = 375, pixelRati
     onTouchCancel: (fn) => { touchHandlers.cancel = fn; },
     onHide: (fn) => { lifeHandlers.hide = fn; },
     onShow: (fn) => { lifeHandlers.show = fn; },
+    onMemoryWarning: (fn) => { platform.memoryWarning += 1; lifeHandlers.memoryWarning = fn; },
+    setKeepScreenOn: ({ keepScreenOn }) => { platform.keepScreenOn.push(!!keepScreenOn); },
   };
   globalThis.wx = wx;
   /**
@@ -107,5 +116,15 @@ export function installFakeWx({ windowWidth = 667, windowHeight = 375, pixelRati
   };
   /** 模拟切后台（小游戏里是 wx.onHide） */
   const fireHide = () => { lifeHandlers.hide?.({}); return !!lifeHandlers.hide; };
-  return { wx, store, sockets, audio, fireTouch, fireHide, uninstall: () => { delete globalThis.wx; } };
+  /** 模拟一次内存告警（微信在内存吃紧时抛 `wx.onMemoryWarning`） */
+  const fireMemoryWarning = (level = 10) => {
+    if (!lifeHandlers.memoryWarning) return false;
+    lifeHandlers.memoryWarning({ level });
+    return true;
+  };
+  return {
+    wx, store, sockets, audio, platform,
+    fireTouch, fireHide, fireMemoryWarning,
+    uninstall: () => { delete globalThis.wx; },
+  };
 }

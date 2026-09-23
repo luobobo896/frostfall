@@ -10,7 +10,9 @@ import {
   enhanceItem, potionCount, repairTower, reviveNow, sellItem, sellTower, setPriority, skillLevel,
   startWaveEarly, towerAtSlot, update, upgradeTower, usePotion,
 } from '../match.js';
-import { isMiniGame, onHide, onTouch, storage, viewport } from '../platform.js';
+import {
+  isMiniGame, keepScreenOn, onHide, onMemoryWarning, onTouch, storage, viewport,
+} from '../platform.js';
 import { clearSave, hasSave, loadFromStorage, saveToStorage } from '../save.js';
 import {
   clearProfile, isFirstRun, loadProfile, mapLocked, markTutorialDone, recordResult, reviveMulOf, saveProfile,
@@ -117,6 +119,22 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
    * 同一个 `settings.sfx` 开关管着它和震动（浏览器版那颗开关的标签就是「音效/震动」）。
    */
   const cue = createCue({ enabled: () => settings.sfx !== false });
+  /**
+   * 玩的时候别让屏幕自己熄掉：一局 TD 十几分钟，盯塔的时候可能一直不碰屏幕，
+   * 系统按默认超时锁屏比任何 bug 都劝退（小游戏里是 `wx.setKeepScreenOn`）。
+   */
+  keepScreenOn(true);
+  /**
+   * §10.7 的内存告警：微信在内存吃紧时抛 `wx.onMemoryWarning`，接了才有机会主动降级——
+   * 与浏览器版**同一套设置**（`settings.effects = 'low'`：关掉脉冲那类装饰，保住帧率），
+   * 并且提示一句，别让玩家以为画面坏了。
+   */
+  onMemoryWarning(() => {
+    const before = settings.effects;
+    settings = { ...settings, effects: 'low' };
+    try { saveSettings(settings); } catch { /* 存不了就只在这一次生效 */ }
+    if (before !== 'low' && battle) note(battle, '内存告警：已切到低特效（可在暂停面板里改回）', 3);
+  });
 
   /** 镜头设置（§2.5）：整图可见 = `renderer.fit()`；放大 = 以核心为中心用 `settings.zoom` */
   const applyCamera = (b) => {
@@ -563,6 +581,13 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
         note(b, settings.showWavePreview ? '波次预告已开' : '波次预告已关', 1.4);
         return action;
       }
+      case 'effects': {
+        // §116 的低特效档：关掉脉冲那类装饰（保帧率）。§10.7 的内存告警也会把它自动切过来
+        settings = { ...settings, effects: settings.effects === 'low' ? 'high' : 'low' };
+        saveSettings(settings);
+        note(b, settings.effects === 'low' ? '特效：低（关脉冲）' : '特效：高', 1.4);
+        return action;
+      }
       case 'autoPickup': {
         // §12.5：防守走到掉落物上自动捡。内核读的是 `m.autoPickup`，所以改了要**立刻**写进去
         settings = { ...settings, autoPickup: settings.autoPickup === false };
@@ -829,7 +854,9 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
       b.layout = layoutBattle(model);
       // `hintSlots`：引导第一步/第二步在战场上圈出「建这里」（render.js 本来就有这段，直接复用）
       b.renderer.draw({
-        m: b.m, selectedSlot: null, selectedTower: null, localSlot: 0, now: b.m.time, pulses: false,
+        // §116：低特效档关掉脉冲（新手引导塔位高亮那层呼吸）；高档才让它随时间变化
+        m: b.m, selectedSlot: null, selectedTower: null, localSlot: 0, now: b.m.time,
+        pulses: settings.effects !== 'low',
         hintSlots: b.tutorial?.hintSlotCount() ?? 0,
       });
       // renderer 可能重设过变换，这里再对齐一次（并按大屏把 HUD 居中）

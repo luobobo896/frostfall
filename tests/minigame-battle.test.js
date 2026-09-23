@@ -410,7 +410,8 @@ test('小游戏暂停面板：行都在画布内且 ≥44，倍速/镜头/震动
   const m = createMatch({ seed: 5 });
   const sheet = layoutPause(m, { rate: 2, settings: { tdFitAll: false, sfx: false } });
   assert.equal(sheet.kind, 'pause');
-  assert.equal(sheet.rows.length, 9, '继续 / 倍速 / 镜头 / 震动 / 波次预告 / 回大厅 / 重看引导 / 重置进度 / 收起面板');
+  assert.equal(sheet.rows.length, 10,
+    '继续 / 倍速 / 镜头 / 音效震动 / 特效 / 波次预告 / 回大厅 / 重看引导 / 重置进度 / 收起面板');
   for (const r of sheet.rows) {
     assert.ok(r.h >= 44 && r.y + r.h <= DESIGN.h, `${r.id} 行高或位置不达标`);
     assert.ok(!(r.x < 448 && r.y < 52 && r.x + r.w > 396), `${r.id} 压到顶栏那两个键上`);
@@ -418,6 +419,7 @@ test('小游戏暂停面板：行都在画布内且 ≥44，倍速/镜头/震动
   assert.equal(sheet.byId.speed.sub, '2×');
   assert.equal(sheet.byId.camera.sub, '放大', 'tdFitAll=false 时是放大');
   assert.equal(sheet.byId.sfx.sub, '关');
+  assert.equal(sheet.byId.effects.sub, '高', '特效那一格要显示当前档');
   assert.equal(sheet.byId.resume.label, '继续游戏');
   assert.ok(sheet.byId.replayTutorial, '§153 的「重看新手引导」要在这儿（浏览器版在设置面板里同一个动作）');
   assert.ok(sheet.byId.wavePreview, '§154：TD 这边摆「波次预告」');
@@ -618,5 +620,45 @@ test('小游戏「重置进度」：两步确认之后真的清空声望与解�
     assert.equal(app.getModel().profile.reputation, 0, '大厅那行要按新档案算');
     // 起点就是「一张 TD + 一张防守」（新档案默认解锁 map_01 / def_01）
     assert.equal(app.getModel().unlockedCount, 2, '解锁也回到起点');
+  } finally { fake.uninstall(); }
+});
+
+test('小游戏平台杂项：玩的时候屏幕常亮；§10.7 的内存告警自动切低特效（并能改回来）', async () => {
+  await import('../tools/build-minigame.mjs');
+  const fake = installFakeWx();
+  try {
+    const require = createRequire(import.meta.url);
+    const app = loadFreshApp(require, 12);
+    // ① 屏幕常亮：启动时就调一次（一局十几分钟，盯塔时可能一直不碰屏幕）
+    assert.ok(fake.platform.keepScreenOn.includes(true), `启动要申请屏幕常亮（实际 ${JSON.stringify(fake.platform.keepScreenOn)}）`);
+    assert.ok(fake.platform.memoryWarning >= 1, '要接上 wx.onMemoryWarning，否则系统只会直接杀进程');
+
+    app.startMatch();
+    // 把渲染器的 draw 包一层：只看它拿到什么 pulses（§116 的低特效档关的就是这个）
+    const seen = [];
+    const r = app.renderer();
+    const orig = r.draw;
+    r.draw = (view) => { seen.push(view.pulses); return orig(view); };
+    app.drawFrame();
+    assert.equal(seen.at(-1), true, '默认是高档：脉冲开着');
+
+    // ② 内存告警 → 自动切低特效（同一份设置），并给玩家一句提示
+    assert.equal(fake.fireMemoryWarning(10), true, '告警要真的送到入口那个回调');
+    assert.equal(JSON.parse(globalThis.wx.getStorageSync('frostfall:settings') || '{}').effects, 'low', '要落盘成低特效');
+    app.drawFrame();
+    assert.equal(seen.at(-1), false, '低特效档要把脉冲关掉');
+    assert.ok(app.canvas.record.texts.some((t) => t.includes('内存告警')), '要提示一句，别让玩家以为画面坏了');
+
+    // ③ 暂停面板里那一格能改回来（不是一条单行道）
+    const pause = app.layout().byId.pause;
+    app.tap(pause.x + pause.w / 2, pause.y + pause.h / 2);
+    assert.equal(app.getModel().sheet.byId.effects.sub, '低', '面板要显示当前是低档');
+    const row = app.getModel().sheet.byId.effects;
+    app.tap(row.x + row.w / 2, row.y + row.h / 2);
+    assert.equal(JSON.parse(globalThis.wx.getStorageSync('frostfall:settings') || '{}').effects, 'high', '点一下切回高档');
+    const resume = app.getModel().sheet.byId.resume;
+    app.tap(resume.x + resume.w / 2, resume.y + resume.h / 2);
+    app.drawFrame();
+    assert.equal(seen.at(-1), true, '切回高档之后脉冲回来');
   } finally { fake.uninstall(); }
 });

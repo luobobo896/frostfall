@@ -484,12 +484,14 @@ export function layoutBag(m, ui = {}) {
 /**
  * 暂停面板（单机局才有意义：联机「不假装暂停」是 §114 那条口径；小游戏现在只有单机，所以这是真暂停）。
  *
- * 三个开关都**真的接在东西上**，不是摆样子：
- *   倍速　→ 帧循环按 1× / 2× 推内核；
- *   镜头　→ `settings.tdFitAll`（整图可见 / 放大到 settings.zoom），与浏览器版同一份设置；
- *   震动　→ `settings.sfx` 经 `feedback.js` 的 `wx.vibrateShort`（同一份设置里的那个开关）。
- * **没摆的两项**：`effects`（低特效档关的是飘字与脉冲，而小游戏这一版还没画飘字——摆了就是假选项）；
- * 音效那一半要等防守模式的预警音（TD 本来就没有提示音）。
+ * 每一格都**真的接在东西上**，不是摆样子：
+ *   倍速　　→ 帧循环按 1× / 2× 推内核；
+ *   镜头　　→ `settings.tdFitAll`（整图可见 / 放大到 settings.zoom），与浏览器版同一份设置（仅 TD）；
+ *   摇杆　　→ `settings.stick`（固定 / 浮动），仅防守（§1.9.3）；
+ *   音效/震动 → `settings.sfx`：提示音走 `audio.js`、短震动走 `feedback.js` 的 `wx.vibrateShort`；
+ *   特效　　→ `settings.effects`：低档关掉脉冲（新手引导塔位高亮的呼吸效果，§116）；
+ *   波次预告 / 自动拾取 → 各自模式专有的那一格（§154）。
+ * 行距 47（44 高 + 3 缝）是这一屏的**上限**：再松就放不下第 6 行了（333 起的「收起面板」会出画布）。
  */
 export function layoutPause(m, ui = {}) {
   const rows = [];
@@ -500,24 +502,32 @@ export function layoutPause(m, ui = {}) {
    * 反过来「摇杆固定 / 浮动」是防守专用的（TD 没有摇杆，§1.9.1）。两边各占同一个格。
    */
   const defense = m.mode === 'defense';
-  rows.push({ id: 'resume', label: '继续游戏', x: 20, y: 96, w: 614, h: 44, action: { type: 'resume' } });
+  rows.push({ id: 'resume', label: '继续游戏', x: 20, y: 86, w: 614, h: 44, action: { type: 'resume' } });
   rows.push({
     id: 'speed', label: '倍速', sub: ui.rate === 2 ? '2×' : '1×',
-    x: 20, y: 146, w: 300, h: 44, on: ui.rate === 2, action: { type: 'speed' },
+    x: 20, y: 133, w: 300, h: 44, on: ui.rate === 2, action: { type: 'speed' },
   });
   rows.push(defense
     ? {
       id: 'stick', label: '摇杆', sub: sv.stick === 'floating' ? '浮动' : '固定',
-      x: 334, y: 146, w: 300, h: 44, on: sv.stick === 'floating', action: { type: 'stick' },
+      x: 334, y: 133, w: 300, h: 44, on: sv.stick === 'floating', action: { type: 'stick' },
     }
     : {
       id: 'camera', label: '镜头', sub: sv.tdFitAll === false ? '放大' : '整图',
-      x: 334, y: 146, w: 300, h: 44, on: sv.tdFitAll === false, action: { type: 'camera' },
+      x: 334, y: 133, w: 300, h: 44, on: sv.tdFitAll === false, action: { type: 'camera' },
     });
   rows.push({
     // 这一格同时管**提示音**（§2.6 的回防预警）与短震动（§1.9.2），所以标签要与浏览器版一样写全
     id: 'sfx', label: '音效/震动', sub: sv.sfx === false ? '关' : '开',
-    x: 20, y: 196, w: 300, h: 44, on: sv.sfx !== false, action: { type: 'sfx' },
+    x: 20, y: 180, w: 300, h: 44, on: sv.sfx !== false, action: { type: 'sfx' },
+  });
+  /**
+   * 「特效」这一格现在**不是假选项**了：低档真的关掉脉冲（§116 的 `hintPulseAlpha`），
+   * 而且 §10.7 的内存告警会把这一档自动切过来——玩家得能看见、也能自己改回去。
+   */
+  rows.push({
+    id: 'effects', label: '特效', sub: sv.effects === 'low' ? '低' : '高',
+    x: 334, y: 180, w: 300, h: 44, on: sv.effects === 'low', action: { type: 'effects' },
   });
   /**
    * §154：这一格也按模式取舍——TD 摆「波次预告」（§8.3：开波前先看这一波是什么），
@@ -526,24 +536,24 @@ export function layoutPause(m, ui = {}) {
   rows.push(defense
     ? {
       id: 'autoPickup', label: '自动拾取', sub: sv.autoPickup === false ? '关' : '开',
-      x: 334, y: 196, w: 300, h: 44, on: sv.autoPickup !== false, action: { type: 'autoPickup' },
+      x: 334, y: 227, w: 300, h: 44, on: sv.autoPickup !== false, action: { type: 'autoPickup' },
     }
     : {
       id: 'wavePreview', label: '波次预告', sub: sv.showWavePreview === false ? '关' : '开',
-      x: 334, y: 196, w: 300, h: 44, on: sv.showWavePreview !== false, action: { type: 'wavePreview' },
+      x: 334, y: 227, w: 300, h: 44, on: sv.showWavePreview !== false, action: { type: 'wavePreview' },
     });
-  rows.push({ id: 'lobby', label: '回大厅', x: 20, y: 246, w: 300, h: 44, action: { type: 'lobby' } });
+  rows.push({ id: 'lobby', label: '回大厅', x: 20, y: 227, w: 300, h: 44, action: { type: 'lobby' } });
   // §153 的「重看」：门槛只认 `profile.tutorialDone` 这一个标记，「重看」就是把它置回 false（下一局再挂）
   rows.push({
-    id: 'replayTutorial', label: '重看新手引导', sub: '下一局生效', x: 334, y: 246, w: 300, h: 44,
+    id: 'replayTutorial', label: '重看新手引导', sub: '下一局生效', x: 20, y: 274, w: 300, h: 44,
     action: { type: 'replayTutorial' },
   });
   // 「重置进度」与「收起面板」并排放在最后一行：前者不可逆（§1.9.2），所以点一次只转到「再点一次确认」
   rows.push({
     id: 'resetProgress', label: ui.resetArmed ? '再点一次确认重置' : '重置进度', sub: ui.resetArmed ? '' : '清空声望与解锁',
-    x: 20, y: 296, w: 300, h: 44, on: !!ui.resetArmed, action: { type: 'resetProgress' },
+    x: 334, y: 274, w: 300, h: 44, on: !!ui.resetArmed, action: { type: 'resetProgress' },
   });
-  rows.push({ id: 'close', label: '收起面板', x: 334, y: 296, w: 300, h: 44, action: { type: 'close' } });
+  rows.push({ id: 'close', label: '收起面板', x: 20, y: 321, w: 614, h: 44, action: { type: 'close' } });
   return {
     kind: 'pause',
     title: '已暂停',
@@ -552,7 +562,7 @@ export function layoutPause(m, ui = {}) {
     hint: defense
       ? `第 ${m.assault?.round ?? 0} 轮 · 金币 ${Math.round(m.gold)}`
       : `第 ${m.wave.index} / ${m.length === 'long' ? 30 : 12} 波 · 金币 ${Math.round(m.gold)}`,
-    box: { x: 12, y: 62, w: 643, h: 290 },
+    box: { x: 12, y: 62, w: 643, h: 311 },
     rows, byId: Object.fromEntries(rows.map((r) => [r.id, r])),
   };
 }
