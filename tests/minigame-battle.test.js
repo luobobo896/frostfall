@@ -14,6 +14,7 @@ import {
 import { installFakeWx } from '../tools/fake-wx.mjs';
 import { TOWER_MAX_LEVEL } from '../src/data.js';
 import { createMatch, makeEquipment, potionCount, update } from '../src/match.js';
+import { createDefenseMatch } from '../src/defense.js';
 import { SHOP_ITEMS } from '../src/data.js';
 import { drawResult, layoutBag, layoutItem, layoutPause, layoutResult, layoutShop } from '../src/minigame/battle.js';
 
@@ -306,6 +307,18 @@ test('小游戏结算面板：内容取自浏览器版那个 resultPanelModel（
   }
   // 没结束的局没有面板
   assert.equal(layoutResult(createMatch({ seed: 5 }), {}), null);
+
+  // 防守那一局走的是**同一份视图模型**（§151：一个面板不能两种说法）——标题与结果行都要换成防守那套
+  const dm = createDefenseMatch({ seed: 5 });
+  dm.time = 900;
+  dm.stats.roundsCleared = 4;
+  dm.stats.fieldKills = 31;
+  dm.stats.castleHits = 7;
+  dm.result = 'win';
+  const DR = layoutResult(dm, { gain: 60 });
+  assert.equal(DR.model.title, '守住了！');
+  assert.ok(DR.rows.some((r) => r.label === '守住轮次' && r.value.startsWith('4 / 4')), '防守的结果行要写守住轮次');
+  assert.ok(DR.rows.some((r) => r.label === '城堡剩余' && r.label !== '核心剩余'), '防守写城堡，不写核心');
 });
 
 test('小游戏结算：一局结束后真的记档（声望 +120、解锁与大厅那行都跟着变），且只记一次', async () => {
@@ -394,6 +407,14 @@ test('小游戏暂停与倍速：暂停时内核一步不走，倍速按倍数�
     // 倍速：同一段时间走两步
     tapBtn('speed');
     assert.equal(app.getModel().rate, 2);
+    // 暂停面板里的读数要**跟着活状态走**：以前这里传的是 `b.ui`（只有 `{sheetKind:'pause'}`），
+    // 于是跑着 2× 的面板写着「1×」、关了震动的写着「开」——面板不能两种说法（§151 同一条）
+    tapBtn('pause');
+    assert.equal(app.getModel().sheet.byId.speed.sub, '2×', '面板要显示当前的倍速档');
+    assert.equal(app.getModel().sheet.byId.camera.sub, '放大', '面板要显示当前的镜头档');
+    assert.equal(app.getModel().sheet.byId.sfx.sub, '关', '面板要显示当前的震动档');
+    const back = app.getModel().sheet.byId.resume;
+    app.tap(back.x + back.w / 2, back.y + back.h / 2);
     const t1 = m.time;
     app.tick(10);
     assert.ok(Math.abs((m.time - t1) - 10) < 0.2, `倍速下 tick(10) 该走 10 秒（实际 ${(m.time - t1).toFixed(1)}）`);

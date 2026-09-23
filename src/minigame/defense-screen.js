@@ -13,6 +13,8 @@ export const STICK = {
   radius: 64,        // 摇杆推满的半径（§1.9.1 的 60-72pt，取中）
   deadZone: 0.25,    // 死区：小于它算没推（与 defense.js 的 steerGoal 门槛同源）
   zoneW: 0.45,       // 固定模式下有效区 = 左半屏的 45%（§1.9.1、§10.1）
+  floatW: 0.5,       // 浮动模式下有效区 = 左半屏（§1.9.2：底座跟手，所以放宽到一半）
+  lowerY: 0.45,      // 两种模式都只吃下半屏（上半屏是地图与 HUD）
 };
 
 const COLORS = {
@@ -59,9 +61,10 @@ export function stickBase(model = {}, size = DESIGN) {
   return { x: origin.x, y: origin.y, r: radius, floating: !!model.stickFloating };
 }
 
-/** 这一下该归摇杆还是归 HUD：左侧 45% 且不在 HUD 按钮上算摇杆（§1.9.1 的有效区） */
-export function inStickZone(L, x, y) {
-  if (x > L.w * STICK.zoneW) return false;
+/** 这一下该归摇杆还是归 HUD：左下那片有效区且不在 HUD 按钮上算摇杆（§1.9.1 / §1.9.2 的有效区） */
+export function inStickZone(L, x, y, floating = false) {
+  if (y < L.h * STICK.lowerY) return false;
+  if (x > L.w * (floating ? STICK.floatW : STICK.zoneW)) return false;
   for (const it of L.items) {
     if (x >= it.x && x <= it.x + it.w && y >= it.y && y <= it.y + it.h) return false;
   }

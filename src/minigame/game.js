@@ -207,13 +207,25 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
       fortSlot: null,
     };
     applyCamera(b);
+    /**
+     * 当前该显示哪张弹层。**读数从闭包里的活状态取**（`rate` / `settings`）——以前这里是
+     * `layoutSheet(m, b.ui)` 直接传 `b.ui`，而 `b.ui` 只有 `{ sheetKind: 'pause' }`，
+     * 于是暂停面板永远显示默认值（跑着 2× 的面板写着 1×、关了震动写着开）。§151 那条
+     * 「一个面板不能两种说法」在读数上同样成立。
+     */
+    b.sheetOf = () => (b.ui.sheetKind === 'fort'
+      ? layoutFortSheet(m, {
+        freeSlots: m.def.fortSlots.filter((_, i) => !m.forts.some((f) => f.slot === i)).length,
+        stickFloating: settings.stick === 'floating',
+      })
+      : layoutSheet(m, { ...b.ui, rate: b.rate, settings }));
     b.model = () => (m.mode === 'defense'
-      ? { ...defModel(b), sheet: sheetFor(m, b) }
+      ? { ...defModel(b), sheet: b.sheetOf() }
       : {
         ...describeBattleModel(m), selectedTower: b.selectedTower, paused: b.paused, rate: b.rate,
         // 结算面板一出来就收掉提示条（浏览器版 `view.tutorial` 同源）
         tutorial: m.result ? null : (b.tutorial?.current()?.text ?? null),
-        ui: b.ui, sheet: sheetFor(m, b),
+        ui: b.ui, sheet: b.sheetOf(),
       });
     b.layout = m.mode === 'defense' ? layoutDefense(m, defModel(b)) : layoutBattle(b.model());
     battle = b;
@@ -242,9 +254,9 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
   const tapBattle = (b, x, y) => {
     // 弹层开着时它最优先（关掉 / 选塔 / 升级 / 买东西 / 换装 …）
     if (b.ui.sheetKind || b.ui.selectedSlot != null || b.ui.panelSlot != null) {
-      // 走 `sheetFor`：工事那张是防守专有的——直接调 layoutSheet 会返回 null，
+      // 走 `b.sheetOf()`：工事那张是防守专有的——直接调 layoutSheet 会返回 null，
       // 于是点哪儿都算「关掉弹层」（第一版就是这么建不出工事的）
-      const action = hitTestSheet(sheetFor(b.m, b), x, y);
+      const action = hitTestSheet(b.sheetOf(), x, y);
       return applyAction(b, action);
     }
     // 防守模式：右侧那排 HUD 之外的点 = **点地移动 / 点工事位**（与浏览器版 defenseTap 同一套语义）
@@ -432,6 +444,13 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
         note(b, settings.tdFitAll ? '镜头：整图可见' : '镜头：放大', 1.4);
         return action;
       }
+      case 'stick': {
+        // §1.9.3 的「固定 / 浮动」——只影响防守；下一次按下摇杆时按新档位算底座
+        settings = { ...settings, stick: settings.stick === 'floating' ? 'fixed' : 'floating' };
+        saveSettings(settings);
+        note(b, settings.stick === 'floating' ? '摇杆：浮动（跟手）' : '摇杆：固定（左下）', 1.4);
+        return action;
+      }
       case 'sfx': {
         settings = { ...settings, sfx: settings.sfx === false };
         saveSettings(settings);
@@ -556,10 +575,16 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
      * （浏览器版 `stick.owns()` 那套的同一件事）。其余地方仍然是「点」。
      */
     if (b.m.mode === 'defense' && !sheetOpen) {
-      if (t.type === 'down' && inStickZone(b.layout, t.x, t.y)) {
+      /**
+       * §1.9.3：摇杆可切「固定 / 浮动」。固定 = 左下那个底座不动；浮动 = 手指按哪儿底座跟到哪儿
+       * （与浏览器版 `joystick.js` 同一条规则：只是**底座**跟着走，方向仍然从按下的那一点算）。
+       */
+      const floating = settings.stick === 'floating';
+      if (t.type === 'down' && inStickZone(b.layout, t.x, t.y, floating)) {
         // 底座按**设计单位**摆（左下的 16% / 78%），触摸坐标上面已经换算成设计单位了
-        const base = stickBase(defModel(b));
-        b.stick = { active: true, id: t.id, origin: base, start: { x: t.x, y: t.y }, dir: { x: 0, y: 0, mag: 0 } };
+        const home = stickBase(defModel(b));
+        const origin = floating ? { x: t.x, y: t.y, r: home.r, floating: true } : home;
+        b.stick = { active: true, id: t.id, origin, start: { x: t.x, y: t.y }, dir: { x: 0, y: 0, mag: 0 } };
         drawFrame();
         return;
       }
@@ -828,13 +853,6 @@ const defModel = (b) => ({
   stick: b.stick,   // 调试/验收用：能断言「推着走了没有」
   ui: b.ui,
 });
-
-/** 当前该显示哪张弹层：工事那张是防守专有的（两种工事 + 取消） */
-const sheetFor = (m, b) => (b.ui.sheetKind === 'fort'
-  ? layoutFortSheet(m, {
-    freeSlots: m.def.fortSlots.filter((_, i) => !m.forts.some((f) => f.slot === i)).length,
-  })
-  : layoutSheet(m, b.ui));
 
 /**
  * 无头跑一局内核（联机/自检/第 3 步的渲染循环都会用同一条路）。

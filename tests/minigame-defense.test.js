@@ -1,7 +1,7 @@
 // 小游戏防守那一屏（§12.5 / §2.6）：摇杆数学、HUD 布局、工事面板，以及「推着走 → 建工事 → 回城」的闭环。
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync } from 'node:fs';
+import { copyFileSync, mkdtempSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -15,6 +15,14 @@ import { FORTS } from '../src/data.js';
 
 const OUT = mkdtempSync(join(tmpdir(), 'ff-mini-defense-'));
 process.env.FF_MINIGAME_OUT = OUT;
+
+/** 复制成新文件名再 require：ESM 缓存按路径走，于是每条用例都能拿到一个**全新的大厅开局** */
+const loadFreshApp = (require, n) => {
+  const p = join(OUT, `game-${n}.js`);
+  copyFileSync(join(OUT, 'game.js'), p);
+  require(p);
+  return globalThis.__frostfallLobby;
+};
 
 const base = () => ({ x: 100, y: 300, r: STICK.radius, floating: false });
 
@@ -69,8 +77,7 @@ test('小游戏防守闭环：摇杆推着走 → 点工事位建塔 → 回城�
   const fake = installFakeWx();
   try {
     const require = createRequire(import.meta.url);
-    require(join(OUT, 'game.js'));
-    const app = globalThis.__frostfallLobby;
+    const app = loadFreshApp(require, 2);
     const tapBtn = (id) => {
       const b = app.layout().byId[id];
       assert.ok(b, `HUD 上找不到 ${id}`);
@@ -112,5 +119,64 @@ test('小游戏防守闭环：摇杆推着走 → 点工事位建塔 → 回城�
     const t0 = m.time;
     app.tick(10);
     assert.equal(m.time, t0, '暂停时防守内核也不走');
+    /**
+     * 暂停面板**画出来**（以前这一步会抛：`layoutPause` 的提示行读的是 TD 的 `m.wave.index`，
+     * 而防守局没有 `m.wave`——异常从帧循环里冒出去，画面就冻在那一帧）。
+     * §154 那条也在这一屏上：防守摆「摇杆」、不摆「镜头」（跟随相机，改了没用）。
+     */
+    app.drawFrame();
+    const sheet = app.getModel().sheet;
+    assert.equal(sheet.kind, 'pause');
+    assert.match(sheet.hint, /第 \d+ 轮/, '防守写「第几轮」而不是波次');
+    assert.ok(sheet.byId.stick, '防守的设置里有「摇杆」');
+    assert.ok(!sheet.byId.camera, '防守不摆「镜头」这个假选项');
+  } finally { fake.uninstall(); }
+});
+
+test('小游戏防守：摇杆切「浮动」之后左半屏都归摇杆、底座跟手（§1.9.3 的固定 / 浮动）', async () => {
+  await import('../tools/build-minigame.mjs');
+  const fake = installFakeWx();
+  try {
+    const require = createRequire(import.meta.url);
+    const app = loadFreshApp(require, 3);
+    const tapBtn = (id) => {
+      const b = app.layout().byId[id];
+      assert.ok(b, `HUD 上找不到 ${id}`);
+      return app.tap(b.x + b.w / 2, b.y + b.h / 2);
+    };
+    const tapSheet = (id) => {
+      const r = app.getModel().sheet.byId[id];
+      assert.ok(r, `面板上找不到 ${id}`);
+      return app.tap(r.x + r.w / 2, r.y + r.h / 2);
+    };
+    tapBtn('mode-def');
+    tapBtn('start');
+    const m = app.match();
+
+    // 固定档（默认）：x=320 已经在「左下 45%」（0.45 × 667 = 300）之外，这一下不归摇杆
+    fake.fireTouch(320, 320, 'down');
+    assert.equal(app.getModel().stick.active, false, '固定档下 45% 之外不该归摇杆');
+    fake.fireTouch(320, 320, 'up');
+    assert.equal(m.hero.path.length > 0, true, '那一下仍然是「点地移动」');
+
+    // 切浮动：设置落盘 + 面板读数跟着变
+    tapBtn('pause');
+    assert.equal(app.getModel().sheet.byId.stick.sub, '固定');
+    tapSheet('stick');
+    assert.equal(JSON.parse(globalThis.wx.getStorageSync('frostfall:settings') || '{}').stick, 'floating');
+    assert.equal(app.getModel().sheet.byId.stick.sub, '浮动', '切完面板要显示浮动');
+    tapSheet('resume');
+
+    // 浮动档：左半屏（50%）都归摇杆，而且**底座跟手指**
+    fake.fireTouch(320, 320, 'down');
+    const st = app.getModel().stick;
+    assert.equal(st.active, true, '浮动档下左半屏该归摇杆');
+    assert.equal(Math.round(st.origin.x), 320, '浮动底座要跟到手指那一点');
+    assert.equal(Math.round(st.origin.y), 320);
+    const from = { ...m.hero.cell };
+    fake.fireTouch(420, 320, 'move');
+    app.tick(4);
+    assert.notDeepEqual(m.hero.cell, from, `浮动摇杆推着也该走（还在 ${JSON.stringify(m.hero.cell)}）`);
+    fake.fireTouch(420, 320, 'up');
   } finally { fake.uninstall(); }
 });

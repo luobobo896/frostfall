@@ -433,15 +433,26 @@ export function layoutBag(m, ui = {}) {
 export function layoutPause(m, ui = {}) {
   const rows = [];
   const sv = ui.settings ?? {};
+  /**
+   * §154：**设置面板按模式取舍**——防守没有「波次」，也就没有「整图可见 / 放大」这条镜头档
+   * （防守是跟随相机，每帧被 `drawDefense` 覆盖，摆上去就是个按了没反应的假选项）；
+   * 反过来「摇杆固定 / 浮动」是防守专用的（TD 没有摇杆，§1.9.1）。两边各占同一个格。
+   */
+  const defense = m.mode === 'defense';
   rows.push({ id: 'resume', label: '继续游戏', x: 20, y: 96, w: 614, h: 44, action: { type: 'resume' } });
   rows.push({
     id: 'speed', label: '倍速', sub: ui.rate === 2 ? '2×' : '1×',
     x: 20, y: 146, w: 300, h: 44, on: ui.rate === 2, action: { type: 'speed' },
   });
-  rows.push({
-    id: 'camera', label: '镜头', sub: sv.tdFitAll === false ? '放大' : '整图',
-    x: 334, y: 146, w: 300, h: 44, on: sv.tdFitAll === false, action: { type: 'camera' },
-  });
+  rows.push(defense
+    ? {
+      id: 'stick', label: '摇杆', sub: sv.stick === 'floating' ? '浮动' : '固定',
+      x: 334, y: 146, w: 300, h: 44, on: sv.stick === 'floating', action: { type: 'stick' },
+    }
+    : {
+      id: 'camera', label: '镜头', sub: sv.tdFitAll === false ? '放大' : '整图',
+      x: 334, y: 146, w: 300, h: 44, on: sv.tdFitAll === false, action: { type: 'camera' },
+    });
   rows.push({
     id: 'sfx', label: '震动', sub: sv.sfx === false ? '关' : '开',
     x: 20, y: 196, w: 300, h: 44, on: sv.sfx !== false, action: { type: 'sfx' },
@@ -456,7 +467,11 @@ export function layoutPause(m, ui = {}) {
   return {
     kind: 'pause',
     title: '已暂停',
-    hint: `第 ${m.wave.index} / ${m.length === 'long' ? 30 : 12} 波 · 金币 ${Math.round(m.gold)}`,
+    // 防守没有 `m.wave`（那是 TD 的波次表），写「第几轮」——这里曾经直接读 `m.wave.index`，
+    // 于是**防守局一按暂停就抛异常**（异常从帧循环里冒出去，画面直接冻在那儿）
+    hint: defense
+      ? `第 ${m.assault?.round ?? 0} 轮 · 金币 ${Math.round(m.gold)}`
+      : `第 ${m.wave.index} / ${m.length === 'long' ? 30 : 12} 波 · 金币 ${Math.round(m.gold)}`,
     box: { x: 12, y: 62, w: 643, h: 240 },
     rows, byId: Object.fromEntries(rows.map((r) => [r.id, r])),
   };
