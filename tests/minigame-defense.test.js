@@ -8,7 +8,7 @@ import { join } from 'node:path';
 
 import { installFakeWx } from '../tools/fake-wx.mjs';
 import {
-  DESIGN, STICK, hitTestDefense, inStickZone, layoutDefense, layoutFortSheet, stickBase, stickVector,
+  DESIGN, MINIMAP, STICK, hitTestDefense, inStickZone, layoutDefense, layoutFortSheet, stickBase, stickVector,
 } from '../src/minigame/defense-screen.js';
 import { createDefenseMatch } from '../src/defense.js';
 import { FORTS } from '../src/data.js';
@@ -55,6 +55,24 @@ test('小游戏防守 HUD：右侧那排避开摇杆区、避开胶囊区、热�
   assert.ok(!inStickZone(L, 500, 300), '右半屏不该归摇杆');
   assert.deepEqual(stickBase({}, { w: 667, h: 375 }), { x: 107, y: 293, r: 64, floating: false });
   assert.equal(stickBase({ stickOrigin: { x: 200, y: 200 }, stickFloating: true }, { w: 667, h: 375 }).x, 200, '浮动模式底座跟手指');
+});
+
+test('小游戏防守 HUD：小地图那一格（§2.6）——不压右排/不压顶栏、点它=回城', () => {
+  const m = createDefenseMatch({ seed: 5 });
+  const L = layoutDefense(m, { rate: 1, paused: false, potionCount: 1 });
+  assert.ok(L.minimap, '防守要有小地图那一块');
+  assert.equal(MINIMAP.w >= 44 && MINIMAP.h >= 44, true, '它本身也是可点区域，要 ≥44');
+  const hit = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+  assert.ok(!hit(L.minimap, L.capsule), '小地图压到右上角胶囊区');
+  assert.ok(!hit(L.minimap, L.top), '小地图压到顶栏');
+  for (const it of L.items) {
+    if (it.id === 'minimap') continue;
+    assert.ok(!hit(L.minimap, it), `小地图压到了 ${it.id}`);
+  }
+  // 那一格在 items 里，动作就是「回城」（与那颗按钮同一个出口）
+  const cell = L.byId.minimap;
+  assert.deepEqual(cell.action, { type: 'teleport' });
+  assert.deepEqual(hitTestDefense(L, cell.x + cell.w / 2, cell.y + cell.h / 2), { type: 'teleport' });
 });
 
 test('小游戏工事面板：两种工事 + 取消，买不起的灰掉', () => {
@@ -223,5 +241,39 @@ test('小游戏防守：守住 4 轮转无尽之后，「继续（无尽）」�
     const t2 = m.time;
     app.tick(3);
     assert.equal(m.time, t2, '城堡陷落之后内核不该再走');
+  } finally { fake.uninstall(); }
+});
+
+test('小游戏防守：小地图真的画出来了、贴到了主画布上，点它回城（§2.6）', async () => {
+  await import('../tools/build-minigame.mjs');
+  const fake = installFakeWx();
+  try {
+    const require = createRequire(import.meta.url);
+    const app = loadFreshApp(require, 5);
+    const tapBtn = (id) => {
+      const b = app.layout().byId[id];
+      assert.ok(b, `HUD 上找不到 ${id}`);
+      return app.tap(b.x + b.w / 2, b.y + b.h / 2);
+    };
+    tapBtn('mode-def');
+    tapBtn('start');
+    const m = app.match();
+    app.drawFrame();
+
+    // ① 离屏画布上真的画了东西（走的是浏览器版那套 `createMinimap`：野区 / 围墙 / 营地点 / 人在哪）
+    const mini = app.minimap();
+    assert.ok(mini, '防守局要有一张小地图');
+    const calls = mini.canvas.record.calls;
+    const counts = calls.reduce((a, c) => ({ ...a, [c]: (a[c] ?? 0) + 1 }), {});
+    // 底 + 野区 + 围墙是方块画的；营地 / 传送点 / 城堡 / 英雄那些点是圆点画的
+    assert.ok(counts.fillRect >= 3, `小地图上该有「底 / 野区 / 围墙」（fillRect ${counts.fillRect ?? 0} 次）`);
+    assert.ok(counts.arc >= 5, `营地 / 传送点 / 城堡 / 英雄那些点该画出来（arc ${counts.arc ?? 0} 次）`);
+    // ② 主画布上贴了它
+    assert.ok(app.canvas.record.calls.includes('drawImage'), '主画布这一帧要贴小地图');
+    // ③ 点它 = 回城（与「回城」按钮同一个动作、同一个 30 秒冷却）
+    assert.ok(m.hero.teleportCd === 0, '前提：这会儿不在冷却');
+    const cell = app.layout().minimap;
+    app.tap(cell.x + cell.w / 2, cell.y + cell.h / 2);
+    assert.ok(m.hero.teleportCd > 0, '点小地图要真的回城（进冷却）');
   } finally { fake.uninstall(); }
 });

@@ -22,12 +22,12 @@ import { createTutorial, tutorialPasses } from '../tutorial.js';
 import { gridDist } from '../core.js';
 import { loadSettings, saveSettings } from '../settings.js';
 import { createHaptics } from '../feedback.js';
-import { createRenderer } from '../render.js';
+import { createMinimap, createRenderer } from '../render.js';
 import {
   buildFort, createDefenseMatch, describeDefense, orderMove, repairCastle, steerGoal, teleportHome, updateDefense,
 } from '../defense.js';
 import {
-  drawDefenseHud, hitTestDefense, inStickZone, layoutDefense, layoutFortSheet, stickBase, stickVector,
+  MINIMAP, drawDefenseHud, hitTestDefense, inStickZone, layoutDefense, layoutFortSheet, stickBase, stickVector,
 } from './defense-screen.js';
 import { applyLobbyAction, drawLobby, hitTestLobby, layoutLobby } from './lobby.js';
 import {
@@ -235,6 +235,15 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
       // 防守：摇杆状态（浮动模式下底座跟手指）+ 正在建的那个工事位
       stick: { active: false, id: null, origin: null, dir: { x: 0, y: 0, mag: 0 }, start: null },
       fortSlot: null,
+      /**
+       * 防守的小地图（§2.6）。小游戏里**第二张 `wx.createCanvas()` 就是离屏画布**：
+       * 用小地图那套现成的绘制（`render.js` 的 `createMinimap`，与浏览器版共用一份）画在它上面，
+       * 再整块贴到主画布上——省得在两处各画一遍「哪块地能刷、门在哪、怪从哪来」。
+       */
+      minimap: m.mode === 'defense' ? (() => {
+        const c = wx.createCanvas();
+        return { canvas: c, api: createMinimap(c, { size: () => ({ w: MINIMAP.w, h: MINIMAP.h }) }) };
+      })() : null,
       ...over,
     };
     applyCamera(b);
@@ -742,6 +751,11 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
       const o = hudOffset();
       ctx.setTransform(size.dpr, 0, 0, size.dpr, size.dpr * o.x, size.dpr * o.y);
       drawDefenseHud(ctx, b.m, b.layout, { message, stick: b.stick.active ? { base: b.stick.origin, dir: b.stick.dir } : { base: b.layout.stick, dir: { x: 0, y: 0, mag: 0 } } });
+      // 小地图画在 HUD 之后：它那一格在 `items` 里（负责命中），底下的面板底由这张图盖住
+      if (b.minimap) {
+        b.minimap.api.draw(b.m);
+        ctx.drawImage(b.minimap.canvas, MINIMAP.x, MINIMAP.y, MINIMAP.w, MINIMAP.h);
+      }
     } else {
       b.layout = layoutBattle(b.model());
       // `hintSlots`：引导第一步/第二步在战场上圈出「建这里」（render.js 本来就有这段，直接复用）
@@ -863,6 +877,8 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
     match: () => battle?.m ?? null,
     /** 调试/验收用：屏幕坐标 ↔ 格坐标的换算（点塔位那一步要用） */
     renderer: () => battle?.renderer ?? null,
+    /** 调试/验收用：防守的小地图（离屏画布 + `render.js` 那套绘制）——离线验收要断言它真的画了 */
+    minimap: () => battle?.minimap ?? null,
     tap: (x, y) => (battle ? tapBattle(battle, x, y) : tapLobby(x, y)),
     startMatch,
     backToLobby,

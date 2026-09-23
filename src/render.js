@@ -568,15 +568,20 @@ export function createRenderer(canvas, { size = null } = {}) {
  * 防守模式的右上小地图（§2.6 / §14.3 稿 5）：跟随相机下看不见基地与进攻方向，
  * 这张俯视平面图是「我在哪、怪从哪来、基地还剩多少」的唯一全局视图；点它回城（冷却 30s）。
  */
-export function createMinimap(canvas) {
+export function createMinimap(canvas, { size = null } = {}) {
   const ctx = canvas.getContext('2d');
   const PAD = 5;
   const view = { s: 1, ox: PAD, oy: PAD, w: 0, h: 0 };
 
-  function size(m) {
+  function layoutFor(m) {
     const dpr = Math.min(2, viewport().dpr || 1);
-    const w = canvas.clientWidth || canvas.width || 200;
-    const h = canvas.clientHeight || canvas.height || 150;
+    /**
+     * §平台适配（小游戏移植）：小游戏那张是**离屏 canvas**，同样没有 `clientWidth/clientHeight`，
+     * 所以和 `createRenderer` 一样允许传一个 `size()`；浏览器不传，行为与以前一模一样。
+     */
+    const measured = size ? size() : null;
+    const w = measured ? measured.w : (canvas.clientWidth || canvas.width || 200);
+    const h = measured ? measured.h : (canvas.clientHeight || canvas.height || 150);
     const pw = Math.floor(w * dpr), ph = Math.floor(h * dpr);
     if (canvas.width !== pw || canvas.height !== ph) { canvas.width = pw; canvas.height = ph; }
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -590,7 +595,7 @@ export function createMinimap(canvas) {
   const toMinimap = (x, y) => ({ x: view.ox + (x + 0.5) * view.s, y: view.oy + (y + 0.5) * view.s });
 
   function draw(m) {
-    size(m);
+    layoutFor(m);
     const dot = (x, y, r, fill) => {
       const p = toMinimap(x, y);
       ctx.fillStyle = fill;

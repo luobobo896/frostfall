@@ -73,8 +73,8 @@ if (page === 'lobby') {
   // 防守那一屏：单独一条分支（它用 createDefenseMatch + drawDefense + 摇杆那套 HUD）
   if (page === 'defense') {
     const { createDefenseMatch, buildFort, updateDefense } = await import('/src/defense.js');
-    const { createRenderer } = await import('/src/render.js');
-    const { layoutDefense, drawDefenseHud } = await import('/src/minigame/defense-screen.js');
+    const { createMinimap, createRenderer } = await import('/src/render.js');
+    const { MINIMAP, layoutDefense, drawDefenseHud } = await import('/src/minigame/defense-screen.js');
     const { TICK_STEP } = await import('/src/data.js');
     const m = createDefenseMatch({ mapId: 'def_01', difficulty: 'normal', heroId: 'hero_warrior', seed: 7 });
     const renderer = createRenderer(canvas, { size: () => ({ w, h }) });
@@ -92,6 +92,11 @@ if (page === 'lobby') {
       message: '摇杆走路 · 点工事位建塔 · 预警响了就回城',
       stick: { base: L.stick, dir: { x: 0.7, y: -0.7, mag: 1 } },
     });
+    // 小地图（§2.6）：与真机同一条路——离屏画布上画一遍，再整块贴上来
+    const miniCanvas = document.createElement('canvas');
+    const mini = createMinimap(miniCanvas, { size: () => ({ w: MINIMAP.w, h: MINIMAP.h }) });
+    mini.draw(m);
+    ctx.drawImage(miniCanvas, MINIMAP.x, MINIMAP.y, MINIMAP.w, MINIMAP.h);
     window.__previewReady = true;
   } else {
   const { createMatch, buildTower, update, startWaveEarly, skillLevel } = await import('/src/match.js');

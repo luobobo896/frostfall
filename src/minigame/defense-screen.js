@@ -9,6 +9,11 @@ import { FORTS } from '../data.js';
 
 export const DESIGN = { w: 667, h: 375 };
 export const CAPSULE = { w: 96, h: 32 };
+/**
+ * §2.6 / §14.3 稿 5 的小地图：**跟随相机下唯一的全局视图**（我在哪、怪从哪来、基地还剩多少），
+ * 点它回城（与「回城」按钮共用 30 秒冷却）。位置挑在右侧那排按钮的左边、倍速/暂停下面那块空地。
+ */
+export const MINIMAP = { x: 405, y: 60, w: 150, h: 112 };
 export const STICK = {
   radius: 64,        // 摇杆推满的半径（§1.9.1 的 60-72pt，取中）
   deadZone: 0.25,    // 死区：小于它算没推（与 defense.js 的 steerGoal 门槛同源）
@@ -112,10 +117,17 @@ export function layoutDefense(m, model = {}) {
   if (model.endlessExit) {
     items.push(item('endless', 20, 315, 200, 48, '继续（无尽）', { type: 'endless' }));
   }
+  /**
+   * 小地图那一格：**键本身不画东西**（label 是空串，底下那层面板底会被小地图盖住），
+   * 它只负责两件事——命中测试（点它 = 回城，与「回城」按钮同一个动作）与给绘制层一个矩形。
+   */
+  items.push(item('minimap', MINIMAP.x, MINIMAP.y, MINIMAP.w, MINIMAP.h, '',
+    { type: 'teleport' }, { disabled: m.hero?.teleportCd > 0 || m.hero?.dead }));
   return {
     w: DESIGN.w, h: DESIGN.h,
     capsule: { x: DESIGN.w - CAPSULE.w - 8, y: 6, w: CAPSULE.w, h: CAPSULE.h },
     top: { x: 12, y: 8, w: 356, h: 30 },
+    minimap: MINIMAP,
     items,
     byId: Object.fromEntries(items.map((it) => [it.id, it])),
     stick: stickBase(model),
@@ -182,7 +194,12 @@ export function drawDefenseHud(ctx, m, L, { message = null, stick = null } = {})
     ctx.arc(kx, ky, 26, 0, Math.PI * 2);
     ctx.fill();
   }
-  if (message) text(ctx, message, L.w / 2, 66, { size: 12, align: 'center', color: COLORS.gold });
+  /**
+   * 提示那一行写在**底部中间**（y=300）：上半屏那条中线被两样东西占着——`drawDefense` 自己画的
+   * 「城堡 x/y + 血条」（城堡多半就在屏幕中上部）与小地图（y=60 起）。以前写在这两者中间，
+   * 样张里一眼就能看见半句话被切掉。底部这一带是空的（右排按钮在 x=579 往右，工事/回城都不在这）。
+   */
+  if (message) text(ctx, message, L.w / 2, 300, { size: 12, align: 'center', color: COLORS.gold });
   return L;
 }
 
