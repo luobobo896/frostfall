@@ -22,6 +22,7 @@ import { createTutorial, tutorialPasses } from '../tutorial.js';
 import { gridDist } from '../core.js';
 import { loadSettings, saveSettings } from '../settings.js';
 import { createHaptics } from '../feedback.js';
+import { createCue } from '../audio.js';
 import { createMinimap, createRenderer } from '../render.js';
 import { wavePreview } from '../hud-model.js';
 import {
@@ -110,6 +111,12 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
   let settings = loadSettings();
   // §1.9.2 的短震动：小游戏这次真的接上了（浏览器版靠 DOM 点击事件，这边按 touch 手动触发）
   const tap = createHaptics({ enabled: () => settings.sfx !== false });
+  /**
+   * §2.6 的回防预警提示音：`audio.js` 那一层本来就只认平台适配层（浏览器 `new AudioContext()`、
+   * 小游戏 `wx.createWebAudioContext()`），所以这边**一份代码照用**——小游戏以前一个音都不放。
+   * 同一个 `settings.sfx` 开关管着它和震动（浏览器版那颗开关的标签就是「音效/震动」）。
+   */
+  const cue = createCue({ enabled: () => settings.sfx !== false });
 
   /** 镜头设置（§2.5）：整图可见 = `renderer.fit()`；放大 = 以核心为中心用 `settings.zoom` */
   const applyCamera = (b) => {
@@ -549,7 +556,8 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
       case 'sfx': {
         settings = { ...settings, sfx: settings.sfx === false };
         saveSettings(settings);
-        note(b, settings.sfx === false ? '震动已关' : '震动已开', 1.4);
+        // 这一格管着提示音与震动两样，提示语要跟着说全（否则关了音效还以为只是关了震动）
+        note(b, settings.sfx === false ? '音效与震动已关' : '音效与震动已开', 1.4);
         return action;
       }
       default: return action;
@@ -631,6 +639,8 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
   };
 
   onTouch((e) => {
+    // §178：音频只能在**用户手势里**解锁（真机上第一次预警才响得出来）——每一次按下都顺手解一下
+    cue.warm();
     if (!battle) {
       // 大厅那一屏自己按视口缩放布局（`layoutLobby`），所以它的坐标就是画布坐标
       if (e.type === 'down' && !viewportNotice()) tapLobby(e.x, e.y);
@@ -866,6 +876,13 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
     }
     maybeAutosave(battle, seconds);
     recordIfFinished(battle);
+    /**
+     * §2.6：预警**响的那一下**放一声（只认边沿，不是每帧都播）——与浏览器版帧循环里那句
+     * `if (warning && !lastWarning) cue('warning')` 同一件事。
+     */
+    const warning = !!battle.m.assault?.warning;
+    if (warning && !battle.lastWarning) cue('warning');
+    battle.lastWarning = warning;
     return steps;
   };
 

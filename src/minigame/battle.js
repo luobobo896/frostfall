@@ -515,7 +515,8 @@ export function layoutPause(m, ui = {}) {
       x: 334, y: 146, w: 300, h: 44, on: sv.tdFitAll === false, action: { type: 'camera' },
     });
   rows.push({
-    id: 'sfx', label: '震动', sub: sv.sfx === false ? '关' : '开',
+    // 这一格同时管**提示音**（§2.6 的回防预警）与短震动（§1.9.2），所以标签要与浏览器版一样写全
+    id: 'sfx', label: '音效/震动', sub: sv.sfx === false ? '关' : '开',
     x: 20, y: 196, w: 300, h: 44, on: sv.sfx !== false, action: { type: 'sfx' },
   });
   /**

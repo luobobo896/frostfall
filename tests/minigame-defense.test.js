@@ -404,3 +404,49 @@ test('小游戏防守闭环：放技能真的进冷却；阵亡后点「快速�
     assert.equal(m.lumber[0], 0, `花掉 ${REVIVE_LUMBER} 木材`);
   } finally { fake.uninstall(); }
 });
+
+test('小游戏防守：回防预警响一声（§2.6 的提示音 / §178 要在手势里解锁 / 静音时一声不响）', async () => {
+  await import('../tools/build-minigame.mjs');
+  const fake = installFakeWx();
+  try {
+    const require = createRequire(import.meta.url);
+    const app = loadFreshApp(require, 7);
+    const tapBtn = (id) => {
+      const b = app.layout().byId[id];
+      assert.ok(b, `HUD 上找不到 ${id}`);
+      return app.tap(b.x + b.w / 2, b.y + b.h / 2);
+    };
+    tapBtn('mode-def');
+    tapBtn('start');
+    const m = app.match();
+    assert.equal(fake.audio.contexts, 0, '前提：还没点过屏幕，音频上下文还没建');
+
+    // ① §178：音频只能在**手势里**解锁——按一下就顺手建/恢复上下文
+    fake.fireTouch(500, 120, 'down');
+    fake.fireTouch(500, 120, 'up');
+    assert.ok(fake.audio.contexts >= 1, '按下时要顺手把音频上下文解出来（真机上第一次预警才响得了）');
+
+    // ② 预警**起的那一下**排两声蜂鸣（§2.6：小地图闪 + 提示音）
+    m.assault.warning = true;
+    app.tick(0.1);
+    assert.ok(fake.audio.oscillators >= 2, `预警该排两声蜂鸣（实际 ${fake.audio.oscillators}）`);
+    // ③ 只认边沿：预警一直亮着，不再重复播
+    const played = fake.audio.oscillators;
+    app.tick(1);
+    assert.equal(fake.audio.oscillators, played, '预警没落下去就不该重播');
+
+    // ④ 设置里关掉「音效/震动」：再响一次预警也一声不排（浏览器版那颗开关管着两样）
+    tapBtn('pause');
+    assert.equal(app.getModel().sheet.byId.sfx.label, '音效/震动', '标签要写全：它同时管提示音与震动');
+    const row = app.getModel().sheet.byId.sfx;
+    app.tap(row.x + row.w / 2, row.y + row.h / 2);
+    assert.equal(JSON.parse(globalThis.wx.getStorageSync('frostfall:settings') || '{}').sfx, false, '要落盘');
+    const resume = app.getModel().sheet.byId.resume;
+    app.tap(resume.x + resume.w / 2, resume.y + resume.h / 2);
+    m.assault.warning = false;
+    app.tick(0.1);
+    m.assault.warning = true;
+    app.tick(0.1);
+    assert.equal(fake.audio.oscillators, played, '关掉之后不该再排蜂鸣');
+  } finally { fake.uninstall(); }
+});

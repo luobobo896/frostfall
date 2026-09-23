@@ -10,6 +10,11 @@ export function installFakeWx({ windowWidth = 667, windowHeight = 375, pixelRati
   const touchHandlers = {};
   const lifeHandlers = {};
   /**
+   * 音频记账（headless 里听不见声音，只能记「排了几声」）：`createWebAudioContext` 返回一个最小的
+   * WebAudio 门面，`audio` 里累计次数——用例据此验「预警真的排了两声蜂鸣」「静音时一声都没排」。
+   */
+  const audio = { contexts: 0, oscillators: 0, gains: 0, resumes: 0 };
+  /**
    * 假 canvas + 记录型 2D 上下文：Node 里没有 canvas，但大厅那一屏要真的画一帧才算验过。
    * 用 Proxy 兜住所有 `ctx.*` 调用（未实现的也记一笔），`fillText` 把文字留下来 ——
    * 于是「这一帧画了什么」可以断言（比如标题「冰封之地」真的被画出来了）。
@@ -59,6 +64,28 @@ export function installFakeWx({ windowWidth = 667, windowHeight = 375, pixelRati
       return task;
     },
     createCanvas: () => makeCanvas(),
+    createWebAudioContext: () => {
+      audio.contexts += 1;
+      return {
+        state: 'running',
+        currentTime: 0,
+        destination: {},
+        resume: () => { audio.resumes += 1; },
+        createOscillator: () => {
+          audio.oscillators += 1;
+          return { type: 'sine', frequency: { value: 0 }, connect() {}, start() {}, stop() {} };
+        },
+        createGain: () => {
+          audio.gains += 1;
+          return {
+            gain: {
+              setValueAtTime() {}, linearRampToValueAtTime() {}, exponentialRampToValueAtTime() {},
+            },
+            connect() {},
+          };
+        },
+      };
+    },
     onTouchStart: (fn) => { touchHandlers.down = fn; },
     onTouchMove: (fn) => { touchHandlers.move = fn; },
     onTouchEnd: (fn) => { touchHandlers.up = fn; },
@@ -80,5 +107,5 @@ export function installFakeWx({ windowWidth = 667, windowHeight = 375, pixelRati
   };
   /** 模拟切后台（小游戏里是 wx.onHide） */
   const fireHide = () => { lifeHandlers.hide?.({}); return !!lifeHandlers.hide; };
-  return { wx, store, sockets, fireTouch, fireHide, uninstall: () => { delete globalThis.wx; } };
+  return { wx, store, sockets, audio, fireTouch, fireHide, uninstall: () => { delete globalThis.wx; } };
 }
