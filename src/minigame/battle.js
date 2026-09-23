@@ -102,7 +102,8 @@ export function layoutBattle(model = {}) {
     { type: 'potion' }, { disabled: !model.potionCount }));
   items.push(model.result
     ? item('restart', 258, 315, 92, 48, '再开一局', { type: 'restart' })
-    : item('early', 258, 315, 92, 48, '开波', { type: 'early' }, { disabled: !model.canEarly }));
+    // 奖励写在脸上（浏览器版那颗键就是「提前开波 +3木」）：不然玩家不知道自己为什么要点它
+    : item('early', 258, 315, 92, 48, '开波 +3木', { type: 'early' }, { disabled: !model.canEarly }));
   /**
    * 技能键：模型里给几个就画几个（首发 2 个 + 技能书解锁的第 3 个）。**写死两个是不行的**——
    * 商店里卖的「技能书·秘传」会把第三个技能解锁，可按钮不存在的话玩家买了等于白买。

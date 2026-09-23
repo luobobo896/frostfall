@@ -662,3 +662,34 @@ test('小游戏平台杂项：玩的时候屏幕常亮；§10.7 的内存告警�
     assert.equal(seen.at(-1), true, '切回高档之后脉冲回来');
   } finally { fake.uninstall(); }
 });
+
+test('小游戏战场 HUD：开波键写着奖励（+3 木），能不能点用内核那条判据', async () => {
+  // 纯布局：奖励写在标签上（浏览器版那颗键就是「提前开波 +3木」）
+  const L = layoutBattle({ ...BATTLE_MODEL, canEarly: true });
+  assert.equal(L.byId.early.label, '开波 +3木');
+
+  await import('../tools/build-minigame.mjs');
+  const fake = installFakeWx();
+  try {
+    const require = createRequire(import.meta.url);
+    const app = loadFreshApp(require, 13);
+    app.startMatch();
+    const m = app.match();
+    app.drawFrame();
+    assert.equal(app.layout().byId.early.disabled, false, '备战期该能开波');
+
+    /**
+     * 边角状态：**最后一波的备战期**。内核 `startWaveEarly` 的第一行就是
+     * `wave.index < waves.length`，所以这时候点了是没用的——按钮该灰。
+     * 小游戏以前写的是 `timer > 0`，这种状态下按钮亮着、点了被拒（提示还说「正在交战」，更糊涂）。
+     */
+    m.wave.phase = 'prep';
+    m.wave.timer = 20;
+    m.wave.index = m.waves.length;
+    app.drawFrame();
+    assert.equal(app.layout().byId.early.disabled, true, '打完了就没有「下一波」可开，该灰');
+    const early = app.layout().byId.early;
+    assert.equal(app.tap(early.x + early.w / 2, early.y + early.h / 2).type, 'early',
+      '灰归灰，点下去仍然要有反馈（走的是同一条动作出口）');
+  } finally { fake.uninstall(); }
+});

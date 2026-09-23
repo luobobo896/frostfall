@@ -4,7 +4,7 @@
 // `index.html` + `styles.css` + `ui.js` 那套 DOM+CSS。这一步做的是把**平台差异**与**打包**解决掉，
 // 并把不依赖 DOM 的那一大半（内核、数据表、存档、联机协议、平台适配）先在小游戏里跑通。
 // 界面换 Canvas 是第 3 步，见 docs/minigame-port.md。
-import { DEFENSE_MAPS, MAPS, TICK_STEP, normalizeChoice } from '../data.js';
+import { DEFENSE_MAPS, MAPS, TICK_STEP, WAVES, normalizeChoice } from '../data.js';
 import {
   buildTower, buyItem, castSkill, craftEquipment, createMatch, describe as describeMatch, equipItem,
   enhanceItem, potionCount, repairTower, reviveNow, sellItem, sellTower, setPriority, skillLevel,
@@ -999,7 +999,12 @@ const describeBattleModel = (m) => ({
   wave: m.wave.index, phase: m.wave.phase, timer: m.wave.timer,
   gold: Math.round(m.gold), core: m.core.hp, coreMax: m.core.maxHp,
   result: m.result, length: m.length,
-  canEarly: m.wave.phase === 'prep' && m.wave.timer > 0,
+  /**
+   * 「开波」能不能点，用**内核那条判据**（`startWaveEarly` 的第一行：
+   * `wave.phase === 'prep' && wave.index < waves.length`）——以前这边写的是 `timer > 0`，
+   * 于是「最后一波的备战期」这种边角状态下按钮亮着、点了却被内核拒绝（提示说「正在交战」，更让人糊涂）。
+   */
+  canEarly: m.wave.phase === 'prep' && m.wave.index < (m.waves ?? WAVES).length,
   // 底部那排要显示的数量：药品格数（§5.5.3：共 3 格）与背包件数
   potionCount: potionCount(m),
   bagCount: m.inventory?.length ?? 0,
