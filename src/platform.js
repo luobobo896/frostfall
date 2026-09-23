@@ -194,6 +194,20 @@ export function onMemoryWarning(fn) {
 }
 
 /**
+ * 回到前台（小游戏是 `wx.onShow`；浏览器是 `visibilitychange` 的可见那一半）。
+ * 现在只有一个用途：**重新申请屏幕常亮**——官方文档写明 `setKeepScreenOn` 只在当前小程序生效、
+ * 离开之后失效，所以切出去接个电话回来，屏幕就可能又开始自己熄了。
+ */
+export function onShow(fn) {
+  if (isMiniGame() && wxApi().onShow) { wxApi().onShow(fn); return; }
+  if (typeof g.document !== 'undefined') {
+    g.document.addEventListener('visibilitychange', () => {
+      if (g.document.visibilityState === 'visible') fn();
+    });
+  }
+}
+
+/**
  * 玩的时候别让屏幕自己熄掉（小游戏里是 `wx.setKeepScreenOn`）。
  * 一局 TD 十几分钟、盯塔的时候可能一直不碰屏幕，系统照默认超时锁屏——那比任何 bug 都劝退。
  * 浏览器没有对应能力（页面自己不动），安静跳过。

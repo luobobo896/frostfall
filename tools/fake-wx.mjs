@@ -116,6 +116,8 @@ export function installFakeWx({ windowWidth = 667, windowHeight = 375, pixelRati
   };
   /** 模拟切后台（小游戏里是 wx.onHide） */
   const fireHide = () => { lifeHandlers.hide?.({}); return !!lifeHandlers.hide; };
+  /** 模拟回到前台（小游戏里是 wx.onShow） */
+  const fireShow = () => { lifeHandlers.show?.({}); return !!lifeHandlers.show; };
   /** 模拟一次内存告警（微信在内存吃紧时抛 `wx.onMemoryWarning`） */
   const fireMemoryWarning = (level = 10) => {
     if (!lifeHandlers.memoryWarning) return false;
@@ -124,7 +126,7 @@ export function installFakeWx({ windowWidth = 667, windowHeight = 375, pixelRati
   };
   return {
     wx, store, sockets, audio, platform,
-    fireTouch, fireHide, fireMemoryWarning,
+    fireTouch, fireHide, fireShow, fireMemoryWarning,
     uninstall: () => { delete globalThis.wx; },
   };
 }

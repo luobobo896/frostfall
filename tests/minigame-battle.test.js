@@ -631,6 +631,11 @@ test('小游戏平台杂项：玩的时候屏幕常亮；§10.7 的内存告警�
     const app = loadFreshApp(require, 12);
     // ① 屏幕常亮：启动时就调一次（一局十几分钟，盯塔时可能一直不碰屏幕）
     assert.ok(fake.platform.keepScreenOn.includes(true), `启动要申请屏幕常亮（实际 ${JSON.stringify(fake.platform.keepScreenOn)}）`);
+    // 官方文档：这个设置「离开小程序就失效」——切后台再回来要**再申请一次**，否则屏幕又开始自己熄
+    const before = fake.platform.keepScreenOn.length;
+    fake.fireHide();
+    fake.fireShow();
+    assert.ok(fake.platform.keepScreenOn.length > before, '回到前台要重新申请屏幕常亮');
     assert.ok(fake.platform.memoryWarning >= 1, '要接上 wx.onMemoryWarning，否则系统只会直接杀进程');
 
     app.startMatch();

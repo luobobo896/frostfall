@@ -11,7 +11,7 @@ import {
   startWaveEarly, towerAtSlot, update, upgradeTower, usePotion,
 } from '../match.js';
 import {
-  isMiniGame, keepScreenOn, onHide, onMemoryWarning, onTouch, storage, viewport,
+  isMiniGame, keepScreenOn, onHide, onMemoryWarning, onShow, onTouch, storage, viewport,
 } from '../platform.js';
 import { clearSave, hasSave, loadFromStorage, saveToStorage } from '../save.js';
 import {
@@ -124,6 +124,8 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
    * 系统按默认超时锁屏比任何 bug 都劝退（小游戏里是 `wx.setKeepScreenOn`）。
    */
   keepScreenOn(true);
+  // 官方文档：`setKeepScreenOn` 只在当前小程序生效、离开就失效——切出去接个电话回来要再申请一次
+  onShow(() => keepScreenOn(true));
   /**
    * §10.7 的内存告警：微信在内存吃紧时抛 `wx.onMemoryWarning`，接了才有机会主动降级——
    * 与浏览器版**同一套设置**（`settings.effects = 'low'`：关掉脉冲那类装饰，保住帧率），
