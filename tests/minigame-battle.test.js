@@ -821,3 +821,27 @@ test('小游戏提示文案：写玩家认得的名字，不出现内部 id（tw
     }
   } finally { fake.uninstall(); }
 });
+
+test('小游戏长局：大厅选「长局 30 波」之后真的按 30 波开（波次读数也跟着变）', async () => {
+  await import('../tools/build-minigame.mjs');
+  const fake = installFakeWx();
+  try {
+    const require = createRequire(import.meta.url);
+    const app = loadFreshApp(require, 17);
+    const tapBtn = (id) => {
+      const b = app.layout().byId[id];
+      assert.ok(b, `大厅/顶栏上找不到 ${id}`);
+      return app.tap(b.x + b.w / 2, b.y + b.h / 2);
+    };
+    tapBtn('len-long');
+    assert.equal(app.getModel().length, 'long', '选了长局就要记进大厅模型');
+    tapBtn('start');
+    const m = app.match();
+    assert.equal(m.waves.length, 30, `长局该是 30 波表（实际 ${m.waves.length}）`);
+    assert.equal(m.length, 'long');
+    app.drawFrame();
+    // HUD 那一行要写「/ 30 波」，而不是还按短局的 12 波算
+    assert.ok(app.canvas.record.texts.some((t) => t.includes('30 波')),
+      `顶栏要按长局写波次（画了：${app.canvas.record.texts.filter((t) => t.includes('波')).slice(-3).join(' / ')}）`);
+  } finally { fake.uninstall(); }
+});

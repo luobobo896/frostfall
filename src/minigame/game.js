@@ -1030,7 +1030,9 @@ const defModel = (b) => ({
   round: b.m.assault?.round ?? 0, warning: !!b.m.assault?.warning,
   // §131：守住 4 轮转无尽之后，玩家还得能接着玩——**结算面板还在时**才给那颗「继续（无尽）」
   // （点了它就 `resultDismissed`，面板收起来、那一局接着跑）
-  endlessExit: !!b.m.assault?.endless && !b.resultDismissed,
+  // §190：**城堡已经陷落就不给这个出口**（`m.over`）——那种「继续」是假出口：点下去只是把面板让开，
+  // 露出一个城堡 0 血、怪站着不动的死场（浏览器版 `resultPanelModel` 的 `canContinue` 就是这么判的）
+  endlessExit: !!b.m.assault?.endless && !b.m.over && !b.resultDismissed,
   stickFloating: (b.stickFloating ?? false),
   stickOrigin: b.stick.active ? b.stick.origin : null,
   stick: b.stick,   // 调试/验收用：能断言「推着走了没有」

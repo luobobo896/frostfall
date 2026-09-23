@@ -302,7 +302,20 @@ test('小游戏防守：守住 4 轮转无尽之后，「继续（无尽）」�
     app.tick(2);
     assert.ok(m.time > t0, `转无尽之后时间要继续走（${t0.toFixed(1)} → ${m.time.toFixed(1)}）`);
 
-    // 面板还在时给一颗出口；点了就收起来，那颗键也不再挂着（它只在面板还在时出现）
+    /**
+     * §190：**城堡已经陷落**（`m.over`）时不许再给「继续（无尽）」——那是个假出口：
+     * 点下去只是把面板让开，露出一个城堡 0 血、怪站着不动的死场。
+     * 这一条要在**面板还没被收起来**时先验（收起来之后那颗键本来就不出现，验了等于没验）。
+     */
+    m.over = true;
+    m.result = 'lose';
+    app.drawFrame();
+    assert.ok(!app.layout().byId.endless, '城堡陷落之后不该还挂着「继续（无尽）」');
+
+    // 回到「刚守住 4 轮」那个状态：面板还在时给一颗出口；点了就收起来，那颗键也不再挂着
+    m.over = false;
+    m.result = 'win';
+    app.drawFrame();
     const btn = app.layout().byId.endless;
     assert.ok(btn, '结算面板还在时要给「继续（无尽）」');
     app.tap(btn.x + btn.w / 2, btn.y + btn.h / 2);
@@ -318,6 +331,7 @@ test('小游戏防守：守住 4 轮转无尽之后，「继续（无尽）」�
     const t2 = m.time;
     app.tick(3);
     assert.equal(m.time, t2, '城堡陷落之后内核不该再走');
+
   } finally { fake.uninstall(); }
 });
 
