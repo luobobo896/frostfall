@@ -14,7 +14,14 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = fileURLToPath(new URL('../', import.meta.url));
 const ENTRY = 'src/minigame/game.js';
-const OUT_DIR = join(ROOT, 'dist/minigame');
+/**
+ * 产物目录可用 `FF_MINIGAME_OUT` 覆盖——**用例需要它**：`npm test` 是多个测试文件并发跑的，
+ * 两个文件同时往同一个 `dist/minigame/game.js` 里写、又各自 require 它，会读到写了一半的包
+ * （实测：单跑绿、整包偶发红）。用例各写各的临时目录就没这回事。
+ */
+const OUT_DIR = process.env.FF_MINIGAME_OUT
+  ? resolve(process.env.FF_MINIGAME_OUT)
+  : join(ROOT, 'dist/minigame');
 
 /** 把一条 import 语句换成 `const … = __req('…')`（支持跨行的花括号列表与 `as` 重命名）。 */
 function transformImports(src) {

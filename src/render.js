@@ -27,14 +27,20 @@ const COLORS = {
  */
 export const hintPulseAlpha = (now, pulses = true) => (pulses ? 0.35 + 0.35 * Math.sin(now * 4) : 0.7);
 
-export function createRenderer(canvas) {
+export function createRenderer(canvas, { size = null } = {}) {
   const ctx = canvas.getContext('2d');
   let view = { scale: 1, ox: 0, oy: 0, w: 0, h: 0 };
   let sized = '';   // 「画布尺寸 + 地图尺寸」指纹：没变就不要重算，否则每帧都会把玩家的视角弹回去
 
   function sizeCanvas() {
     const dpr = Math.min(2, viewport().dpr || 1);   // §平台适配：小游戏没有 window，用 wx.getWindowInfo
-    const w = canvas.clientWidth, h = canvas.clientHeight;
+    /**
+     * §平台适配（小游戏移植）：小游戏的 canvas **没有 `clientWidth/clientHeight`**（那不是 DOM），
+     * 所以允许调用方传一个 `size()` 告诉渲染器画布的逻辑尺寸；浏览器不传，行为与以前完全一致。
+     */
+    const measured = size ? size() : null;
+    const w = measured ? measured.w : canvas.clientWidth;
+    const h = measured ? measured.h : canvas.clientHeight;
     const pw = Math.floor(w * dpr), ph = Math.floor(h * dpr);
     if (canvas.width !== pw || canvas.height !== ph) { canvas.width = pw; canvas.height = ph; }
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);

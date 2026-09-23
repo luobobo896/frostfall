@@ -128,9 +128,9 @@ const text = (ctx, str, x, y, { size = 12, color = COLORS.ink, weight = '', alig
 };
 
 export const DEFAULT_HINT = [
-  '移植第 3 步：大厅这一屏（Canvas 绘制）',
+  '移植第 3 步：大厅 + 战场都跑在 Canvas 上',
   '可点：模式 / 难度 / 时长 / 英雄 / 地图',
-  '「单人开局」要等第 4 步把战场接上',
+  '「单人开局」进局：点塔位建塔、点「开波」开打',
 ];
 
 /** 画一帧（纯绘制，不改模型） */
@@ -218,7 +218,12 @@ export function applyLobbyAction(model, action, { unlocked = [], lockedReason = 
       const pool = (action.value === 'defense' ? Object.keys(DEFENSE_MAPS) : Object.keys(MAPS))
         .filter((id) => unlocked.includes(id));
       next.map = pool[0] ?? (action.value === 'defense' ? 'def_01' : 'map_01');
-      next.hint = null;
+      /**
+       * 防守模式的战场还没搬过来（那要连摇杆、跟随相机、HUD 一起做，见 docs/minigame-port.md §5.2），
+       * 所以「单人开局」在防守模式下是**明写着为什么不行**，而不是点了没反应。
+       */
+      next.canStart = action.value !== 'defense';
+      next.hint = next.canStart ? null : '防守模式的战场还没接过来（下一步）：先玩 TD 塔防。';
       return next;
     }
     case 'difficulty': next.difficulty = action.value; return next;
@@ -236,7 +241,9 @@ export function applyLobbyAction(model, action, { unlocked = [], lockedReason = 
     }
     case 'start': {
       if (!next.canStart) {
-        next.hint = '战斗场景还没接上（移植第 4 步）：内核已经能在小游戏里跑，渲染还没挂上去。';
+        next.hint = next.mode === 'defense'
+          ? '防守模式的战场还没接过来（下一步）：先玩 TD 塔防。'
+          : '战斗场景还没接上：内核已经能在小游戏里跑，渲染还没挂上去。';
         return next;
       }
       next.started = true;

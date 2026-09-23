@@ -74,6 +74,21 @@ try {
   check(afterTap.mode === 'defense' && afterTap.map === 'def_01',
     '全局触摸能选中（点「防守生存」→ 模式切了、地图落回已解锁的 def_01）',
     `模式 ${afterTap.mode} · 地图 ${afterTap.map} · 可玩 ${afterTap.unlockedCount} 张`);
+
+  // ⑤ 点「单人开局」真的进局（战场那屏接上了）
+  // 注意先切回 TD：上一格把模式切成了防守，而防守战场还没搬（大厅会明写「还没接过来」）
+  const tdBtn = lobby.layout().byId['mode-td'];
+  lobby.tap(tdBtn.x + tdBtn.w / 2, tdBtn.y + tdBtn.h / 2);
+  const L2 = lobby.layout();
+  const startBtn = L2.byId.start;
+  lobby.tap(startBtn.x + startBtn.w / 2, startBtn.y + startBtn.h / 2);
+  const inBattle = lobby.screen() === 'battle';
+  lobby.tick(90);
+  lobby.drawFrame();   // 手动 tick 之后要自己画一帧，HUD 才会落在这份记录里
+  const battleMatch = lobby.match();
+  check(inBattle && battleMatch.wave.index >= 2 && lobby.canvas.record.texts.some((t) => /金 \d+/.test(t)),
+    '大厅点「单人开局」进局，跑 90 秒后波次推进且战场 HUD 画在这一帧里',
+    `${lobby.screen()} · 第 ${battleMatch.wave.index} 波 · 击杀 ${battleMatch.stats.kills} · 核心 ${Math.round(battleMatch.core.hp)}`);
 } finally {
   fake.uninstall();
 }

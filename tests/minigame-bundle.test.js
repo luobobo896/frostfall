@@ -3,14 +3,21 @@
 // 「包还能不能用」没人管（打包器第一版就有个缓存 bug，正是这一类的）。
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtempSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
-import { fileURLToPath } from 'node:url';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 import { installFakeWx } from '../tools/fake-wx.mjs';
 
-const ROOT = fileURLToPath(new URL('../', import.meta.url));
-const BUNDLE = `${ROOT}dist/minigame/game.js`;
+/**
+ * 打包产物写进**本进程的临时目录**：`npm test` 并发跑多个测试文件，两个都往同一个 dist 写会互相踩
+ * （实测：单跑绿、整包偶发红）。`FF_MINIGAME_OUT` 就是给这件事留的口子。
+ */
+const OUT = mkdtempSync(join(tmpdir(), 'ff-mini-bundle-'));
+process.env.FF_MINIGAME_OUT = OUT;
+const BUNDLE = join(OUT, 'game.js');
 
 test('小游戏包：假 wx 下能加载、内核与源码逐字段等价、主包没混进界面模块', async () => {
   await import('../tools/build-minigame.mjs');   // 顶层 await：import 返回时包已经打好了

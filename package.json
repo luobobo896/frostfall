@@ -14,7 +14,7 @@
     "tutorial": "node tools/tutorial-run.mjs",
     "build:minigame": "node tools/build-minigame.mjs",
     "minigame": "node tools/build-minigame.mjs && node tools/minigame-smoke.mjs",
-    "minigame:preview": "node tools/lobby-preview.mjs",
+    "minigame:preview": "node tools/minigame-preview.mjs",
     "defense": "node tools/selfplay-defense.mjs",
     "smoke": "node tools/smoke.mjs",
     "waves": "node tools/wave-margin.mjs",
