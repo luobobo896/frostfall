@@ -10,6 +10,7 @@ import { skillKeys } from './battle.js';
 import { zoneLabel } from '../hud-model.js';
 import { zoneAt } from '../defense.js';
 import { REVIVE_LUMBER } from '../match.js';
+import { fitText } from '../render.js';
 
 export const DESIGN = { w: 667, h: 375 };
 export const CAPSULE = { w: 96, h: 32 };
@@ -171,6 +172,18 @@ export function layoutDefense(m, model = {}) {
     w: DESIGN.w, h: DESIGN.h,
     capsule: { x: DESIGN.w - CAPSULE.w - 8, y: 6, w: CAPSULE.w, h: CAPSULE.h },
     top: { x: 12, y: 8, w: 356, h: 30 },
+    /**
+     * 顶栏里那几格的**位置与宽度**（写出来是为了能测「互不重叠」）：文案是数据算出来的
+     * （轮次、倒计时、金币、木材、城堡血），长短会变；格与格之间不留够位置就会叠字
+     * （第一版「⚠ Ns 后抵达」这种长句会直接压到「金」那一格上）。
+     */
+    topCells: [
+      { id: 'round', x: 22, w: 48 },
+      { id: 'state', x: 74, w: 76 },
+      { id: 'gold', x: 156, w: 48 },
+      { id: 'lumber', x: 210, w: 40 },
+      { id: 'castle', x: 256, w: 102 },   // 右对齐到 358，与倍速键（380 起）留 22
+    ],
     minimap: MINIMAP,
     // 英雄那一格（等级 / 阵亡倒计时）：顶栏已经挤满（轮次 + 预警 + 金 + 木 + 城堡），
     // 所以它写在顶栏下面那一行的左边——右边留给小地图（405 起）
@@ -198,11 +211,20 @@ export function drawDefenseHud(ctx, m, L, { message = null, stick = null } = {})
   ctx.strokeStyle = COLORS.panelLine;
   ctx.lineWidth = 1;
   ctx.stroke();
-  const warn = m.assault?.warning ? `⚠ ${Math.max(0, Math.ceil(m.assault.timer))}s 后抵达` : '暂无预警';
-  text(ctx, `第 ${m.assault.round} 轮`, L.top.x + 10, L.top.y + 15, { size: 13, weight: 'bold' });
-  text(ctx, warn, L.top.x + 78, L.top.y + 15, { size: 11, color: m.assault?.warning ? COLORS.danger : COLORS.dim });
-  text(ctx, `金 ${Math.round(m.gold)}`, L.top.x + 156, L.top.y + 15, { size: 12, color: COLORS.gold });
-  text(ctx, `木 ${Math.round(m.lumber?.[0] ?? 0)}`, L.top.x + 210, L.top.y + 15, { size: 12, color: COLORS.wood });
+  /**
+   * 预警那一格与浏览器版同口径（`ui.js` 的 `defTimer`）：**预警中写「⚠ Ns」，平时写「下波 m:ss」**
+   * ——以前平时只写「暂无预警」，玩家看不出下一轮还有多久才来（多久够他出去打一波野）。
+   * 文案压得很短是因为这一格只有 76 宽：长句会直接压到右边「金」那一格上。
+   */
+  const warnT = Math.max(0, Math.ceil(m.assault?.timer ?? 0));
+  const assaultState = m.assault?.warning
+    ? `⚠ ${warnT}s`
+    : `下波 ${Math.floor(warnT / 60)}:${String(warnT % 60).padStart(2, '0')}`;
+  const cell = (id) => L.topCells.find((c) => c.id === id);
+  text(ctx, `第 ${m.assault.round} 轮`, cell('round').x, L.top.y + 15, { size: 13, weight: 'bold' });
+  text(ctx, assaultState, cell('state').x, L.top.y + 15, { size: 11, color: m.assault?.warning ? COLORS.danger : COLORS.dim });
+  text(ctx, `金 ${Math.round(m.gold)}`, cell('gold').x, L.top.y + 15, { size: 12, color: COLORS.gold });
+  text(ctx, `木 ${Math.round(m.lumber?.[0] ?? 0)}`, cell('lumber').x, L.top.y + 15, { size: 12, color: COLORS.wood });
   /**
    * 英雄那一格（§14.3 稿 6 的英雄面板压缩成一行）：等级 + 状态。
    *
@@ -214,14 +236,21 @@ export function drawDefenseHud(ctx, m, L, { message = null, stick = null } = {})
   const dead = !!m.hero?.dead;
   const state = dead ? `阵亡 ${Math.ceil(m.hero.reviveTimer ?? 0)}s`
     : (zoneLabel(zoneAt(m.def, m.hero?.cell)) || (m.hero?.moving ? '移动中' : '待命'));
-  text(ctx, `英雄 Lv${m.hero?.level ?? 1} · ${state}`, L.heroLine.x, L.heroLine.y,
+  text(ctx, fitText(ctx, `英雄 Lv${m.hero?.level ?? 1} · ${state}`, MINIMAP.x - 12 - L.heroLine.x), L.heroLine.x, L.heroLine.y,
     { size: 11, color: dead ? COLORS.danger : COLORS.dim });
+  /**
+   * 这一行**右端**给两个读数（浏览器版在防守面板里也写着）：野外击杀数（§12.5：野区是主要装备来源，
+   * 玩家得知道自己在野区捞了多少）与工事占用（`工事 2/6`——还剩几个空位）。右对齐到小地图左边。
+   */
+  text(ctx, `击杀 ${m.stats?.fieldKills ?? 0} · 工事 ${m.forts?.length ?? 0}/${m.def.fortSlots.length}`,
+    MINIMAP.x - 12, L.heroLine.y, { size: 11, align: 'right', color: COLORS.dim });
   /**
    * 城堡血量**只写在顶栏这一行里**，不再单独占一条：`render.js` 的 drawDefense 本来就会在城堡上方
    * 画「城堡 x/y + 血条」，而相机跟人时城堡多半就在屏幕中上部——单独占一行会跟那条**正好叠在一起**
    * （样张里一眼可见）。顶栏这一行则是固定的，人跑多远都看得见。
    */
-  text(ctx, `城堡 ${Math.round(m.castle.hp)}/${m.castle.maxHp}`, L.top.x + L.top.w - 10, L.top.y + 15,
+  // 右对齐到那一格的右端（`castle` 这一格留了 102 宽：「城堡 4000/4000」量出来约 84）
+  text(ctx, `城堡 ${Math.round(m.castle.hp)}/${m.castle.maxHp}`, cell('castle').x + cell('castle').w, L.top.y + 15,
     { size: 11, align: 'right', color: castlePct < 0.35 ? COLORS.danger : COLORS.ink });
 
   for (const it of L.items) {

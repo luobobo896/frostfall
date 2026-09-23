@@ -99,6 +99,40 @@ test('小游戏防守 HUD：右侧那排避开摇杆区、避开胶囊区、热�
   assert.equal(stickBase({ stickOrigin: { x: 200, y: 200 }, stickFloating: true }, { w: 667, h: 375 }).x, 200, '浮动模式底座跟手指');
 });
 
+test('小游戏防守 HUD：顶栏五格互不重叠，预警那一格写读得懂的短句，右侧写击杀与工事', () => {
+  const m = createDefenseMatch({ seed: 5 });
+  const L = layoutDefense(m, { rate: 1, paused: false, potionCount: 1 });
+  // 顶栏那五格的几何：都在顶栏里、互不重叠（文案长短会变，格与格不留够位置就会叠字）
+  for (const c of L.topCells) {
+    assert.ok(c.x >= L.top.x && c.x + c.w <= L.top.x + L.top.w, `${c.id} 出顶栏`);
+  }
+  for (let i = 0; i < L.topCells.length; i += 1) {
+    for (let j = i + 1; j < L.topCells.length; j += 1) {
+      const a = L.topCells[i], b = L.topCells[j];
+      assert.ok(a.x + a.w <= b.x || b.x + b.w <= a.x, `${a.id} 与 ${b.id} 的格子重叠`);
+    }
+  }
+  // 预警那一格与浏览器版同口径：预警中写「⚠ Ns」，平时写「下波 m:ss」（都压得很短）
+  const warned = fakeCtx();
+  m.assault.warning = true;
+  m.assault.timer = 12.4;
+  drawDefenseHud(warned, m, layoutDefense(m, {}), {});
+  const warnLine = warned.texts.find((t) => t.startsWith('⚠'));
+  assert.equal(warnLine, '⚠ 13s', '预警中写剩余秒数');
+  assert.ok(warnLine.length <= 6, `这一格只有 76 宽，文案要短（实际「${warnLine}」）`);
+  m.assault.warning = false;
+  m.assault.timer = 42;
+  const calm = fakeCtx();
+  drawDefenseHud(calm, m, layoutDefense(m, {}), {});
+  assert.ok(calm.texts.includes('下波 0:42'), `平时要写下一轮还有多久（画了：${calm.texts.join(' / ')}）`);
+  // 英雄那一行右端：野外击杀与工事占用（浏览器版防守面板里也有这两个读数）
+  m.stats.fieldKills = 12;
+  const kills = fakeCtx();
+  drawDefenseHud(kills, m, layoutDefense(m, {}), {});
+  assert.ok(kills.texts.some((t) => /击杀 12 · 工事 \d+\/\d+/.test(t)),
+    `要写野外击杀与工事占用（画了：${kills.texts.join(' / ')}）`);
+});
+
 test('小游戏防守 HUD：小地图那一格（§2.6）——不压右排/不压顶栏、点它=回城', () => {
   const m = createDefenseMatch({ seed: 5 });
   const L = layoutDefense(m, { rate: 1, paused: false, potionCount: 1 });
