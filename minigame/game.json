@@ -1,0 +1,9 @@
+{
+  "deviceOrientation": "landscape",
+  "showStatusBar": false,
+  "networkTimeout": {
+    "request": 8000,
+    "connectSocket": 8000
+  },
+  "subpackages": []
+}

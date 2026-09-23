@@ -3,6 +3,8 @@
 # 依赖与系统文件
 node_modules/
 .DS_Store
+# 构建产物：小游戏包（npm run build:minigame 生成，别进版本库）
+dist/
 
 # 别的工具在本目录留下的本地状态（WorkBuddy 的记忆目录），不是本项目的东西
 .workbuddy/

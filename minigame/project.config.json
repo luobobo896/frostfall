@@ -1,0 +1,18 @@
+{
+  "description": "冰封之地 —— 微信小游戏包（由 tools/build-minigame.mjs 生成，别手改）",
+  "appid": "",
+  "compileType": "game",
+  "libVersion": "latest",
+  "projectname": "frostfall",
+  "setting": {
+    "es6": true,
+    "minified": true,
+    "postcss": false,
+    "urlCheck": true
+  },
+  "packOptions": {
+    "ignore": [
+      { "type": "folder", "value": "docs" }
+    ]
+  }
+}
