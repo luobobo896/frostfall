@@ -12,8 +12,8 @@ import {
 } from '../data.js';
 import { attackHint, resultPanelModel, shopRows, wavePreview } from '../hud-model.js';
 import {
-  TOWER_REPAIR_GOLD, craftableSlots, enhanceCostOf, potionCount, shopPriceOf, skillLevel, towerStatsAt,
-  upgradeCost,
+  REVIVE_LUMBER, TOWER_REPAIR_GOLD, craftableSlots, enhanceCostOf, potionCount, shopPriceOf, skillLevel,
+  towerStatsAt, upgradeCost,
 } from '../match.js';
 
 export const DESIGN = { w: 667, h: 375 };
@@ -109,12 +109,22 @@ export function layoutBattle(model = {}) {
    * 商店里卖的「技能书·秘传」会把第三个技能解锁，可按钮不存在的话玩家买了等于白买。
    * 每颗键写：技能名 + 一行副标（冷却中写秒数，否则写等级）——与浏览器版技能键同一套读数（§132）。
    */
-  const skills = model.skills ?? [{ name: '技能 1' }, { name: '技能 2' }];
-  skills.forEach((sk, i) => {
-    items.push(item(`skill-${i}`, 358 + i * 66, 315, 58, 48, sk.name ?? `技能 ${i + 1}`,
-      { type: 'skill', index: i },
-      { disabled: !!sk.locked || sk.cd > 0, sub: sk.cd > 0 ? `${Math.ceil(sk.cd)}s` : (sk.lv ? `Lv${sk.lv}` : '') }));
-  });
+  /**
+   * 阵亡时这一排换成**一颗「快速复活」**（§7.6）：TD 的英雄一样会被怪打死（`match.js` 里
+   * 英雄吃伤害、15 秒 × 人物等级后自动复活），而阵亡时本来就放不了技能——
+   * 浏览器版这条只有键盘 `r`（手机上够不着），小游戏给按钮。木材不够就灰掉（内核会再判一次）。
+   */
+  if (model.hero?.dead) {
+    items.push(item('revive', 358, 315, 190, 48, `快速复活 · ${REVIVE_LUMBER} 木`, { type: 'revive' },
+      { disabled: (model.lumber ?? 0) < REVIVE_LUMBER }));
+  } else {
+    const skills = model.skills ?? [{ name: '技能 1' }, { name: '技能 2' }];
+    skills.forEach((sk, i) => {
+      items.push(item(`skill-${i}`, 358 + i * 66, 315, 58, 48, sk.name ?? `技能 ${i + 1}`,
+        { type: 'skill', index: i },
+        { disabled: !!sk.locked || sk.cd > 0, sub: sk.cd > 0 ? `${Math.ceil(sk.cd)}s` : (sk.lv ? `Lv${sk.lv}` : '') }));
+    });
+  }
   items.push(item('lobby', 588, 315, 67, 48, '回大厅', { type: 'lobby' }));
   /**
    * 顶栏右侧那两个键：**倍速**与**暂停**（§1.9.3 的设置、§1.9.4 的「随时能停」）。
@@ -136,6 +146,8 @@ export function layoutBattle(model = {}) {
     result: { x: 173, y: 120, w: 320, h: 130 },
     // 下一波预告那一行（y=48：顶栏到 38 为止，再往下 60 是提示行；宽度在倍速键 380 之前收住）
     preview: { x: 12, y: 48, w: 360 },
+    // 英雄读数（等级 / 阵亡倒计时）：写在 y=48 那一行的右端，右对齐（x 是右边界）
+    heroLine: { x: DESIGN.w - 12, y: 48 },
     tutorial: tutorial ? { x: 12, y: 261, w: 643, h: 44, text: tutorial } : null,
     items,
     byId: Object.fromEntries(items.map((it) => [it.id, it])),
@@ -176,6 +188,15 @@ export function drawBattleHud(ctx, m, L, { selectedTower = 'tw_arrow', message =
    */
   if (preview) {
     text(ctx, fitText(ctx, preview, L.preview.w), L.preview.x, L.preview.y, { size: 11, color: COLORS.dim });
+  }
+  /**
+   * 英雄那一格（§14.3 稿 6 压缩成一行，与防守那屏同一个写法）：平时写等级，**阵亡写倒计时**——
+   * 不然人躺在地上，界面上一个字都不提还要等多久。写在预告那一行的右端（顶栏已满）。
+   */
+  if (L.heroLine) {
+    const dead = !!m.hero?.dead;
+    text(ctx, dead ? `阵亡 ${Math.ceil(m.hero.reviveTimer ?? 0)}s` : `英雄 Lv${m.hero?.level ?? 1}`,
+      L.heroLine.x, L.heroLine.y, { size: 11, align: 'right', color: dead ? COLORS.danger : COLORS.dim });
   }
 
   // 引导条先画底、再画键：`items` 那一轮在它上面（跳过键就压在条的右端）

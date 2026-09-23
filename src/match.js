@@ -745,15 +745,21 @@ export function castSkill(m, index) {
   return true;
 }
 
+/**
+ * §7.6 快速复活的价格（木材）。**导出成常量**：界面要照着它决定按钮灰不灰、写多少木，
+ * 以前这个数只写在函数体里，界面只能各抄一份——抄错一次就是「按钮说 40、内核扣 50」。
+ */
+export const REVIVE_LUMBER = 50;
+
 export function reviveNow(m, playerIndex = 0) {
-  if (!m.hero.dead || (m.lumber[playerIndex] ?? 0) < 50) return false;
-  m.lumber[playerIndex] -= 50;
+  if (!m.hero.dead || (m.lumber[playerIndex] ?? 0) < REVIVE_LUMBER) return false;
+  m.lumber[playerIndex] -= REVIVE_LUMBER;
   m.hero.dead = false;
   m.hero.reviveTimer = 0;
   m.hero.hp = heroMaxHp(m.hero);
   m.hero.invulnUntil = m.time + HERO_REVIVE.invulnSec;   // 快速复活同样吃 §7.6 的复活保护
   m.hero.fastUntil = m.time + HERO_REVIVE.fastSec;
-  addLog(m, '快速复活（-50 木材）');
+  addLog(m, `快速复活（-${REVIVE_LUMBER} 木材）`);
   return true;
 }
 

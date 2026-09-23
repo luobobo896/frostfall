@@ -1005,6 +1005,9 @@ const describeBattleModel = (m) => ({
    * 于是「最后一波的备战期」这种边角状态下按钮亮着、点了却被内核拒绝（提示说「正在交战」，更让人糊涂）。
    */
   canEarly: m.wave.phase === 'prep' && m.wave.index < (m.waves ?? WAVES).length,
+  // 英雄读数与木材：阵亡时要给「快速复活 · 50 木」并判断灰不灰（§7.6），数字从内核取
+  hero: { level: m.hero.level, dead: !!m.hero.dead, reviveIn: m.hero.reviveTimer ?? 0 },
+  lumber: m.lumber?.[0] ?? 0,
   // 底部那排要显示的数量：药品格数（§5.5.3：共 3 格）与背包件数
   potionCount: potionCount(m),
   bagCount: m.inventory?.length ?? 0,

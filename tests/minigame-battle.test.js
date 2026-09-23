@@ -13,7 +13,7 @@ import {
 } from '../src/minigame/battle.js';
 import { installFakeWx } from '../tools/fake-wx.mjs';
 import { TOWER_MAX_LEVEL } from '../src/data.js';
-import { buyItem, createMatch, makeEquipment, potionCount, update } from '../src/match.js';
+import { REVIVE_LUMBER, buyItem, createMatch, makeEquipment, potionCount, update } from '../src/match.js';
 import { createDefenseMatch } from '../src/defense.js';
 import { SHOP_ITEMS } from '../src/data.js';
 import { drawResult, layoutBag, layoutItem, layoutPause, layoutResult, layoutShop } from '../src/minigame/battle.js';
@@ -691,5 +691,39 @@ test('小游戏战场 HUD：开波键写着奖励（+3 木），能不能点用�
     const early = app.layout().byId.early;
     assert.equal(app.tap(early.x + early.w / 2, early.y + early.h / 2).type, 'early',
       '灰归灰，点下去仍然要有反馈（走的是同一条动作出口）');
+  } finally { fake.uninstall(); }
+});
+
+test('小游戏 TD：阵亡时技能排换成「快速复活」、右上角写倒计时（§7.6）', async () => {
+  await import('../tools/build-minigame.mjs');
+  const fake = installFakeWx();
+  try {
+    const require = createRequire(import.meta.url);
+    const app = loadFreshApp(require, 14);
+    app.startMatch();
+    const m = app.match();
+    app.drawFrame();
+    assert.ok(app.layout().byId['skill-0'], '活着时底排是技能');
+    assert.ok(!app.layout().byId.revive, '活着时不该有复活键');
+    assert.ok(app.canvas.record.texts.some((t) => /英雄 Lv\d+/.test(t)), '右上角写英雄等级');
+
+    // 阵亡：技能排换成一颗「快速复活」，右上角改写成红色的倒计时
+    m.hero.dead = true;
+    m.hero.reviveTimer = 12;
+    m.lumber[0] = 0;
+    app.drawFrame();
+    assert.ok(app.layout().byId.revive && !app.layout().byId['skill-0'], '阵亡时换成复活键');
+    assert.equal(app.layout().byId.revive.disabled, true, '木材不够要灰掉');
+    assert.ok(app.canvas.record.texts.some((t) => /阵亡 \d+s/.test(t)), '右上角写阵亡倒计时');
+
+    // 木材够了：点了真的起来，并且扣的是内核那个数
+    m.lumber[0] = REVIVE_LUMBER;
+    app.drawFrame();
+    const rv = app.layout().byId.revive;
+    app.tap(rv.x + rv.w / 2, rv.y + rv.h / 2);
+    assert.equal(m.hero.dead, false, '点了要真的把人拉起来');
+    assert.equal(m.lumber[0], 0, `扣 ${REVIVE_LUMBER} 木材`);
+    app.drawFrame();
+    assert.ok(app.layout().byId['skill-0'], '复活之后技能排回来');
   } finally { fake.uninstall(); }
 });

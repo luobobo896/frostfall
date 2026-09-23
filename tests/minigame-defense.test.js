@@ -8,9 +8,10 @@ import { join } from 'node:path';
 
 import { installFakeWx } from '../tools/fake-wx.mjs';
 import {
-  DESIGN, MINIMAP, REVIVE_LUMBER, SKILL_BAR, STICK, drawDefenseHud, hitTestDefense, inStickZone,
+  DESIGN, MINIMAP, SKILL_BAR, STICK, drawDefenseHud, hitTestDefense, inStickZone,
   layoutDefense, layoutFortSheet, stickBase, stickVector,
 } from '../src/minigame/defense-screen.js';
+import { REVIVE_LUMBER } from '../src/match.js';
 import { createDefenseMatch } from '../src/defense.js';
 import { FORTS } from '../src/data.js';
 import { gridDist } from '../src/core.js';

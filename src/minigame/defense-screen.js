@@ -9,6 +9,7 @@ import { FORTS } from '../data.js';
 import { skillKeys } from './battle.js';
 import { zoneLabel } from '../hud-model.js';
 import { zoneAt } from '../defense.js';
+import { REVIVE_LUMBER } from '../match.js';
 
 export const DESIGN = { w: 667, h: 375 };
 export const CAPSULE = { w: 96, h: 32 };
@@ -22,8 +23,6 @@ export const MINIMAP = { x: 405, y: 60, w: 150, h: 112 };
  * 76×48、间距 24（§1.9.2 的热区与按钮间距下限），三个技能正好 260..536。
  */
 export const SKILL_BAR = { x: 260, y: 315, w: 76, h: 48, gap: 24 };
-/** §7.6 快速复活的价格（与内核 `reviveNow` 同一个数） */
-export const REVIVE_LUMBER = 50;
 export const STICK = {
   radius: 64,        // 摇杆推满的半径（§1.9.1 的 60-72pt，取中）
   deadZone: 0.25,    // 死区：小于它算没推（与 defense.js 的 steerGoal 门槛同源）
