@@ -6,6 +6,15 @@ import assert from 'node:assert/strict';
 import { CAPSULE, DEFAULT_HINT, DESIGN, applyLobbyAction, drawLobby, hitTestLobby, layoutLobby } from '../src/minigame/lobby.js';
 import { emptyProfile, recordResult } from '../src/profile.js';
 import { createLobbyModel } from '../src/minigame/game.js';
+import { installFakeWx } from '../tools/fake-wx.mjs';
+import { copyFileSync, mkdtempSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+// 小游戏包（这一条要真的在假 wx 里点一遍大厅）
+const OUT = mkdtempSync(join(tmpdir(), 'ff-mini-lobby-'));
+process.env.FF_MINIGAME_OUT = OUT;
 
 /** 记录型 ctx：把画法记下来，够断言「画了什么」 */
 const fakeCtx = () => {
@@ -156,4 +165,74 @@ test('小游戏大厅：上次那套配置（§2.1）要能一键沿用，脏值
   assert.equal(dirty.difficulty, 'normal');
   assert.equal(dirty.hero, 'hero_warrior');
   assert.equal(dirty.length, 'short');
+});
+
+test('小游戏大厅：英雄详情（§14.3 稿 3）——再点一次已选中的卡摊开，内容取自 heroCard', () => {
+  const m = model({ hero: 'hero_mage' });   // 先选着别的英雄，好区分「换人」与「再点一次」
+  // 第一次点卡 = 换人；再点一次同一张 = 摊开详情
+  const picked = applyLobbyAction(m, { type: 'hero', value: 'hero_warrior' });
+  assert.equal(picked.hero, 'hero_warrior');
+  assert.ok(!picked.detail, '换人的那一下不该顺手把详情摊开');
+  const opened = applyLobbyAction({ ...picked, hero: 'hero_warrior' }, { type: 'hero', value: 'hero_warrior' });
+  assert.equal(opened.detail, 'hero_warrior');
+  // 点别的卡：换人 + 收掉详情（别挂着上一个人的资料）
+  const swapped = applyLobbyAction(opened, { type: 'hero', value: 'hero_mage' });
+  assert.equal(swapped.hero, 'hero_mage');
+  assert.equal(swapped.detail, null);
+  // 别的动作也收掉它
+  assert.equal(applyLobbyAction(opened, { type: 'difficulty', value: 'hard' }).detail, null);
+  assert.equal(applyLobbyAction(opened, { type: 'closeDetail' }).detail, null);
+
+  // 布局：面板与「关闭」行都在画布内、关闭行 ≥44；摊开时其它键一概不接
+  const L = layoutLobby(DESIGN.w, DESIGN.h, opened);
+  assert.ok(L.detail, '模型里带着 detail 就要有那一张');
+  const box = L.detail.box;
+  assert.ok(box.x >= 0 && box.y >= 0 && box.x + box.w <= DESIGN.w && box.y + box.h <= DESIGN.h, '详情面板出界');
+  for (const row of L.detail.rows) {
+    assert.ok(row.h >= 44 && row.w >= 44, '关闭行热区不够');
+    assert.ok(row.y + row.h <= DESIGN.h, '关闭行出界');
+  }
+  const row = L.detail.rows[0];
+  assert.deepEqual(hitTestLobby(L, row.x + row.w / 2, row.y + row.h / 2), { type: 'closeDetail' });
+  const start = L.byId.start;
+  assert.equal(hitTestLobby(L, start.x + start.w / 2, start.y + start.h / 2), null, '详情摊开时不该能点到「单人开局」');
+
+  // 画一帧：名字 / 技能 / 天赋 / 秘传那几行都要落在这份记录里
+  const ctx = fakeCtx();
+  drawLobby(ctx, opened, L);
+  const drawn = ctx.texts.join(' | ');
+  assert.match(drawn, /霜刃武者/);
+  assert.match(drawn, /技能：.*旋风斩/);
+  assert.match(drawn, /天赋：.*钢铁意志/);
+  assert.match(drawn, /秘传：.*破甲突刺/);
+  assert.match(drawn, /生命 \d+/);
+});
+
+test('小游戏大厅闭环：点英雄卡摊开详情、点「关闭」收起来，期间「单人开局」点不动', async () => {
+  await import('../tools/build-minigame.mjs');
+  const fake = installFakeWx();
+  try {
+    const require = createRequire(import.meta.url);
+    const p = join(OUT, 'game.js');
+    copyFileSync(p, join(OUT, 'game-hero.js'));
+    require(join(OUT, 'game-hero.js'));
+    const app = globalThis.__frostfallLobby;
+    const tapItem = (it) => app.tap(it.x + it.w / 2, it.y + it.h / 2);
+
+    // 第一局默认选着霜刃武者：点它一次就是「摊开详情」
+    tapItem(app.layout().byId['hero-hero_warrior']);
+    app.drawFrame();
+    assert.equal(app.getModel().detail, 'hero_warrior', '点英雄卡要摊开详情');
+    assert.ok(app.canvas.record.texts.some((t) => t.includes('旋风斩')), '详情里要写技能');
+    // 详情摊开时点「单人开局」那一带：什么都不该发生（它是覆盖层）
+    const start = app.layout().byId.start;
+    app.tap(start.x + start.w / 2, start.y + start.h / 2);
+    assert.equal(app.screen(), 'lobby', '覆盖层挡着的键不该生效');
+    // 关闭之后恢复正常：这一下就真的进局了
+    tapItem(app.layout().detail.rows[0]);
+    assert.equal(app.getModel().detail, null, '点「关闭」要收起来');
+    app.drawFrame();
+    tapItem(app.layout().byId.start);
+    assert.equal(app.screen(), 'battle', '收起来之后「单人开局」要能用');
+  } finally { fake.uninstall(); }
 });

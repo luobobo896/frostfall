@@ -11,6 +11,7 @@
 // 坐标：全部按**逻辑像素**（= 小游戏里的 pt，`wx.getWindowInfo().windowWidth/Height`），
 // 以 667×375（§14.3 的设计画布）为基准等比缩放并居中 —— §1.9.2 的 44pt 热区下限在这一层直接成立。
 import { DEFENSE_MAPS, HEROES, MAPS } from '../data.js';
+import { heroCard } from '../hud-model.js';
 import { drawMapThumb } from '../render.js';
 
 export const DESIGN = { w: 667, h: 375 };
@@ -29,6 +30,33 @@ const COLORS = {
 };
 
 const HERO_ROLE = { hero_warrior: '前排', hero_mage: '法术', hero_ranger: '远程', hero_paladin: '辅助' };
+
+/**
+ * 英雄详情那一张（设计单位里摆，再统一 map 到画布）：标题 / 属性两行 / 技能 / 天赋 / 秘传 + 关闭行。
+ * 文案全部来自 `heroCard(id)`（浏览器版英雄卡片的同一份数据），这里只负责排版。
+ */
+const detailPanel = (heroId, map) => {
+  const c = heroCard(heroId);
+  const stats = c.stats.map((s) => `${s.label} ${s.value}`);
+  const skills = c.skills.map((s) => `${s.name}（Lv${s.unlockLevel} 解锁 · ${s.cooldown}s）`).join(' · ');
+  const talents = c.talents.map((t) => `${t.name}（Lv${t.unlockLevel}）`).join(' · ');
+  const lines = [
+    { text: `${c.name} · ${c.role}`, size: 15, color: '#e8eef7', weight: 'bold' },
+    { text: stats.slice(0, 3).join(' · '), size: 11, color: '#93a4bd' },
+    { text: stats.slice(3).join(' · '), size: 11, color: '#93a4bd' },
+    { text: `技能：${skills}`, size: 11, color: '#e8eef7' },
+    { text: `天赋：${talents}`, size: 11, color: '#93a4bd' },
+    { text: c.secret ? `秘传：${c.secret.name}（${c.secret.via}解锁 · Lv${c.secret.unlockLevel}）` : '', size: 11, color: '#e8c15a' },
+  ];
+  const box = map(60, 70, 547, 210);
+  const close = map(72, 226, 523, 44);
+  return {
+    heroId,
+    box,
+    lines: lines.filter((l) => l.text).map((l, i) => ({ ...l, ...map(84, 96 + i * 22, 500, 18) })),
+    rows: [{ id: 'closeDetail', label: '关闭', action: { type: 'closeDetail' }, ...close }],
+  };
+};
 const DIFF_LABEL = { normal: '普通', hard: '困难', nightmare: '噩梦' };
 
 /** 一个可点元素：`x/y/w/h` 是设计单位，动作由 `action` 描述 */
@@ -88,6 +116,13 @@ export function layoutLobby(w, h, model = {}) {
   // 统一映射：设计单位 → 画布坐标（等比缩放 + 居中）。命中测试与绘制都用这一份，天然同源。
   const items = raw.map((it) => ({ ...it, ...map(it.x, it.y, it.w, it.h) }));
 
+  /**
+   * §14.3 稿 3 的英雄详情（技能 / 天赋预览）：**再点一次已选中的英雄卡**就摊开这一张。
+   * 内容取浏览器版那份 `heroCard(id)`（属性 + 两个主动技 + 两个天赋 + 秘传），一份数据两处用。
+   * 它是覆盖层：摊开时不接别的键（只有「关闭」那一行可点），关掉就回到大厅。
+   */
+  const detail = model.detail && HEROES[model.detail] ? detailPanel(model.detail, map) : null;
+
   return {
     w, h, s, ox, oy,
     capsule: map(DESIGN.w - CAPSULE.w - 8, 6, CAPSULE.w, CAPSULE.h),
@@ -96,6 +131,7 @@ export function layoutLobby(w, h, model = {}) {
     profile: map(24, 64, 320, 16),
     // 提示区：三行 10px 文案 + 一点余量，**整块在画布内**（第一版贴到底边，第三行被切了）
     hint: map(24, 300, 316, 56),
+    detail,
     items,
     byId: Object.fromEntries(items.map((it) => [it.id, it])),
   };
@@ -103,6 +139,13 @@ export function layoutLobby(w, h, model = {}) {
 
 /** 触点 → 动作（画布坐标，与画出来的位置同源）。返回 null 表示点空白。 */
 export function hitTestLobby(L, x, y) {
+  // 英雄详情是覆盖层：摊开时只有它那一行可点（别让手滑点到底下的大厅键）
+  if (L.detail) {
+    for (const row of L.detail.rows) {
+      if (x >= row.x && x <= row.x + row.w && y >= row.y && y <= row.y + row.h) return row.action;
+    }
+    return null;
+  }
   for (const it of L.items) {
     if (x >= it.x && x <= it.x + it.w && y >= it.y && y <= it.y + it.h) return it.action;
   }
@@ -205,6 +248,33 @@ export function drawLobby(ctx, model, L) {
   (model.hint ? model.hint.split('\n') : DEFAULT_HINT)
     .forEach((line, i) => text(ctx, line, L.hint.x, L.hint.y + S(9 + i * 15), { size: S(10), color: COLORS.dim }));
   ctx.restore();
+
+  /**
+   * 英雄详情覆盖层（§14.3 稿 3）：**画在最后**，先压暗一层再画面板——
+   * 摊开它的时候整个大厅都不接按键（`hitTestLobby` 里那条）。
+   */
+  if (L.detail) {
+    ctx.fillStyle = 'rgba(4, 8, 14, 0.74)';
+    ctx.fillRect(0, 0, L.w, L.h);
+    const b = L.detail.box;
+    ctx.fillStyle = 'rgba(12, 20, 34, 0.97)';
+    roundRect(ctx, b.x, b.y, b.w, b.h, S(12));
+    ctx.fill();
+    ctx.strokeStyle = COLORS.accent;
+    ctx.lineWidth = Math.max(1, S(1));
+    ctx.stroke();
+    for (const line of L.detail.lines) {
+      text(ctx, line.text, line.x, line.y + line.h / 2, { size: S(line.size), color: line.color, weight: line.weight });
+    }
+    for (const row of L.detail.rows) {
+      ctx.fillStyle = 'rgba(12, 20, 34, 0.9)';
+      roundRect(ctx, row.x, row.y, row.w, row.h, S(8));
+      ctx.fill();
+      ctx.strokeStyle = COLORS.panelLine;
+      ctx.stroke();
+      text(ctx, row.label, row.x + row.w / 2, row.y + row.h / 2, { size: S(13), align: 'center', weight: 'bold' });
+    }
+  }
   return L;
 }
 
@@ -215,6 +285,9 @@ export function drawLobby(ctx, model, L) {
 export function applyLobbyAction(model, action, { unlocked = [], lockedReason = {} } = {}) {
   if (!action) return model;
   const next = { ...model };
+  // 英雄详情是覆盖层：**除了「点英雄卡」与「关掉它」以外的任何动作**都顺手收起来，
+  // 免得换模式 / 换图之后还挂着上一个人的资料
+  if (action.type !== 'hero' && action.type !== 'closeDetail') next.detail = null;
   switch (action.type) {
     case 'mode': {
       if (next.mode === action.value) return model;
@@ -232,7 +305,15 @@ export function applyLobbyAction(model, action, { unlocked = [], lockedReason = 
     }
     case 'difficulty': next.difficulty = action.value; return next;
     case 'length': next.length = action.value; return next;
-    case 'hero': next.hero = action.value; return next;
+    case 'hero': {
+      // 再点一次**已选中**的那张卡 = 摊开英雄详情（技能 / 天赋预览，§14.3 稿 3）；
+      // 点别的卡就是换人（顺手把详情收掉，免得挂着上一个人的资料）
+      if (model.hero === action.value) { next.detail = action.value; return next; }
+      next.hero = action.value;
+      next.detail = null;
+      return next;
+    }
+    case 'closeDetail': next.detail = null; return next;
     case 'map': {
       if (!unlocked.includes(action.value)) {
         const name = (MAPS[action.value] ?? DEFENSE_MAPS[action.value])?.name ?? action.value;

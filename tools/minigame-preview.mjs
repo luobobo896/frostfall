@@ -25,6 +25,7 @@ const SHOTS = [
   { file: 'minigame-result.png', w: Number(w), h: Number(h), page: 'result' },
   { file: 'minigame-pause.png', w: Number(w), h: Number(h), page: 'pause' },
   { file: 'minigame-defense.png', w: Number(w), h: Number(h), page: 'defense' },
+  { file: 'minigame-hero.png', w: Number(w), h: Number(h), page: 'hero' },
 ];
 
 if (!existsSync(CHROME)) {
@@ -58,7 +59,7 @@ const ctx = canvas.getContext('2d');
 ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 const page = ${JSON.stringify(page)};
 
-if (page === 'lobby') {
+if (page === 'lobby' || page === 'hero') {
   const { layoutLobby, drawLobby } = await import('/src/minigame/lobby.js');
   // 一份「像玩家档」的模型：解锁两张 TD 图 + 一张防守图，人物 3 级、声望 240
   const model = {
@@ -67,6 +68,8 @@ if (page === 'lobby') {
     unlocked: ['map_01', 'map_02', 'def_01'], unlockedCount: 3, canStart: true, hint: null,
     canContinue: true, continueLabel: '继续上局',   // 有存档时右边会多这一个出口
     locked: { map_03: '声望 500', def_02: '守住边陲小镇' },
+    // 英雄详情那一张样张（§14.3 稿 3）：摊开已选中的那个英雄
+    detail: page === 'hero' ? 'hero_ranger' : null,
   };
   drawLobby(ctx, model, layoutLobby(w, h, model));
 } else {
