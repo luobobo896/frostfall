@@ -656,5 +656,13 @@ export function createUI(handlers) {
    */
   el.btnLeaveRoom.onclick = () => handlers.lobby();   // 回大厅是整页重载，不用先关面板
 
-  return { render, toast, openWheel, closeWheel, openFortWheel, openTower, closeTower, showOverlay, renderHeroCards, el };
+  /**
+   * `openSlotIndex` 是给渲染层读的：防守的工事位高亮只该在**轮盘开着**时出现
+   * （以前 main.js 把选中的位置存在 `view.selectedFortSlot` 里、关轮盘时没人清，
+   * 于是关掉轮盘之后那一格还亮着——同一个决定两处状态，就会这样）。
+   */
+  return {
+    render, toast, openWheel, closeWheel, openFortWheel, openTower, closeTower, showOverlay, renderHeroCards,
+    el, openSlotIndex: () => openSlot,
+  };
 }

@@ -695,7 +695,7 @@ function defenseTap(clientX, clientY) {
     && !match.forts.some((f) => f.slot === i));
   if (slot >= 0) {
     const s = match.def.fortSlots[slot];
-    view.selectedFortSlot = slot;
+    // 高亮由 `ui.openSlotIndex()` 提供（轮盘开着才亮）：这里不再另存一份
     ui.openFortWheel(match, slot, renderer.toScreen(s.x, s.y), FORTS);
     return;
   }
@@ -987,7 +987,8 @@ function frameBody(now) {
     pending: pendingTowers, localSlot: view.localSlot, now: floatNow,
     hintSlots: tutorial?.hintSlotCount?.() ?? 0,
     pulses: view.render?.showPulses !== false,   // §116：低特效档连引导塔位的脉冲一起关（设置面板是这么写的）
-    selectedFortSlot: view.selectedFortSlot,
+    // 工事位高亮：只在轮盘**开着**时给（轮盘关掉之后不该还留着一个「你刚点的这里」的记号）
+    selectedFortSlot: ui.openSlotIndex?.() ?? null,
     scale: match.mode === 'defense' ? (view.render?.defenseScale ?? 1.5) : undefined,
   });
   // 小地图只在防守模式出现（跟随相机下它是唯一的全局视图）

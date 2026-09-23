@@ -624,3 +624,50 @@ test('小游戏防守：第一次打这张图时给一句操作提示，打过�
       '打过的图不该再念那句中上手指引');
   } finally { fake.uninstall(); }
 });
+
+test('小游戏防守：正在建工事的那个位置要在画面上高亮（selectedFortSlot）', async () => {
+  await import('../tools/build-minigame.mjs');
+  const fake = installFakeWx();
+  try {
+    const require = createRequire(import.meta.url);
+    const app = loadFreshApp(require, 11);
+    const tapBtn = (id) => {
+      const b = app.layout().byId[id];
+      assert.ok(b, `HUD 上找不到 ${id}`);
+      return app.tap(b.x + b.w / 2, b.y + b.h / 2);
+    };
+    tapBtn('mode-def');
+    tapBtn('start');
+    const m = app.match();
+    const r = app.renderer();
+    // 包一层渲染器：只记它拿到哪个工事位要高亮
+    const seen = [];
+    const orig = r.draw;
+    r.draw = (view) => { seen.push(view.selectedFortSlot); return orig(view); };
+    app.drawFrame();
+    assert.equal(seen.at(-1), undefined ?? null, '还没选位置时不高亮');
+
+    // 点一个空工事位 → 工事面板弹出，那一个位置要传给渲染器（画面上看得出来点的是哪儿）
+    /**
+     * 找一个**这一帧里点得到**的工事位：防守是跟随相机，`drawFrame()` 之后投影会变
+     * （第一版先投影再画帧，结果那一点落到了小地图上、点到的是「回城」）。
+     */
+    const pick = (() => {
+      for (let i = 0; i < m.def.fortSlots.length; i += 1) {
+        const sp = r.toScreen(m.def.fortSlots[i].x, m.def.fortSlots[i].y);
+        if (!hitTestDefense(app.layout(), sp.x, sp.y)) return { i, sp };
+      }
+      throw new Error('这一帧里没有点得到的工事位');
+    })();
+    app.tap(pick.sp.x, pick.sp.y);
+    assert.equal(app.getModel().sheet?.kind, 'fort', '前提：点到工事位要开工事面板');
+    app.drawFrame();
+    assert.equal(seen.at(-1), pick.i, `面板开着时那一格要高亮（实际 ${seen.at(-1)}）`);
+
+    // 关掉面板 → 高亮撤掉
+    const cancel = app.getModel().sheet.byId.cancel;
+    app.tap(cancel.x + cancel.w / 2, cancel.y + cancel.h / 2);
+    app.drawFrame();
+    assert.ok(seen.at(-1) == null, '关掉面板之后不该还高亮着');
+  } finally { fake.uninstall(); }
+});

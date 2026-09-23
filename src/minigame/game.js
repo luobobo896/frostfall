@@ -861,7 +861,17 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
     if (b.m.mode === 'defense') {
       b.layout = layoutDefense(b.m, defModel(b));
       // 跟随相机由 drawDefense 自己算（它拿 `scale`）；我们只把缩放档递进去
-      b.renderer.draw({ m: b.m, scale: settings.zoom ?? 1.5, now: b.m.time });
+      /**
+       * 正在建工事的那个位置要高亮（`render.js` 的 `drawDefense` 认 `selectedFortSlot`）：
+       * 浏览器版一直把它传进去（`main.js` 的 `view.selectedFortSlot`），小游戏以前只传 m/scale/now，
+       * 于是「点工事位 → 工事面板」这条路里画面上什么都没变，玩家得自己记住点的是哪一个。
+       */
+      // 高亮只在**面板开着**的时候给：关掉面板（取消 / 建完 / 去别处）之后不该还留着一个
+      // 「你刚才点的这里」的记号（面板状态是唯一来源，用不着另外去清 `b.fortSlot`）
+      b.renderer.draw({
+        m: b.m, scale: settings.zoom ?? 1.5, now: b.m.time,
+        selectedFortSlot: b.ui.sheetKind === 'fort' ? b.fortSlot : null,
+      });
       const o = hudOffset();
       ctx.setTransform(size.dpr, 0, 0, size.dpr, size.dpr * o.x, size.dpr * o.y);
       drawDefenseHud(ctx, b.m, b.layout, { message, stick: b.stick.active ? { base: b.stick.origin, dir: b.stick.dir } : { base: b.layout.stick, dir: { x: 0, y: 0, mag: 0 } } });
@@ -876,7 +886,12 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
       // `hintSlots`：引导第一步/第二步在战场上圈出「建这里」（render.js 本来就有这段，直接复用）
       b.renderer.draw({
         // §116：低特效档关掉脉冲（新手引导塔位高亮那层呼吸）；高档才让它随时间变化
-        m: b.m, selectedSlot: null, selectedTower: null, localSlot: 0, now: b.m.time,
+        /**
+         * 正在操作的那个塔位要高亮（§2.5：面板开着时画面上得看得出**是哪一座**）：
+         * `render.js` 会给选中的空位画绿圈、给选中的塔描边——浏览器版一直传这两个值，
+         * 小游戏以前写死 null，于是「点塔位 → 面板」这条路里画面上什么都没变。
+         */
+        m: b.m, selectedSlot: b.ui.selectedSlot, selectedTower: b.ui.panelSlot, localSlot: 0, now: b.m.time,
         pulses: settings.effects !== 'low',
         hintSlots: b.tutorial?.hintSlotCount() ?? 0,
       });

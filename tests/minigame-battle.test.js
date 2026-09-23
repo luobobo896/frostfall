@@ -867,3 +867,40 @@ test('小游戏药品键：小药在冷却时改用包里那瓶没冷却的（�
       `提示要写用的是哪一瓶（画了：${app.canvas.record.texts.filter((t) => t.startsWith('用了')).slice(-2).join(' / ')}）`);
   } finally { fake.uninstall(); }
 });
+
+test('小游戏战场：正在操作的那个塔位要在画面上高亮（空位绿圈 / 有塔描边）', async () => {
+  await import('../tools/build-minigame.mjs');
+  const fake = installFakeWx();
+  try {
+    const require = createRequire(import.meta.url);
+    const app = loadFreshApp(require, 19);
+    app.startMatch();
+    const m = app.match();
+    const r = app.renderer();
+    // 包一层渲染器：只记它拿到什么选择态（§2.5：面板开着时要看得出是哪一座）
+    const seen = [];
+    const orig = r.draw;
+    r.draw = (view) => { seen.push({ slot: view.selectedSlot, tower: view.selectedTower }); return orig(view); };
+    app.drawFrame();
+    assert.deepEqual(seen.at(-1), { slot: null, tower: null }, '什么都没选时不该高亮');
+
+    // 点空塔位 → 建造面板开着，选中的空位要传给渲染器（绿圈）
+    const p = r.toScreen(m.map.slots[0].x, m.map.slots[0].y);
+    app.tap(p.x, p.y);
+    app.drawFrame();
+    assert.equal(seen.at(-1).slot, 0, '建造面板开着时，选中的那个空位要高亮');
+
+    // 建一座塔 → 面板切成塔面板，这一座要作为 selectedTower 传进去（描边）
+    const row = app.getModel().sheet.byId['build-tw_arrow'];
+    app.tap(row.x + row.w / 2, row.y + row.h / 2);
+    app.drawFrame();
+    assert.equal(seen.at(-1).tower, 0, '塔面板开着时，那一座塔要高亮');
+    assert.equal(seen.at(-1).slot, null, '建完之后不再是「空位选中」');
+
+    // 关掉面板 → 高亮跟着撤掉
+    const close = app.getModel().sheet.byId.close;
+    app.tap(close.x + close.w / 2, close.y + close.h / 2);
+    app.drawFrame();
+    assert.deepEqual(seen.at(-1), { slot: null, tower: null }, '关掉面板之后不该还描着边');
+  } finally { fake.uninstall(); }
+});
