@@ -34,6 +34,7 @@ npm run minigame  # 微信小游戏包：打包（dist/minigame/）+ 假 wx 本�
 npm run minigame:preview  # 出七张样张：大厅 / 战场 / 塔面板 / 商店 / 结算 / 暂停 / 防守 → docs/testing/screenshots/minigame-*.png
                   #   现状见 docs/minigame-port.md：界面这一层已经全部搬完（TD 与防守都能从头玩到结算，
                   #   含第一局的引导条与拖动 / 双指缩放）；剩下的都是要你那边办的发布门槛
+                  #   要进微信开发者工具：先 npm run minigame，再导入 dist/minigame/（步骤见该文档 §6.1）
 ```
 
 零依赖（Node 内置能力 + 原生 ESM + Canvas2D），不需要 `npm install`。
