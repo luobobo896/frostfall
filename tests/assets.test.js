@@ -26,8 +26,11 @@ const fakeImage = ({ fail = false, w = 192, h = 192 } = {}) => () => {
 
 const drawingContext = () => {
   const calls = [];
-  const rec = (name) => (...args) => { calls.push({ name, args }); };
-  return {
+  const state = { strokeStyle: '', lineWidth: 1 };
+  const rec = (name) => (...args) => {
+    calls.push({ name, args, strokeStyle: state.strokeStyle, lineWidth: state.lineWidth });
+  };
+  const ctx = {
     calls,
     setTransform: rec('setTransform'), fillRect: rec('fillRect'), fillText: rec('fillText'),
     beginPath: rec('beginPath'), moveTo: rec('moveTo'), lineTo: rec('lineTo'),
@@ -36,6 +39,15 @@ const drawingContext = () => {
     drawImage: rec('drawImage'), setLineDash: rec('setLineDash'), strokeRect: rec('strokeRect'),
     measureText: (text) => ({ width: String(text).length * 8 }),
   };
+  Object.defineProperty(ctx, 'strokeStyle', {
+    set(v) { state.strokeStyle = v; },
+    get() { return state.strokeStyle; },
+  });
+  Object.defineProperty(ctx, 'lineWidth', {
+    set(v) { state.lineWidth = v; },
+    get() { return state.lineWidth; },
+  });
+  return ctx;
 };
 
 const count = (ctx, name) => ctx.calls.filter((c) => c.name === name).length;
@@ -189,6 +201,24 @@ describe('静帧热替换', { concurrency: 1 }, () => {
     assert.ok(swapped.images > 50, '大部分可建地应该换成贴图');
     assert.ok(swapped.fills < geometry.fills, '贴上地块之后填色次数要下降');
     assert.ok(swapped.fills > 0, '路径格子没有贴图，仍要填色');
+  });
+
+  test('路径贴图外面仍是硬边，可建地贴图走软边', () => {
+    const { ctx } = (() => {
+      registerSprite(tileSpriteKey('path'), { width: 64, height: 32 });
+      registerSprite(tileSpriteKey('tileA'), { width: 64, height: 32 });
+      registerSprite(tileSpriteKey('tileB'), { width: 64, height: 32 });
+      const drawn = drawingContext();
+      const canvas = { clientWidth: 1334, clientHeight: 750, width: 0, height: 0, getContext: () => drawn };
+      const r = createRenderer(canvas);
+      const m = quietMatch();
+      r.draw({ m, selectedSlot: null, selectedTower: null, floaters: [], now: 0 });
+      return { ctx: drawn };
+    })();
+    const hard = ctx.calls.filter((c) => c.name === 'stroke' && c.strokeStyle === '#141c28' && c.lineWidth >= 2.5);
+    const soft = ctx.calls.filter((c) => c.name === 'stroke' && c.strokeStyle === 'rgba(90,140,200,.10)');
+    assert.ok(hard.length > 10, '路径格要描硬边');
+    assert.ok(soft.length > hard.length, '可建地用软边，而且数量更多');
   });
 
   test('英雄待机图在死亡时让回灰色剪影', () => {

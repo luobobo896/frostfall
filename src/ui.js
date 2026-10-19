@@ -62,6 +62,7 @@ export function createUI(handlers) {
   let craftArmed = false;   // 合成同样不可逆（§5.4.1）：第一次点只「上膛」，第二次才真合
   let itemSellArmed = null;  // §5.4：出售装备也不可逆（记的是那一件的 uid）
   let openSlot = null;
+  let placingId = null;
 
   function toast(text) {
     el.toast.textContent = text;
@@ -278,6 +279,9 @@ export function createUI(handlers) {
         toast(ok ? `建造 ${t.name}` : (handlers.isOffline?.() ? '掉线中，重连后再试' : '金币不足'));
         closeWheel();
       };
+      // 悬停才知道射程是哪一座塔的。松手离开就收掉，避免轮盘关掉后圈还留在格子上。
+      btn.addEventListener('pointerenter', () => { placingId = id; });
+      btn.addEventListener('pointerleave', () => { if (placingId === id) placingId = null; });
       el.wheel.appendChild(btn);
     });
     const cancel = document.createElement('button');
@@ -287,7 +291,7 @@ export function createUI(handlers) {
     el.wheel.appendChild(cancel);
   }
 
-  const closeWheel = () => { el.wheel.classList.add('hidden'); el.wheel.innerHTML = ''; openSlot = null; };
+  const closeWheel = () => { el.wheel.classList.add('hidden'); el.wheel.innerHTML = ''; openSlot = null; placingId = null; };
 
   /* ---------- 塔面板（升级 / 出售 / 优先级） ---------- */
 
@@ -663,6 +667,6 @@ export function createUI(handlers) {
    */
   return {
     render, toast, openWheel, closeWheel, openFortWheel, openTower, closeTower, showOverlay, renderHeroCards,
-    el, openSlotIndex: () => openSlot,
+    el, openSlotIndex: () => openSlot, placingTowerId: () => placingId,
   };
 }

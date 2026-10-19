@@ -986,6 +986,7 @@ function frameBody(now) {
   if (net && pendingTowers.length) pendingTowers = reconcilePending(pendingTowers, match.towers, now);
   renderer.draw({
     m: match, selectedSlot: view.selectedSlot, selectedTower: view.selectedTower,
+    placingTowerId: ui.placingTowerId?.() ?? null,
     floaters: view.render?.showFloaters === false ? [] : view.floaters,
     pending: pendingTowers, localSlot: view.localSlot, now: floatNow,
     hintSlots: tutorial?.hintSlotCount?.() ?? 0,
