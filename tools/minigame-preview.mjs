@@ -180,7 +180,8 @@ const server = createServer(async (req, res) => {
   try {
     const body = path === '/' ? Buffer.from(pageFor(page, Number(w), Number(h)))
       : await readFile(join(ROOT, path.replace(/^\//, '')));
-    res.writeHead(200, { 'content-type': path.endsWith('.js') ? 'text/javascript' : 'text/html' });
+    const type = path.endsWith('.js') ? 'text/javascript' : path.endsWith('.png') ? 'image/png' : 'text/html';
+    res.writeHead(200, { 'content-type': type });
     res.end(body);
   } catch { res.writeHead(404).end('not found'); }
 });

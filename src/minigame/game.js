@@ -28,6 +28,7 @@ import { loadSettings, saveSettings } from '../settings.js';
 import { createHaptics } from '../feedback.js';
 import { createCue } from '../audio.js';
 import { createMinimap, createRenderer } from '../render.js';
+import { bootSprites } from '../assets.js';
 import { damageFloaters, wavePreview } from '../hud-model.js';
 import {
   buildFort, createDefenseMatch, describeDefense, orderMove, repairCastle, steerGoal, teleportHome, updateDefense,
@@ -101,6 +102,7 @@ export const stepLobby = (model, tap) =>
  */
 export function startMinigame({ requestAnimationFrame: raf = globalThis.requestAnimationFrame } = {}) {
   if (!isMiniGame()) return null;
+  bootSprites();
   const wx = globalThis.wx;
   const canvas = wx.createCanvas();
   const ctx = canvas.getContext('2d');

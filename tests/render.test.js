@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { createMatch, buildTower, update } from '../src/match.js';
+import { createMatch, buildTower, towerStatsAt, update } from '../src/match.js';
 import { heroPos, posAt, project } from '../src/core.js';
 import { GRID, HEROES, MONSTERS, TICK_STEP } from '../src/data.js';
 
@@ -451,6 +451,9 @@ test('P0 地形：路径比可建地亮，并且描边更深；岩浆保留原�
   assert.ok(lum(path.fill) > lum(tileA.fill) + 50, '路径要比可建地亮一档');
   assert.ok(lum(tileB.fill) < lum(tileA.fill), '棋盘两色里 B 更暗');
   assert.ok(lum(path.stroke) + 40 < lum(path.fill), '路径描边要比填充深');
+  assert.ok(path.lineWidth >= 2.5, '路径要有硬边，不能和装饰块一样细');
+  assert.ok(tileA.lineWidth < path.lineWidth, '可建地不要用路径那圈硬边');
+  assert.notEqual(tileA.stroke, path.stroke);
   assert.equal(terrainPaint('swamp').fill, '#1d3a2c');
   const lava = terrainPaint('lava');
   assert.equal(lava.fill, '#5a2b1f');
@@ -551,4 +554,98 @@ test('P0 地标：出生点有旗杆，核心脚下有一圈光', () => {
     && Math.abs(c.args[0] - g.x) < 1 && Math.abs(c.args[1] - g.y) < 1
     && Math.abs(c.args[2] - expectRx) < 1);
   assert.ok(halo.length >= 1, '核心所在格应有一圈大约一格宽的光');
+});
+
+function inkContext() {
+  const calls = [];
+  const state = { strokeStyle: '', lineWidth: 1 };
+  const rec = (name) => (...args) => {
+    calls.push({ name, args, strokeStyle: state.strokeStyle, lineWidth: state.lineWidth });
+  };
+  const ctx = {
+    calls,
+    setTransform: rec('setTransform'), fillRect: rec('fillRect'), fillText: rec('fillText'),
+    beginPath: rec('beginPath'), moveTo: rec('moveTo'), lineTo: rec('lineTo'),
+    closePath: rec('closePath'), fill: rec('fill'), stroke: rec('stroke'),
+    ellipse: rec('ellipse'), save: rec('save'), restore: rec('restore'),
+  };
+  Object.defineProperty(ctx, 'strokeStyle', {
+    set(v) { state.strokeStyle = v; },
+    get() { return state.strokeStyle; },
+  });
+  Object.defineProperty(ctx, 'lineWidth', {
+    set(v) { state.lineWidth = v; },
+    get() { return state.lineWidth; },
+  });
+  return ctx;
+}
+
+const rangeRing = (ctx, at, range, scale) => ctx.calls.find((c) => c.name === 'ellipse'
+  && Math.abs(c.args[0] - at.x) < 1
+  && Math.abs(c.args[1] - at.y) < 1
+  && Math.abs(c.args[2] - range * (GRID.tileW / 2) * scale) < 1
+  && Math.abs(c.args[3] - range * (GRID.tileH / 2) * scale) < 1);
+
+test('选中、预测放置、轮盘悬停都画高对比射程圈', () => {
+  const draw = (extra, setup) => {
+    const ctx = inkContext();
+    const canvas = { clientWidth: 1334, clientHeight: 750, width: 0, height: 0, getContext: () => ctx };
+    const r = createRenderer(canvas);
+    const m = createMatch({ mapId: 'map_01', seed: 1 });
+    m.gold = 9999;
+    m.monsters = [];
+    setup?.(m);
+    r.draw({ m, selectedSlot: null, selectedTower: null, pending: [], now: 0, ...extra });
+    return { ctx, r, m };
+  };
+  const bright = (ctx) => ctx.calls.filter((c) => c.name === 'stroke' && c.strokeStyle === '#fff4d2' && c.lineWidth === 2);
+  const dark = (ctx) => ctx.calls.filter((c) => c.name === 'stroke' && c.strokeStyle === 'rgba(8, 12, 18, .92)' && c.lineWidth === 5);
+
+  const idle = draw();
+  assert.equal(bright(idle.ctx).length, 0, '没选中也没在放置时不画射程圈');
+
+  const selected = draw({ selectedTower: 0 }, (m) => { assert.ok(buildTower(m, 0, 'tw_arrow')); });
+  const tower = selected.m.towers[0];
+  const at = selected.r.toScreen(tower.cell.x, tower.cell.y, 0);
+  assert.ok(rangeRing(selected.ctx, at, tower.stats.range, selected.r.scale), '选中的塔要在地面上画出射程');
+  assert.equal(bright(selected.ctx).length, 1);
+  assert.equal(dark(selected.ctx).length, 1);
+
+  const pending = draw({ pending: [{ slot: 1, towerId: 'tw_cannon' }] });
+  const cell = pending.m.map.slots[1];
+  const pendingRange = towerStatsAt(pending.m.map, cell, 'tw_cannon', 1).range;
+  const pendingAt = pending.r.toScreen(cell.x, cell.y, 0);
+  assert.ok(rangeRing(pending.ctx, pendingAt, pendingRange, pending.r.scale), '预测放置要画出这一级的射程');
+
+  const placing = draw({ selectedSlot: 2, placingTowerId: 'tw_frost' });
+  const slot = placing.m.map.slots[2];
+  const placeRange = towerStatsAt(placing.m.map, slot, 'tw_frost', 1).range;
+  assert.ok(rangeRing(placing.ctx, placing.r.toScreen(slot.x, slot.y, 0), placeRange, placing.r.scale), '轮盘悬停要预览该塔种的射程');
+  assert.notEqual(placeRange, pendingRange, '不同塔种的预览圈不能一样大');
+});
+
+test('英雄比原来大一档，活着时有暖色轮廓，倒下后轮廓变灰', () => {
+  const draw = (dead) => {
+    const ctx = inkContext();
+    const canvas = { clientWidth: 1334, clientHeight: 750, width: 0, height: 0, getContext: () => ctx };
+    const r = createRenderer(canvas);
+    const m = createMatch({ mapId: 'map_01', seed: 1 });
+    m.towers = [];
+    m.monsters = [];
+    m.hero.dead = dead;
+    r.draw({ m, selectedSlot: null, selectedTower: null, now: 0 });
+    return { ctx, r, m };
+  };
+  const alive = draw(false);
+  const hp = alive.r.toScreen(alive.m.hero.cell.x, alive.m.hero.cell.y, 1);
+  const radius = 16 * alive.r.scale + 8;
+  const glow = alive.ctx.calls.find((c) => c.name === 'ellipse'
+    && Math.abs(c.args[0] - hp.x) < 1
+    && Math.abs(c.args[2] - radius * 1.05) < 1);
+  assert.ok(glow, '英雄轮廓要按加大后的尺寸画');
+  assert.ok(radius > 12 * alive.r.scale + 6, '要比原先的英雄尺寸大一档');
+  assert.ok(alive.ctx.calls.some((c) => c.name === 'stroke' && c.strokeStyle === '#ffd68a' && c.lineWidth === 3));
+  const dead = draw(true);
+  assert.ok(dead.ctx.calls.some((c) => c.name === 'stroke' && c.strokeStyle === '#8b95a3'));
+  assert.ok(!dead.ctx.calls.some((c) => c.name === 'stroke' && c.strokeStyle === '#ffd68a'));
 });

@@ -1,10 +1,11 @@
-// 等距 2:1 渲染（§14.1）。仍是占位图（§14.6）：不接美术管线，只用剪影把塔 / 怪 / 英雄 / 路分开。
+// 等距 2:1 渲染（§14.1）。静帧按 docs/art/DIRECTION.md 热替换；缺图或没加载完就画 P0 剪影。
 
 import { DEFENSE_MAPS, GRID, MAPS, MONSTERS, QUALITY, TEAM_COLORS, TOWERS } from './data.js';
 import { buildMap, heroPos, posAt, project } from './core.js';
-import { heroMaxHp } from './match.js';
+import { heroMaxHp, towerStatsAt } from './match.js';
 import { isLowHp } from './hud-model.js';
 import { viewport } from './platform.js';   // §平台适配：像素比在两个环境里的取法不同
+import { heroSpriteKey, mobSpriteKey, spriteFrame, tileSpriteKey, towerSpriteKey } from './assets.js';
 
 /**
  * 地形填色。路径要比可建地亮一档并带深色描边，否则整张图是同一块深蓝灰。
@@ -12,7 +13,7 @@ import { viewport } from './platform.js';   // §平台适配：像素比在两�
  */
 export function terrainPaint(kind) {
   switch (kind) {
-    case 'path': return { fill: '#6a7a90', stroke: '#141c28', lineWidth: 1.5 };
+    case 'path': return { fill: '#6a7a90', stroke: '#141c28', lineWidth: 2.5 };
     case 'lava': return { fill: '#5a2b1f', stroke: '#e0a15c', lineWidth: 1.25 };
     case 'swamp': return { fill: '#1d3a2c', stroke: 'rgba(90,140,200,.10)', lineWidth: 1 };
     case 'tileB': return { fill: '#0c1522', stroke: 'rgba(90,140,200,.10)', lineWidth: 1 };
@@ -433,6 +434,32 @@ export function createRenderer(canvas, { size = null } = {}) {
     ctx.fillRect(x - w / 2, y, w * Math.max(0, Math.min(1, pct)), h);
   }
 
+  /** 单位图的锚点是底边中点。高度按剪影原来占的屏幕尺寸，不按 PNG 的原始像素画。 */
+  function drawSprite(frame, cx, groundY, height) {
+    if (!frame?.image || !frame.w || !frame.h || !height) return false;
+    const dh = height;
+    const dw = dh * (frame.w / frame.h);
+    ctx.drawImage(frame.image, cx - dw / 2, groundY - dh, dw, dh);
+    return true;
+  }
+
+  /** 地块图中心对齐格子。没有这张图就返回 false，调用方继续填色。 */
+  function paintCell(x, y, kind) {
+    const frame = spriteFrame(tileSpriteKey(kind));
+    if (!frame) return false;
+    const c = toScreen(x, y);
+    const tw = GRID.tileW * view.scale;
+    const th = GRID.tileH * view.scale;
+    ctx.drawImage(frame.image, c.x - tw / 2, c.y - th / 2, tw, th);
+    return true;
+  }
+
+  function drawTowerBody(towerId, level, cx, cy, size, style) {
+    const frame = spriteFrame(towerSpriteKey(towerId, level));
+    if (frame && drawSprite(frame, cx, cy + size * 0.5, size * 2.4)) return;
+    paintSilhouette(ctx, cx, cy, size, towerSilhouette(towerId, level), style);
+  }
+
   function drawTiles(m) {
     const g = m.map?.grid ?? GRID;
     for (let y = 0; y < g.h; y++) {
@@ -443,20 +470,24 @@ export function createRenderer(canvas, { size = null } = {}) {
         const c = toScreen(x, y);
         const kind = lava ? 'lava' : onPath ? 'path' : swamp ? 'swamp' : ((x + y) % 2 ? 'tileA' : 'tileB');
         const paint = terrainPaint(kind);
+        if (!paintCell(x, y, kind)) {
+          tilePath(x, y);
+          ctx.fillStyle = paint.fill;
+          ctx.fill();
+          // 沼泽加两粒固定位置的噪点（别用随机，否则每帧都在闪）。图里已经有噪点，就不重复画。
+          if (swamp && !onPath && !lava && (x * 3 + y) % 2 === 0) {
+            ctx.fillStyle = 'rgba(168,214,176,.55)';
+            const s = Math.max(1, 1.6 * view.scale);
+            ctx.fillRect(c.x - 3 * view.scale, c.y - s, s, s);
+            ctx.fillRect(c.x + 4 * view.scale, c.y + 2 * view.scale, s, s);
+          }
+        }
+        // 边是程序描的，不交给贴图。路径是硬边；可建地和装饰块用自己的软边，不能画成能走的路。
         tilePath(x, y);
-        ctx.fillStyle = paint.fill;
-        ctx.fill();
         ctx.strokeStyle = paint.stroke;
         ctx.lineWidth = paint.lineWidth;
         ctx.stroke();
         ctx.lineWidth = 1;
-        // 沼泽加两粒固定位置的噪点（别用随机，否则每帧都在闪）
-        if (swamp && !onPath && !lava && (x * 3 + y) % 2 === 0) {
-          ctx.fillStyle = 'rgba(168,214,176,.55)';
-          const s = Math.max(1, 1.6 * view.scale);
-          ctx.fillRect(c.x - 3 * view.scale, c.y - s, s, s);
-          ctx.fillRect(c.x + 4 * view.scale, c.y + 2 * view.scale, s, s);
-        }
         if (onPath && (x + y) % 3 === 0) label('·', c.x, c.y, 'rgba(12,18,28,.45)', 14);
       }
     }
@@ -566,7 +597,7 @@ export function createRenderer(canvas, { size = null } = {}) {
     const size = (16 + t.level * 3) * view.scale + 7;
     ctx.fillStyle = 'rgba(0,0,0,.35)';
     ctx.beginPath(); ctx.ellipse(c.x, c.y + size * 0.5, size * 0.9, size * 0.4, 0, 0, Math.PI * 2); ctx.fill();
-    paintSilhouette(ctx, c.x, c.y, size, towerSilhouette(t.towerId, t.level), {
+    drawTowerBody(t.towerId, t.level, c.x, c.y, size, {
       fill: color,
       accent: color,
       stroke: selected ? '#8ee08a' : 'rgba(10,20,30,.6)',
@@ -584,12 +615,28 @@ export function createRenderer(canvas, { size = null } = {}) {
     ctx.ellipse(c.x, c.y + size * 0.42, size * 0.92, size * 0.40, 0, 0, Math.PI * 2);
     ctx.stroke();
     ctx.lineWidth = 1;
-    if (selected) {
-      ctx.beginPath();
-      ctx.ellipse(c.x, c.y + size * 0.5, t.stats.range * (GRID.tileW / 2) * view.scale, t.stats.range * (GRID.tileH / 2) * view.scale, 0, 0, Math.PI * 2);
-      ctx.strokeStyle = 'rgba(142,224,138,.35)';
-      ctx.stroke();
-    }
+  }
+
+  /**
+   * 射程圈画在地面上（等距椭圆）。深色底 + 浅色边，在路径和可建地上都读得到。
+   * 选中已建塔、预测放置、轮盘悬停某个塔种时才画。
+   */
+  function drawRangeRing(cell, range) {
+    if (!cell || !(Number(range) > 0)) return;
+    const c = toScreen(cell.x, cell.y, 0);
+    const rx = range * (GRID.tileW / 2) * view.scale;
+    const ry = range * (GRID.tileH / 2) * view.scale;
+    ctx.beginPath();
+    ctx.ellipse(c.x, c.y, rx, ry, 0, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255, 244, 210, .14)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(8, 12, 18, .92)';
+    ctx.lineWidth = 5;
+    ctx.stroke();
+    ctx.strokeStyle = '#fff4d2';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.lineWidth = 1;
   }
 
   function drawMonster(m, mo) {
@@ -609,10 +656,23 @@ export function createRenderer(canvas, { size = null } = {}) {
     }
     const fill = mo.isAir ? COLORS.air : COLORS.mob[tier] ?? '#c9d6e6';
     const spec = mobSilhouette({ ...mo.def, isAir: mo.isAir || mo.def.isAir });
-    paintSilhouette(ctx, c.x, c.y, r, spec, {
-      fill,
-      accent: spec.aura ? '#ffd08a' : fill,
-    });
+    const frame = spriteFrame(mobSpriteKey(mo.def?.id));
+    if (frame && drawSprite(frame, c.x, c.y + r * 0.62, r * 2.5)) {
+      // 光环是特性，不是身体。静帧里没画出来时，这一圈仍要留着。
+      if (spec.aura) {
+        ctx.strokeStyle = '#ffd08a';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.ellipse(c.x, c.y, r * 1.35, r * 1.05, 0, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.lineWidth = 1;
+      }
+    } else {
+      paintSilhouette(ctx, c.x, c.y, r, spec, {
+        fill,
+        accent: spec.aura ? '#ffd08a' : fill,
+      });
+    }
     bar(c.x, c.y - r - 8, r * 2.2, 4, mo.hp / mo.maxHp, tier === 'boss' ? '#d1503f' : '#8ee08a');
     if (mo.def.armorType === 'fortified') label('盾', c.x, c.y + r + 8, '#ffd08a', 10);
     if (mo.attacking) label('!', c.x + r, c.y - r, '#ffb4a0', 12);
@@ -627,13 +687,32 @@ export function createRenderer(canvas, { size = null } = {}) {
     // 人物同样按小数位置画：防守里 `carry` 就是「走向下一格的进度」（相机也用它，见 drawDefense）
     const hp = heroPos(h);
     const c = toScreen(hp.x, hp.y, 1.0);
-    const r = 12 * view.scale + 6;
+    // 比塔的身体大一档，避免和塔挤成同一号剪影。
+    const r = 16 * view.scale + 8;
     const fill = h.dead ? '#5a6474' : (TEAM_COLORS[localSlot % TEAM_COLORS.length] ?? COLORS.hero);
-    paintSilhouette(ctx, c.x, c.y, r, heroSilhouette(h.def?.id), {
-      fill,
-      accent: h.dead ? '#c5ced6' : '#f7fbff',
-      stroke: 'rgba(8,14,22,.7)',
-    });
+    // 这批没有死亡帧：倒下之后继续用灰色剪影，即使待机图已经在。
+    const frame = h.dead ? null : spriteFrame(heroSpriteKey(h.def?.id));
+    if (frame && drawSprite(frame, c.x, c.y + r * 0.62, r * 2.6)) {
+      ctx.strokeStyle = TEAM_COLORS[localSlot % TEAM_COLORS.length] ?? COLORS.hero;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.ellipse(c.x, c.y + r * 0.55, r * 0.95, r * 0.36, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.lineWidth = 1;
+    } else {
+      paintSilhouette(ctx, c.x, c.y, r, heroSilhouette(h.def?.id), {
+        fill,
+        accent: h.dead ? '#c5ced6' : '#f7fbff',
+        stroke: 'rgba(8,14,22,.7)',
+      });
+    }
+    // 暖色轮廓只有英雄有。塔的队伍色在底座环上，不走这一圈。
+    ctx.strokeStyle = h.dead ? '#8b95a3' : '#ffd68a';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.ellipse(c.x, c.y - r * 0.05, r * 1.05, r * 0.82, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.lineWidth = 1;
     const max = Math.max(1, h.def.hp);
     bar(c.x, c.y - r - 8, r * 2.4, 4, h.hp / max, '#8ee08a');
     label(h.dead ? `复活 ${Math.ceil(h.reviveTimer)}s` : `Lv${h.level}`, c.x, c.y + r + 10, '#dff5dd', 11);
@@ -675,7 +754,7 @@ export function createRenderer(canvas, { size = null } = {}) {
 
   function draw(isoView) {
     if (isoView.m?.mode === 'defense') return drawDefense(isoView);
-    const { m, selectedSlot, selectedTower, floaters = [], pending = [], hintSlots = 0, localSlot = 0, now = 0, pulses = true } = isoView;
+    const { m, selectedSlot, selectedTower, floaters = [], pending = [], hintSlots = 0, localSlot = 0, now = 0, pulses = true, placingTowerId = null } = isoView;
     const grid = m.map?.grid ?? GRID;
     if (grid.w !== GRID.w || grid.h !== GRID.h) resize(grid);   // 4★ 起的大图按自己的尺寸适配镜头
     ctx.fillStyle = COLORS.bg;
@@ -691,7 +770,7 @@ export function createRenderer(canvas, { size = null } = {}) {
       const c = toScreen(cell.x, cell.y, 0.9);
       const size = (16 + 3) * view.scale + 7;
       ctx.globalAlpha = 0.5;
-      paintSilhouette(ctx, c.x, c.y, size, towerSilhouette(p.towerId, 1), {
+      drawTowerBody(p.towerId, 1, c.x, c.y, size, {
         fill: COLORS.tower[p.towerId] ?? '#dbe6f2',
         accent: COLORS.tower[p.towerId] ?? '#dbe6f2',
         stroke: '#ffffff',
@@ -713,6 +792,17 @@ export function createRenderer(canvas, { size = null } = {}) {
     ].sort((a, b) => a.depth - b.depth);
     for (const d of drawables) d.draw();
     drawProjectiles(m);
+    for (const t of m.towers) {
+      if (selectedTower === t.slot) drawRangeRing(t.cell, t.stats?.range);
+    }
+    for (const p of pending) {
+      const cell = m.map.slots[p.slot];
+      if (cell && TOWERS[p.towerId]) drawRangeRing(cell, towerStatsAt(m.map, cell, p.towerId, 1).range);
+    }
+    if (placingTowerId && TOWERS[placingTowerId] && selectedSlot != null && !m.towers.some((t) => t.slot === selectedSlot)) {
+      const cell = m.map.slots[selectedSlot];
+      if (cell) drawRangeRing(cell, towerStatsAt(m.map, cell, placingTowerId, 1).range);
+    }
     drawFloaters(floaters, now);
   }
 
@@ -738,13 +828,14 @@ export function createRenderer(canvas, { size = null } = {}) {
     // 地面（只画视口内的格子）
     for (let y = bounds.y0; y <= bounds.y1; y++) {
       for (let x = bounds.x0; x <= bounds.x1; x++) {
-        const c = toScreen(x, y);
-        tilePath(x, y);
-        ctx.fillStyle = (x + y) % 2 ? COLORS.tileA : COLORS.tileB;
-        ctx.fill();
-        ctx.strokeStyle = 'rgba(90,140,200,.08)';
-        ctx.stroke();
-        void c;
+        const kind = (x + y) % 2 ? 'tileA' : 'tileB';
+        if (!paintCell(x, y, kind)) {
+          tilePath(x, y);
+          ctx.fillStyle = (x + y) % 2 ? COLORS.tileA : COLORS.tileB;
+          ctx.fill();
+          ctx.strokeStyle = 'rgba(90,140,200,.08)';
+          ctx.stroke();
+        }
       }
     }
 
@@ -786,11 +877,19 @@ export function createRenderer(canvas, { size = null } = {}) {
       if (built) {
         const isWall = built.fortId === 'fort_wall' || !built.stats;
         const size = (isWall ? 14 : 18) * view.scale + 6;
-        paintSilhouette(ctx, c.x, c.y, size, isWall ? wallSilhouette() : towerSilhouette('tw_arrow', 1), {
-          fill: isWall ? '#6b7a90' : '#dbe6f2',
-          accent: '#dbe6f2',
-          stroke: 'rgba(8,14,22,.65)',
-        });
+        if (isWall) {
+          paintSilhouette(ctx, c.x, c.y, size, wallSilhouette(), {
+            fill: '#6b7a90',
+            accent: '#dbe6f2',
+            stroke: 'rgba(8,14,22,.65)',
+          });
+        } else {
+          drawTowerBody('tw_arrow', 1, c.x, c.y, size, {
+            fill: '#dbe6f2',
+            accent: '#dbe6f2',
+            stroke: 'rgba(8,14,22,.65)',
+          });
+        }
         if (!isWall) bar(c.x, c.y + size * 0.7, size * 1.8, 4, 1, '#8ee08a');
       } else {
         tilePath(s.x, s.y);
