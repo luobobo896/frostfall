@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 
 import { createMatch, buildTower, update } from '../src/match.js';
 import { heroPos, posAt, project } from '../src/core.js';
-import { GRID, MONSTERS, TICK_STEP } from '../src/data.js';
+import { GRID, HEROES, MONSTERS, TICK_STEP } from '../src/data.js';
 
 globalThis.window = { devicePixelRatio: 1 };
 
@@ -22,7 +22,9 @@ function fakeContext() {
   return ctx;
 }
 
-const { createRenderer, hintPulseAlpha } = await import('../src/render.js');
+const {
+  createRenderer, hintPulseAlpha, terrainPaint, towerSilhouette, mobSilhouette, heroSilhouette,
+} = await import('../src/render.js');
 
 test('等距投影：格坐标 → 屏幕往返可逆（点击判定依赖它）', () => {
   const ctx = fakeContext();
@@ -322,4 +324,231 @@ test('§143 拖多远地图都还看得见（相机有夹取）', () => {
     r.zoomAt(3, 1334, 750);
     assert.ok(seen(grid).overlapX >= 60 && seen(grid).overlapY >= 60, '放大到 3× 之后地图还在屏幕里');
   }
+});
+
+// P0：战场还是 Canvas 几何，但剪影必须能在灰度下分开。下面这些断言看的是
+// 形状数据本身（不读像素），再抽一帧确认绘制路径真的把它们画出去了。
+const lum = (hex) => {
+  const n = Number.parseInt(hex.slice(1), 16);
+  const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+};
+const silhouetteBounds = (spec) => {
+  const xs = [];
+  const ys = [];
+  for (const part of spec.parts) {
+    if (part.ellipse) {
+      const [x, y, rx, ry] = part.ellipse;
+      xs.push(x - Math.abs(rx), x + Math.abs(rx));
+      ys.push(y - Math.abs(ry), y + Math.abs(ry));
+    }
+    for (const [x, y] of part.points ?? []) { xs.push(x); ys.push(y); }
+  }
+  return { w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) };
+};
+
+test('P0 塔剪影：箭柱 / 炮管 / 冰晶 / 电弧各不相同，升级会加构件', () => {
+  const ids = ['tw_arrow', 'tw_cannon', 'tw_frost', 'tw_static'];
+  const sigs = ids.map((id) => JSON.stringify(towerSilhouette(id, 1).parts));
+  assert.equal(new Set(sigs).size, 4, '四种塔的 Lv1 轮廓必须互不相同');
+
+  const arrow = towerSilhouette('tw_arrow', 1);
+  assert.ok(arrow.parts.some((p) => p.role === 'pillar') && arrow.parts.some((p) => p.role === 'roof'), '箭塔 = 柱 + 三角顶');
+  assert.ok(towerSilhouette('tw_cannon', 1).parts.some((p) => p.role === 'barrel'), '炮塔要有炮管');
+  assert.ok(towerSilhouette('tw_frost', 1).parts.filter((p) => p.role === 'crystal').length >= 3, '冰塔是一簇水晶，不是单颗菱形');
+  const electric = towerSilhouette('tw_static', 1);
+  assert.ok(electric.parts.some((p) => p.role === 'rod') && electric.parts.filter((p) => p.role === 'arc').length >= 2, '电塔 = 杆 + 两侧电弧');
+
+  const arrowBox = silhouetteBounds(arrow);
+  const cannonBox = silhouetteBounds(towerSilhouette('tw_cannon', 1));
+  assert.ok(arrowBox.h / arrowBox.w > cannonBox.h / cannonBox.w, '箭塔应比炮塔更瘦高');
+
+  const legacy = JSON.stringify([[0, -1], [0.8, 0], [0, 0.6], [-0.8, 0]]);
+  for (const id of ids) {
+    for (const lv of [1, 2, 3]) {
+      const spec = towerSilhouette(id, lv);
+      assert.ok(spec.parts.length >= 2, `${id} Lv${lv} 至少两块构件，不能退回单颗菱形`);
+      for (const part of spec.parts) {
+        if (part.points) assert.notEqual(JSON.stringify(part.points), legacy, `${id} Lv${lv} 仍是旧菱形`);
+      }
+    }
+    assert.ok(towerSilhouette(id, 3).parts.length > towerSilhouette(id, 1).parts.length, `${id} Lv3 要比 Lv1 多一块`);
+  }
+  const barrelReach = (lv) => Math.max(...towerSilhouette('tw_cannon', lv).parts.find((p) => p.role === 'barrel').points.map((p) => p[0]));
+  assert.ok(barrelReach(2) > barrelReach(1) && barrelReach(3) > barrelReach(2), '炮管随等级变长');
+});
+
+test('P0 怪剪影：空中有翼、重甲方块、分裂双圆、光环外圈、Boss 尖刺星', () => {
+  const air = mobSilhouette(MONSTERS.mob_03);
+  assert.equal(air.shape, 'air');
+  const wings = air.parts.filter((p) => p.role === 'wing');
+  assert.equal(wings.length, 2, '空中单位左右各一只翼');
+  const wingMin = Math.min(...wings.flatMap((p) => p.points.map((pt) => pt[0])));
+  const bodyMin = Math.min(...air.parts.find((p) => p.role === 'body').points.map((pt) => pt[0]));
+  assert.ok(wingMin < bodyMin - 0.5, '翅膀要比身体宽，不能只靠抬高来认空中');
+
+  const fort = mobSilhouette(MONSTERS.mob_10);
+  assert.equal(fort.shape, 'fortified');
+  assert.ok(fort.parts.every((p) => !p.ellipse), '重甲是方块，不是和塔一样的椭圆/菱形');
+
+  const split = mobSilhouette(MONSTERS.mob_11);
+  assert.equal(split.shape, 'split');
+  assert.equal(split.parts.filter((p) => p.ellipse).length, 2, '死亡分裂是并排的两个圆');
+
+  const aura = mobSilhouette(MONSTERS.mob_12);
+  assert.equal(aura.shape, 'ground');
+  assert.equal(aura.aura, true);
+  assert.ok(aura.parts.some((p) => p.role === 'aura' && p.strokeOnly), '光环是身体外面的一圈');
+
+  const boss = mobSilhouette(MONSTERS.boss_01);
+  assert.equal(boss.shape, 'boss');
+  assert.ok(boss.parts.find((p) => p.role === 'body').points.length >= 12, 'Boss 是尖刺星，顶点要够多');
+  const auraBoss = mobSilhouette(MONSTERS.boss_02);
+  assert.equal(auraBoss.shape, 'boss');
+  assert.equal(auraBoss.aura, true, '带光环的 Boss 仍是星，光环叠在外面');
+
+  const ground = mobSilhouette(MONSTERS.mob_01);
+  assert.equal(ground.shape, 'ground');
+  assert.ok(ground.parts.some((p) => p.role === 'body' && p.ellipse && p.ellipse[0] === 0 && p.ellipse[1] === 0));
+  assert.ok(ground.parts.some((p) => p.role === 'horn'), '地面普通怪要有角/耳，不能只剩一颗椭圆');
+  assert.equal(mobSilhouette(MONSTERS.mob_04).shape, 'ground', '重甲类型才换成方块；普通厚甲仍是地面怪');
+
+  const airBody = JSON.stringify(air.parts.find((p) => p.role === 'body').points);
+  for (const id of ['tw_arrow', 'tw_cannon', 'tw_frost', 'tw_static']) {
+    for (const lv of [1, 2, 3]) {
+      for (const part of towerSilhouette(id, lv).parts) {
+        if (part.points) assert.notEqual(JSON.stringify(part.points), airBody, `${id} 不应和空中怪共用同一块菱形`);
+      }
+    }
+  }
+});
+
+test('P0 英雄剪影：头 + 身体 + 按职业分开的短武器', () => {
+  const ids = ['hero_warrior', 'hero_mage', 'hero_ranger', 'hero_paladin'];
+  assert.deepEqual(ids.map((id) => heroSilhouette(id).weapon), ['blade', 'staff', 'bow', 'hammer']);
+  const weaponSigs = ids.map((id) => JSON.stringify(heroSilhouette(id).parts.filter((p) => p.role === 'weapon')));
+  assert.equal(new Set(weaponSigs).size, 4);
+  for (const id of ids) {
+    const spec = heroSilhouette(HEROES[id].id);
+    assert.ok(spec.parts.some((p) => p.role === 'head' && p.ellipse), `${id} 要有头`);
+    assert.ok(spec.parts.some((p) => p.role === 'body' && p.points?.length === 4), `${id} 要有梯形身体`);
+    assert.ok(spec.parts.some((p) => p.role === 'weapon'), `${id} 要有武器`);
+  }
+  const blade = heroSilhouette('hero_warrior').parts.find((p) => p.role === 'weapon').points;
+  assert.ok(Math.abs(blade[1][0] - blade[0][0]) > 0.4 && Math.abs(blade[1][1] - blade[0][1]) > 0.4, '武者是斜着的刀');
+  const staff = heroSilhouette('hero_mage').parts.find((p) => p.role === 'weapon' && p.points).points;
+  assert.ok(Math.abs(staff[1][0] - staff[0][0]) < 0.05 && staff[0][1] - staff[1][1] > 1, '法师是竖着的杖');
+  assert.equal(heroSilhouette('nope').weapon, 'blade', '未知职业退回刀，仍然是人形');
+});
+
+test('P0 地形：路径比可建地亮，并且描边更深；岩浆保留原色加亮边', () => {
+  const path = terrainPaint('path');
+  const tileA = terrainPaint('tileA');
+  const tileB = terrainPaint('tileB');
+  assert.equal(path.fill, '#6a7a90');
+  assert.equal(tileA.fill, '#10192a');
+  assert.equal(tileB.fill, '#0c1522');
+  assert.ok(lum(path.fill) > lum(tileA.fill) + 50, '路径要比可建地亮一档');
+  assert.ok(lum(tileB.fill) < lum(tileA.fill), '棋盘两色里 B 更暗');
+  assert.ok(lum(path.stroke) + 40 < lum(path.fill), '路径描边要比填充深');
+  assert.equal(terrainPaint('swamp').fill, '#1d3a2c');
+  const lava = terrainPaint('lava');
+  assert.equal(lava.fill, '#5a2b1f');
+  assert.ok(lum(lava.stroke) > lum(lava.fill), '岩浆边比岩浆底亮');
+
+  const rects = (mapId) => {
+    const ctx = fakeContext();
+    const canvas = { clientWidth: 1334, clientHeight: 750, width: 0, height: 0, getContext: () => ctx };
+    const r = createRenderer(canvas);
+    const m = createMatch({ mapId, seed: 1 });
+    r.draw({ m, selectedSlot: null, selectedTower: null, now: 0 });
+    return ctx.calls.filter((c) => c.name === 'fillRect').length;
+  };
+  assert.ok(rects('map_03') > rects('map_01') + 10, '沼泽格要多画出噪点');
+  const lavaCtx = fakeContext();
+  const lavaCanvas = { clientWidth: 1334, clientHeight: 750, width: 0, height: 0, getContext: () => lavaCtx };
+  createRenderer(lavaCanvas).draw({ m: createMatch({ mapId: 'map_04', seed: 1 }), selectedSlot: null, selectedTower: null, now: 0 });
+  assert.ok(lavaCtx.calls.length > 100, '熔岩地图要能画完一整帧');
+});
+
+test('P0 绘制路径：四塔、五种怪、四职业走的折线互不相同，队伍色环还在', () => {
+  const frame = (setup) => {
+    const ctx = fakeContext();
+    const canvas = { clientWidth: 1334, clientHeight: 750, width: 0, height: 0, getContext: () => ctx };
+    const r = createRenderer(canvas);
+    const m = setup(r);
+    r.draw({ m, selectedSlot: null, selectedTower: null, now: 0 });
+    const sig = ctx.calls
+      .filter((c) => c.name === 'moveTo' || c.name === 'lineTo' || c.name === 'ellipse')
+      .map((c) => `${c.name}:${c.args.map((n) => (typeof n === 'number' ? n.toFixed(1) : n)).join(',')}`)
+      .join(';');
+    return { ctx, r, m, sig };
+  };
+  const towerSigs = ['tw_arrow', 'tw_cannon', 'tw_frost', 'tw_static'].map((id) => frame(() => {
+    const m = createMatch({ mapId: 'map_01', seed: 1 });
+    m.gold = 999;
+    assert.ok(buildTower(m, 0, id), `${id} 应该建得起来`);
+    m.towers = m.towers.filter((t) => t.slot === 0);
+    m.monsters = [];
+    return m;
+  }).sig);
+  assert.equal(new Set(towerSigs).size, 4, '四种塔画出来的路径必须不同');
+
+  const placed = frame(() => {
+    const m = createMatch({ mapId: 'map_01', seed: 1 });
+    m.gold = 999;
+    buildTower(m, 0, 'tw_arrow');
+    m.towers = m.towers.filter((t) => t.slot === 0);
+    m.monsters = [];
+    return m;
+  });
+  const tower = placed.m.towers[0];
+  const origin = placed.r.toScreen(tower.cell.x, tower.cell.y, 0.9);
+  const size = (16 + tower.level * 3) * placed.r.scale + 7;
+  const ring = placed.ctx.calls.find((c) => c.name === 'ellipse'
+    && Math.abs(c.args[0] - origin.x) < 0.5
+    && Math.abs(c.args[1] - (origin.y + size * 0.42)) < 0.5
+    && Math.abs(c.args[2] - size * 0.92) < 0.5);
+  assert.ok(ring, '队伍色环仍画在塔的底座上');
+
+  const mobOf = (def) => frame(() => {
+    const m = createMatch({ mapId: 'map_01', seed: 1 });
+    m.towers = [];
+    m.monsters = [{
+      uid: 1, mobId: def.id, def, pathIndex: 0, dist: 0,
+      cell: { ...m.map.paths[0].spawn }, hp: def.hp, maxHp: def.hp,
+      armorType: def.armorType, isAir: !!def.isAir, attacking: false, dead: false,
+    }];
+    return m;
+  }).sig;
+  const mobSigs = [MONSTERS.mob_01, MONSTERS.mob_03, MONSTERS.mob_10, MONSTERS.mob_11, MONSTERS.boss_01].map(mobOf);
+  assert.equal(new Set(mobSigs).size, 5, '五种特性的怪画出来的路径必须不同');
+
+  const heroSigs = ['hero_warrior', 'hero_mage', 'hero_ranger', 'hero_paladin'].map((id) => frame(() => {
+    const m = createMatch({ mapId: 'map_01', seed: 1, heroId: id });
+    m.towers = [];
+    m.monsters = [];
+    return m;
+  }).sig);
+  assert.equal(new Set(heroSigs).size, 4, '四职业英雄画出来的路径必须不同');
+});
+
+test('P0 地标：出生点有旗杆，核心脚下有一圈光', () => {
+  const ctx = fakeContext();
+  const canvas = { clientWidth: 1334, clientHeight: 750, width: 0, height: 0, getContext: () => ctx };
+  const r = createRenderer(canvas);
+  const m = createMatch({ mapId: 'map_01', seed: 1 });
+  m.towers = [];
+  m.monsters = [];
+  r.draw({ m, selectedSlot: null, selectedTower: null, now: 0 });
+  const sp = m.map.paths[0].spawn;
+  const s = r.toScreen(sp.x, sp.y, 0);
+  const pole = ctx.calls.filter((c) => c.name === 'lineTo' && Math.abs(c.args[0] - s.x) < 1.5 && c.args[1] < s.y - 8);
+  assert.ok(pole.length >= 1, '出生格应有一根向上的旗杆');
+  const g = r.toScreen(m.core.cell.x, m.core.cell.y, 0);
+  const expectRx = (GRID.tileW / 2) * r.scale * 0.92;
+  const halo = ctx.calls.filter((c) => c.name === 'ellipse'
+    && Math.abs(c.args[0] - g.x) < 1 && Math.abs(c.args[1] - g.y) < 1
+    && Math.abs(c.args[2] - expectRx) < 1);
+  assert.ok(halo.length >= 1, '核心所在格应有一圈大约一格宽的光');
 });
