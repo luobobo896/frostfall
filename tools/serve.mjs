@@ -9,7 +9,8 @@ import { gzipSync } from 'node:zlib';
 const root = fileURLToPath(new URL('..', import.meta.url));
 const port = Number(process.argv[2] ?? 8788);
 const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
-  '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8', '.md': 'text/markdown; charset=utf-8' };
+  '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8', '.md': 'text/markdown; charset=utf-8',
+  '.png': 'image/png' };
 /**
  * §186：**按需 gzip 文本资源**。首屏预算是 §10.7 那条「低端 4G ≤ 3 秒」，而这一包是 20 个模块 +
  * 样式 + HTML（约 388 KB 未压缩）：1.6 Mbps 的链路上光传输就要 1.9 秒，再叠上模块图那几跳 RTT，
