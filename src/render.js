@@ -1,4 +1,4 @@
-// 等距 2:1 渲染（§14.1）。全部是占位图：色块 + 文字标签（§14.6），接口与正式资源一致。
+// 等距 2:1 渲染（§14.1）。仍是占位图（§14.6）：不接美术管线，只用剪影把塔 / 怪 / 英雄 / 路分开。
 
 import { DEFENSE_MAPS, GRID, MAPS, MONSTERS, QUALITY, TEAM_COLORS, TOWERS } from './data.js';
 import { buildMap, heroPos, posAt, project } from './core.js';
@@ -6,12 +6,234 @@ import { heroMaxHp } from './match.js';
 import { isLowHp } from './hud-model.js';
 import { viewport } from './platform.js';   // §平台适配：像素比在两个环境里的取法不同
 
+/**
+ * 地形填色。路径要比可建地亮一档并带深色描边，否则整张图是同一块深蓝灰。
+ * 岩浆保持原来的 `#5a2b1f`，只加一圈亮边；沼泽绿不变。
+ */
+export function terrainPaint(kind) {
+  switch (kind) {
+    case 'path': return { fill: '#6a7a90', stroke: '#141c28', lineWidth: 1.5 };
+    case 'lava': return { fill: '#5a2b1f', stroke: '#e0a15c', lineWidth: 1.25 };
+    case 'swamp': return { fill: '#1d3a2c', stroke: 'rgba(90,140,200,.10)', lineWidth: 1 };
+    case 'tileB': return { fill: '#0c1522', stroke: 'rgba(90,140,200,.10)', lineWidth: 1 };
+    case 'tileA':
+    default: return { fill: '#10192a', stroke: 'rgba(90,140,200,.10)', lineWidth: 1 };
+  }
+}
+
+const r3 = (n) => Math.round(n * 1000) / 1000;
+
+/** 尖刺星。外半径 1，调用方用自己的 `r` 去缩放（Boss 的 r 本来就比普通怪大约一倍）。 */
+function starPoints(spikes, outer, inner, squash = 0.78) {
+  const pts = [];
+  for (let i = 0; i < spikes * 2; i++) {
+    const a = -Math.PI / 2 + (i * Math.PI) / spikes;
+    const rad = i % 2 === 0 ? outer : inner;
+    pts.push([r3(Math.cos(a) * rad), r3(Math.sin(a) * rad * squash)]);
+  }
+  return pts;
+}
+
+const towerLevel = (level) => Math.min(3, Math.max(1, Math.round(Number(level) || 1)));
+
+/**
+ * 塔的剪影（单位坐标，y 向下）。四种塔不再共用一颗菱形：
+ * 箭塔 = 细柱 + 三角顶，炮塔 = 矮墩 + 横炮管，冰塔 = 尖晶簇，电塔 = 细杆 + 两侧电弧。
+ * Lv2/Lv3 加构件，升级不只是把同一颗菱形放大。
+ */
+export function towerSilhouette(towerId, level = 1) {
+  const lv = towerLevel(level);
+  let parts;
+  if (towerId === 'tw_cannon') {
+    const reach = [0.92, 1.16, 1.4][lv - 1];
+    parts = [
+      { role: 'base', points: [[-0.7, 0.55], [0.7, 0.55], [0.7, -0.08], [-0.7, -0.08]], closed: true },
+      { role: 'barrel', points: [[0.1, -0.02], [reach, -0.02], [reach, -0.36], [0.1, -0.36]], closed: true },
+    ];
+    if (lv >= 3) {
+      parts.push({ role: 'barrel', points: [[0.1, -0.42], [reach - 0.18, -0.42], [reach - 0.18, -0.68], [0.1, -0.68]], closed: true });
+    }
+  } else if (towerId === 'tw_frost') {
+    const tip = [-1.15, -1.31, -1.47][lv - 1];
+    const side = lv > 1 ? 0.14 : 0;
+    parts = [
+      { role: 'crystal', points: [[0, tip], [-0.3, 0.48], [0.3, 0.48]], closed: true },
+      { role: 'crystal', points: [[-0.62, r3(-0.42 - side)], [-0.9, 0.42], [-0.22, 0.28]], closed: true },
+      { role: 'crystal', points: [[0.58, r3(-0.55 - side)], [0.92, 0.38], [0.2, 0.22]], closed: true },
+    ];
+    if (lv >= 3) parts.push({ role: 'crystal', points: [[0, -0.35], [-0.16, 0.2], [0.16, 0.2]], closed: true });
+  } else if (towerId === 'tw_static') {
+    const top = [-1.02, -1.14, -1.26][lv - 1];
+    parts = [
+      { role: 'rod', points: [[-0.08, 0.55], [0.08, 0.55], [0.08, top], [-0.08, top]], closed: true },
+      { role: 'arc', points: [[0, -0.62], [-0.38, -0.38], [-0.16, -0.12], [-0.62, 0.12]], closed: false },
+      { role: 'arc', points: [[0, -0.48], [0.42, -0.22], [0.18, 0.02], [0.66, 0.22]], closed: false },
+      { role: 'knob', ellipse: [0, r3(top - 0.1), 0.14, 0.12] },
+    ];
+    if (lv >= 3) {
+      parts.push(
+        { role: 'arc', points: [[0, -0.2], [-0.48, 0.05], [-0.2, 0.28], [-0.7, 0.42]], closed: false },
+        { role: 'arc', points: [[0, -0.12], [0.5, 0.12], [0.22, 0.34], [0.72, 0.48]], closed: false },
+      );
+    }
+  } else {
+    // 箭塔，以及未知 id：退回箭塔而不是旧的四顶点菱形
+    parts = [
+      { role: 'pillar', points: [[-0.16, 0.55], [0.16, 0.55], [0.16, -0.32], [-0.16, -0.32]], closed: true },
+      { role: 'roof', points: [[-0.64, -0.26], [0, -1.12], [0.64, -0.26]], closed: true },
+    ];
+    if (lv >= 2) parts.push({ role: 'brace', points: [[-0.28, -0.05], [0.28, -0.05], [0.28, 0.08], [-0.28, 0.08]], closed: true });
+    if (lv >= 3) parts.push({ role: 'spire', points: [[-0.2, -1.02], [0, -1.48], [0.2, -1.02]], closed: true });
+  }
+  return { id: towerId, level: lv, parts };
+}
+
+/**
+ * 怪的剪影按特性，不按「再画一颗椭圆」。
+ * 优先级：Boss 星形 > 空中（菱形身 + 翼，翼宽过身，不靠抬高认）> 死亡分裂双圆 > 重甲/攻城方块 > 地面带角的身体。
+ * `aura` 是叠加上去的外环，不把 Boss 或地面怪改成另一种身体。
+ */
+export function mobSilhouette(def = {}) {
+  const boss = def.tier === 'boss' || !!def.bossTier;
+  const air = !!def.isAir;
+  const split = !!def.onDeath;
+  const fortified = def.armorType === 'fortified' || !!def.siege;
+  const aura = !!def.aura;
+  let shape = 'ground';
+  if (boss) shape = 'boss';
+  else if (air) shape = 'air';
+  else if (split) shape = 'split';
+  else if (fortified) shape = 'fortified';
+  let parts;
+  if (shape === 'boss') {
+    parts = [{ role: 'body', points: starPoints(8, 1, 0.46), closed: true }];
+  } else if (shape === 'air') {
+    parts = [
+      { role: 'body', points: [[0, -0.92], [0.42, 0.05], [0, 0.62], [-0.42, 0.05]], closed: true },
+      { role: 'wing', points: [[-0.18, -0.05], [-1.28, -0.62], [-0.28, 0.32]], closed: true },
+      { role: 'wing', points: [[0.18, -0.05], [1.28, -0.62], [0.28, 0.32]], closed: true },
+    ];
+  } else if (shape === 'split') {
+    parts = [
+      { role: 'body', ellipse: [-0.46, 0.04, 0.5, 0.44] },
+      { role: 'body', ellipse: [0.46, -0.02, 0.42, 0.38] },
+    ];
+  } else if (shape === 'fortified') {
+    parts = [
+      { role: 'body', points: [[-0.78, -0.42], [-0.42, -0.72], [0.42, -0.72], [0.78, -0.42], [0.78, 0.48], [0.42, 0.72], [-0.42, 0.72], [-0.78, 0.48]], closed: true },
+      { role: 'plate', points: [[-0.28, -0.15], [0, -0.42], [0.28, -0.15], [0, 0.22]], closed: true },
+    ];
+  } else {
+    parts = [
+      { role: 'body', ellipse: [0, 0, 0.74, 0.58] },
+      { role: 'horn', points: [[-0.28, -0.42], [-0.58, -1.05], [-0.05, -0.5]], closed: true },
+      { role: 'horn', points: [[0.28, -0.42], [0.58, -1.05], [0.05, -0.5]], closed: true },
+    ];
+  }
+  if (aura) parts.push({ role: 'aura', ellipse: [0, 0, 1.35, 1.05], strokeOnly: true });
+  return { shape, aura, parts };
+}
+
+/** 英雄：圆头 + 梯形身 + 一把短武器。四职业只差武器那一笔。 */
+export function heroSilhouette(heroId = 'hero_warrior') {
+  const weapon = heroId === 'hero_mage' ? 'staff'
+    : heroId === 'hero_ranger' ? 'bow'
+      : heroId === 'hero_paladin' ? 'hammer'
+        : 'blade';
+  const parts = [
+    { role: 'head', ellipse: [0, -0.62, 0.32, 0.28] },
+    { role: 'body', points: [[-0.4, 0.62], [-0.24, -0.34], [0.24, -0.34], [0.4, 0.62]], closed: true },
+  ];
+  if (weapon === 'staff') {
+    parts.push({ role: 'weapon', points: [[0.4, 0.58], [0.4, -1.05]], closed: false });
+    parts.push({ role: 'weapon', ellipse: [0.4, -1.14, 0.12, 0.12] });
+  } else if (weapon === 'bow') {
+    parts.push({ role: 'weapon', points: [[0.48, -0.72], [0.92, -0.08], [0.48, 0.52]], closed: false });
+    parts.push({ role: 'weapon', points: [[0.48, -0.72], [0.48, 0.52]], closed: false });
+  } else if (weapon === 'hammer') {
+    parts.push({ role: 'weapon', points: [[0.36, 0.5], [0.36, -0.55]], closed: false });
+    parts.push({ role: 'weapon', points: [[0.08, -0.72], [0.66, -0.72], [0.66, -0.42], [0.08, -0.42]], closed: true });
+  } else {
+    parts.push({ role: 'weapon', points: [[0.16, 0.08], [0.98, -0.78]], closed: false });
+  }
+  return { heroId, weapon, parts };
+}
+
+/** 防守围墙：矮垛口，不再画成和塔一样的菱形。 */
+export function wallSilhouette() {
+  return {
+    parts: [{
+      role: 'wall',
+      points: [
+        [-0.9, 0.42], [0.9, 0.42], [0.9, -0.08],
+        [0.55, -0.08], [0.55, -0.48], [0.2, -0.48], [0.2, -0.08],
+        [-0.2, -0.08], [-0.2, -0.48], [-0.55, -0.48], [-0.55, -0.08],
+        [-0.9, -0.08],
+      ],
+      closed: true,
+    }],
+  };
+}
+
+/** 把 `*Silhouette()` 的单位坐标画到锚点上。封闭块填色，开口折线（电弧、武器）用 accent 描。 */
+function paintSilhouette(ctx, cx, cy, size, spec, style = {}) {
+  const fill = style.fill ?? '#dbe6f2';
+  const outline = style.stroke ?? 'rgba(8,14,22,.78)';
+  const outlineW = style.lineWidth ?? 1;
+  const accent = style.accent ?? fill;
+  const s = size;
+  for (const part of spec.parts) {
+    ctx.beginPath();
+    if (part.ellipse) {
+      const [x, y, rx, ry] = part.ellipse;
+      ctx.ellipse(
+        cx + x * s, cy + y * s,
+        Math.max(0.5, Math.abs(rx) * s), Math.max(0.5, Math.abs(ry) * s),
+        0, 0, Math.PI * 2,
+      );
+      if (part.strokeOnly) {
+        ctx.strokeStyle = accent;
+        ctx.lineWidth = Math.max(1.25, s * 0.08);
+        ctx.stroke();
+      } else {
+        ctx.fillStyle = fill;
+        ctx.fill();
+        ctx.strokeStyle = outline;
+        ctx.lineWidth = outlineW;
+        ctx.stroke();
+      }
+      continue;
+    }
+    const pts = part.points ?? [];
+    if (!pts.length) continue;
+    pts.forEach(([x, y], i) => {
+      const px = cx + x * s;
+      const py = cy + y * s;
+      if (i) ctx.lineTo(px, py);
+      else ctx.moveTo(px, py);
+    });
+    if (part.closed) {
+      ctx.closePath();
+      ctx.fillStyle = fill;
+      ctx.fill();
+      ctx.strokeStyle = outline;
+      ctx.lineWidth = outlineW;
+      ctx.stroke();
+    } else {
+      ctx.strokeStyle = accent;
+      ctx.lineWidth = Math.max(1.5, s * (part.weight ?? 0.1));
+      ctx.stroke();
+    }
+  }
+  ctx.lineWidth = 1;
+}
+
 const COLORS = {
   bg: '#070c14',
-  tileA: '#16243a',
-  tileB: '#131f31',
-  path: '#3d4a5c',
-  swamp: '#1d3a2c',
+  tileA: terrainPaint('tileA').fill,
+  tileB: terrainPaint('tileB').fill,
+  path: terrainPaint('path').fill,
+  swamp: terrainPaint('swamp').fill,
   core: '#7fd4ff',
   tower: { tw_arrow: '#dbe6f2', tw_cannon: '#e0a15c', tw_frost: '#79c8ee', tw_static: '#b98ce6' },
   hero: '#8ee08a',
@@ -219,13 +441,52 @@ export function createRenderer(canvas, { size = null } = {}) {
         const swamp = m.map.swamp.has(`${x},${y}`);
         const lava = m.map.lava?.has(`${x},${y}`);
         const c = toScreen(x, y);
+        const kind = lava ? 'lava' : onPath ? 'path' : swamp ? 'swamp' : ((x + y) % 2 ? 'tileA' : 'tileB');
+        const paint = terrainPaint(kind);
         tilePath(x, y);
-        ctx.fillStyle = lava ? '#5a2b1f' : onPath ? COLORS.path : swamp ? COLORS.swamp : ((x + y) % 2 ? COLORS.tileA : COLORS.tileB);
+        ctx.fillStyle = paint.fill;
         ctx.fill();
-        ctx.strokeStyle = 'rgba(90,140,200,.10)';
+        ctx.strokeStyle = paint.stroke;
+        ctx.lineWidth = paint.lineWidth;
         ctx.stroke();
-        if (onPath && (x + y) % 3 === 0) label('·', c.x, c.y, 'rgba(200,220,240,.25)', 14);
+        ctx.lineWidth = 1;
+        // 沼泽加两粒固定位置的噪点（别用随机，否则每帧都在闪）
+        if (swamp && !onPath && !lava && (x * 3 + y) % 2 === 0) {
+          ctx.fillStyle = 'rgba(168,214,176,.55)';
+          const s = Math.max(1, 1.6 * view.scale);
+          ctx.fillRect(c.x - 3 * view.scale, c.y - s, s, s);
+          ctx.fillRect(c.x + 4 * view.scale, c.y + 2 * view.scale, s, s);
+        }
+        if (onPath && (x + y) % 3 === 0) label('·', c.x, c.y, 'rgba(12,18,28,.45)', 14);
       }
+    }
+  }
+
+  /** 出生格一根小旗：进场方向不用靠记忆。空中航线用天蓝色旗。 */
+  function drawSpawns(m) {
+    const seen = new Set();
+    for (const p of m.map?.paths ?? []) {
+      const s = p.spawn;
+      if (!s) continue;
+      const key = `${s.x},${s.y}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const c = toScreen(s.x, s.y, 0);
+      const h = 16 * view.scale + 6;
+      ctx.strokeStyle = '#e6d7b4';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(c.x, c.y + 2);
+      ctx.lineTo(c.x, c.y - h);
+      ctx.stroke();
+      ctx.fillStyle = p.air ? COLORS.air : '#e06a5c';
+      ctx.beginPath();
+      ctx.moveTo(c.x, c.y - h);
+      ctx.lineTo(c.x + 10 * view.scale + 4, c.y - h + 4 * view.scale);
+      ctx.lineTo(c.x, c.y - h + 8 * view.scale);
+      ctx.closePath();
+      ctx.fill();
+      ctx.lineWidth = 1;
     }
   }
 
@@ -269,6 +530,21 @@ export function createRenderer(canvas, { size = null } = {}) {
     // 双守护目标（map_06）：两个核心都画，任一被破即失败
     const cores = m.cores?.length ? m.cores : [m.core];
     cores.forEach((core, i) => {
+      // 核心脚下铺一格浅冰蓝，远看先找到「要守的点」
+      const g = toScreen(core.cell.x, core.cell.y, 0);
+      ctx.beginPath();
+      ctx.ellipse(
+        g.x, g.y,
+        (GRID.tileW / 2) * view.scale * 0.92,
+        (GRID.tileH / 2) * view.scale * 0.92,
+        0, 0, Math.PI * 2,
+      );
+      ctx.fillStyle = 'rgba(127,212,255,.20)';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(190,232,255,.8)';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      ctx.lineWidth = 1;
       const c = toScreen(core.cell.x, core.cell.y, 1.4);
       const r = 22 * view.scale + 8;
       ctx.save();
@@ -290,14 +566,12 @@ export function createRenderer(canvas, { size = null } = {}) {
     const size = (16 + t.level * 3) * view.scale + 7;
     ctx.fillStyle = 'rgba(0,0,0,.35)';
     ctx.beginPath(); ctx.ellipse(c.x, c.y + size * 0.5, size * 0.9, size * 0.4, 0, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = color;
-    ctx.beginPath();
-    ctx.moveTo(c.x, c.y - size); ctx.lineTo(c.x + size * 0.8, c.y); ctx.lineTo(c.x, c.y + size * 0.6);
-    ctx.lineTo(c.x - size * 0.8, c.y); ctx.closePath(); ctx.fill();
-    ctx.strokeStyle = selected ? '#8ee08a' : 'rgba(10,20,30,.6)';
-    ctx.lineWidth = selected ? 2.5 : 1;
-    ctx.stroke();
-    ctx.lineWidth = 1;
+    paintSilhouette(ctx, c.x, c.y, size, towerSilhouette(t.towerId, t.level), {
+      fill: color,
+      accent: color,
+      stroke: selected ? '#8ee08a' : 'rgba(10,20,30,.6)',
+      lineWidth: selected ? 2.5 : 1,
+    });
     label(`${t.level}`, c.x, c.y - size * 0.15, '#0b1420', 12);
     // 5★/6★ 图会被攻城怪拆：塔血不满时显示血条
     if (t.maxHp && t.hp < t.maxHp) {
@@ -329,11 +603,16 @@ export function createRenderer(canvas, { size = null } = {}) {
       const g = toScreen(p.x, p.y, 0);
       ctx.fillStyle = 'rgba(0,0,0,.30)';
       ctx.beginPath(); ctx.ellipse(g.x, g.y, r * 0.8, r * 0.35, 0, 0, Math.PI * 2); ctx.fill();
+    } else {
+      ctx.fillStyle = 'rgba(0,0,0,.28)';
+      ctx.beginPath(); ctx.ellipse(c.x, c.y + r * 0.72, r * 0.7, r * 0.28, 0, 0, Math.PI * 2); ctx.fill();
     }
-    ctx.fillStyle = mo.isAir ? COLORS.air : COLORS.mob[tier] ?? '#c9d6e6';
-    ctx.beginPath(); ctx.ellipse(c.x, c.y, r, r * 0.82, 0, 0, Math.PI * 2); ctx.fill();
-    ctx.strokeStyle = 'rgba(8,14,22,.75)';
-    ctx.stroke();
+    const fill = mo.isAir ? COLORS.air : COLORS.mob[tier] ?? '#c9d6e6';
+    const spec = mobSilhouette({ ...mo.def, isAir: mo.isAir || mo.def.isAir });
+    paintSilhouette(ctx, c.x, c.y, r, spec, {
+      fill,
+      accent: spec.aura ? '#ffd08a' : fill,
+    });
     bar(c.x, c.y - r - 8, r * 2.2, 4, mo.hp / mo.maxHp, tier === 'boss' ? '#d1503f' : '#8ee08a');
     if (mo.def.armorType === 'fortified') label('盾', c.x, c.y + r + 8, '#ffd08a', 10);
     if (mo.attacking) label('!', c.x + r, c.y - r, '#ffb4a0', 12);
@@ -349,15 +628,12 @@ export function createRenderer(canvas, { size = null } = {}) {
     const hp = heroPos(h);
     const c = toScreen(hp.x, hp.y, 1.0);
     const r = 12 * view.scale + 6;
-    ctx.fillStyle = h.dead ? '#5a6474' : (TEAM_COLORS[localSlot % TEAM_COLORS.length] ?? COLORS.hero);
-    ctx.beginPath();
-    for (let i = 0; i < 6; i++) {
-      const a = Math.PI / 3 * i - Math.PI / 6;
-      const px = c.x + Math.cos(a) * r, py = c.y + Math.sin(a) * r;
-      i ? ctx.lineTo(px, py) : ctx.moveTo(px, py);
-    }
-    ctx.closePath(); ctx.fill();
-    ctx.strokeStyle = 'rgba(8,14,22,.7)'; ctx.stroke();
+    const fill = h.dead ? '#5a6474' : (TEAM_COLORS[localSlot % TEAM_COLORS.length] ?? COLORS.hero);
+    paintSilhouette(ctx, c.x, c.y, r, heroSilhouette(h.def?.id), {
+      fill,
+      accent: h.dead ? '#c5ced6' : '#f7fbff',
+      stroke: 'rgba(8,14,22,.7)',
+    });
     const max = Math.max(1, h.def.hp);
     bar(c.x, c.y - r - 8, r * 2.4, 4, h.hp / max, '#8ee08a');
     label(h.dead ? `复活 ${Math.ceil(h.reviveTimer)}s` : `Lv${h.level}`, c.x, c.y + r + 10, '#dff5dd', 11);
@@ -405,6 +681,7 @@ export function createRenderer(canvas, { size = null } = {}) {
     ctx.fillStyle = COLORS.bg;
     ctx.fillRect(0, 0, view.w, view.h);
     drawTiles(m);
+    drawSpawns(m);
     drawSlots(m, selectedSlot);
     drawHintSlots(m, hintSlots, now, pulses);
     // 预测中的塔：半透明鬼影 + 省略号，等服务端快照确认后由真实塔替换（§10.3）
@@ -412,14 +689,14 @@ export function createRenderer(canvas, { size = null } = {}) {
       const cell = m.map.slots[p.slot];
       if (!cell) continue;
       const c = toScreen(cell.x, cell.y, 0.9);
-      const size = 22 * view.scale + 7;
+      const size = (16 + 3) * view.scale + 7;
       ctx.globalAlpha = 0.5;
-      ctx.fillStyle = COLORS.tower[p.towerId] ?? '#dbe6f2';
-      ctx.beginPath();
-      ctx.moveTo(c.x, c.y - size); ctx.lineTo(c.x + size * 0.8, c.y); ctx.lineTo(c.x, c.y + size * 0.6);
-      ctx.lineTo(c.x - size * 0.8, c.y); ctx.closePath(); ctx.fill();
-      ctx.strokeStyle = '#ffffff';
-      ctx.stroke();
+      paintSilhouette(ctx, c.x, c.y, size, towerSilhouette(p.towerId, 1), {
+        fill: COLORS.tower[p.towerId] ?? '#dbe6f2',
+        accent: COLORS.tower[p.towerId] ?? '#dbe6f2',
+        stroke: '#ffffff',
+        lineWidth: 1.5,
+      });
       ctx.globalAlpha = 1;
       label('…', c.x, c.y - size * 0.15, '#0b1420', 12);
     }
@@ -477,13 +754,19 @@ export function createRenderer(canvas, { size = null } = {}) {
       if (x < bounds.x0 - 1 || x > bounds.x1 + 1 || y < bounds.y0 - 1 || y > bounds.y1 + 1) continue;
       const c = toScreen(x, y, 0.6);
       const s = 15 * view.scale + 5;
-      ctx.fillStyle = '#5b6b80';
-      ctx.beginPath();
-      ctx.moveTo(c.x, c.y - s); ctx.lineTo(c.x + s * 0.8, c.y); ctx.lineTo(c.x, c.y + s * 0.6);
-      ctx.lineTo(c.x - s * 0.8, c.y); ctx.closePath(); ctx.fill();
+      paintSilhouette(ctx, c.x, c.y, s, wallSilhouette(), { fill: '#5b6b80', stroke: 'rgba(8,14,22,.65)' });
     }
 
     // 城堡
+    const cg = toScreen(m.castle.cell.x, m.castle.cell.y, 0);
+    ctx.beginPath();
+    ctx.ellipse(cg.x, cg.y, (GRID.tileW / 2) * view.scale * 0.92, (GRID.tileH / 2) * view.scale * 0.92, 0, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(127,212,255,.20)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(190,232,255,.8)';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    ctx.lineWidth = 1;
     const cc = toScreen(m.castle.cell.x, m.castle.cell.y, 1.4);
     const cr = 26 * view.scale + 8;
     ctx.save();
@@ -501,12 +784,13 @@ export function createRenderer(canvas, { size = null } = {}) {
       const built = m.forts.find((f) => f.slot === i);
       const c = toScreen(s.x, s.y, built ? 0.8 : 0);
       if (built) {
-        const isWall = !built.stats;
+        const isWall = built.fortId === 'fort_wall' || !built.stats;
         const size = (isWall ? 14 : 18) * view.scale + 6;
-        ctx.fillStyle = isWall ? '#6b7a90' : '#dbe6f2';
-        ctx.beginPath();
-        ctx.moveTo(c.x, c.y - size); ctx.lineTo(c.x + size * 0.8, c.y); ctx.lineTo(c.x, c.y + size * 0.6);
-        ctx.lineTo(c.x - size * 0.8, c.y); ctx.closePath(); ctx.fill();
+        paintSilhouette(ctx, c.x, c.y, size, isWall ? wallSilhouette() : towerSilhouette('tw_arrow', 1), {
+          fill: isWall ? '#6b7a90' : '#dbe6f2',
+          accent: '#dbe6f2',
+          stroke: 'rgba(8,14,22,.65)',
+        });
         if (!isWall) bar(c.x, c.y + size * 0.7, size * 1.8, 4, 1, '#8ee08a');
       } else {
         tilePath(s.x, s.y);
