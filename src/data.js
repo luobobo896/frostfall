@@ -39,6 +39,8 @@ export const MONSTERS = {
 // 短局只在第 9 波出 2 只，血量移速不动。侦测（冰塔 / 工事箭塔 / 圣徒结界）在半径内解除。
 mob_11: { id: 'mob_11', name: '亡语蛛后', tier: 'elite', level: 7, hp: 700, armor: 2, armorType: 'medium', attack: 22, atkSpeed: 1.2, speed: 300, bounty: 130, lumber: 2, coreDamage: 200, attackType: 'normal', onDeath: { splitInto: 'mob_01', count: 2 }, invis: { period: 5, hidden: 3.2, shimmer: 0.8 } },
   mob_12: { id: 'mob_12', name: '亡灵巫师', tier: 'elite', level: 8, hp: 650, armor: 1, armorType: 'unarmored', attack: 18, atkSpeed: 1.0, speed: 280, bounty: 140, lumber: 2, coreDamage: 210, attackType: 'magic', aura: { id: 'heal', radius: 3, hps: 20 } },
+  // 霜壳：重甲表上魔法仍是 ×2，普通/穿刺/攻城再乘 0.25。赏金、木材、等级、漏怪伤害与它替换的沼泽巨魔对齐，不改经济验收。
+  mob_13: { id: 'mob_13', name: '霜壳尸', tier: 'elite', level: 4, hp: 280, armor: 2, armorType: 'heavy', attack: 14, atkSpeed: 0.9, speed: 240, bounty: 26, lumber: 0, coreDamage: 90, attackType: 'normal', resist: { normal: 0.25, pierce: 0.25, siege: 0.25 } },
   boss_01: { id: 'boss_01', name: '霜嚎巨兽', tier: 'boss', level: 12, hp: 3600, armor: 8, armorType: 'fortified', attack: 80, atkSpeed: 1.0, speed: 220, bounty: 800, lumber: 10, coreDamage: 600, attackType: 'normal', bossTier: 'minor', siege: true },
   boss_02: { id: 'boss_02', name: '巫妖侍从', tier: 'boss', level: 15, hp: 8000, armor: 10, armorType: 'fortified', attack: 110, atkSpeed: 1.2, speed: 240, bounty: 1500, lumber: 15, coreDamage: 900, attackType: 'magic', bossTier: 'final', aura: { id: 'haste', radius: 3, atkSpeedPct: 0.15 }, siege: true },
   // 长局专属（§6.3）：短局不出，血量在 LONG_RUN_BOSS_HP 里覆盖为 40000
@@ -73,7 +75,7 @@ export const WAVES = [
   { wave: 5, groups: [{ mobId: 'mob_04', count: 16, interval: 1.6 }] },
   { wave: 6, groups: [{ mobId: 'mob_04', count: 6, interval: 2.0 }, { mobId: 'mob_02', count: 4, interval: 2.0 }, { mobId: 'boss_01', count: 1, interval: 1 }], isMinorBoss: true },
   { wave: 7, groups: [{ mobId: 'mob_02', count: 6, interval: 1.5 }, { mobId: 'mob_03', count: 6, interval: 1.8 }, { mobId: 'mob_04', count: 6, interval: 1.8 }] },
-  { wave: 8, groups: [{ mobId: 'mob_04', count: 10, interval: 1.4 }, { mobId: 'mob_10', count: 2, interval: 2.0 }, { mobId: 'mob_03', count: 10, interval: 1.6 }] },
+  { wave: 8, groups: [{ mobId: 'mob_13', count: 2, interval: 2.0 }, { mobId: 'mob_10', count: 2, interval: 2.0 }, { mobId: 'mob_03', count: 10, interval: 1.6 }, { mobId: 'mob_04', count: 8, interval: 1.4 }] },
   { wave: 9, groups: [{ mobId: 'mob_02', count: 12, interval: 1.2 }, { mobId: 'mob_03', count: 12, interval: 1.4 }, { mobId: 'mob_11', count: 2, interval: 2.0 }], isElite: true },
   { wave: 10, groups: [{ mobId: 'mob_03', count: 15, interval: 1.2 }, { mobId: 'mob_04', count: 15, interval: 1.3 }] },
   { wave: 11, groups: [{ mobId: 'mob_04', count: 16, interval: 1.2 }, { mobId: 'mob_03', count: 16, interval: 1.3 }, { mobId: 'mob_10', count: 2, interval: 2.0 }] },
@@ -102,7 +104,7 @@ export const WAVES_LONG = [
   { wave: 14, groups: [{ mobId: 'mob_04', count: 18, interval: 1.2 }, { mobId: 'mob_11', count: 3, interval: 1.8 }] },
   { wave: 15, groups: [{ mobId: 'mob_10', count: 4, interval: 2.0 }, { mobId: 'mob_04', count: 14, interval: 1.3 }], isElite: true },
   { wave: 16, groups: [{ mobId: 'mob_03', count: 20, interval: 1.1 }, { mobId: 'mob_12', count: 3, interval: 2.0 }] },
-  { wave: 17, groups: [{ mobId: 'mob_04', count: 20, interval: 1.1 }, { mobId: 'mob_10', count: 3, interval: 1.8 }] },
+  { wave: 17, groups: [{ mobId: 'mob_04', count: 18, interval: 1.1 }, { mobId: 'mob_10', count: 3, interval: 1.8 }, { mobId: 'mob_13', count: 2, interval: 2.0 }] },
   { wave: 18, groups: [{ mobId: 'mob_11', count: 5, interval: 1.6 }, { mobId: 'mob_03', count: 16, interval: 1.2 }] },
   { wave: 19, groups: [{ mobId: 'mob_10', count: 4, interval: 1.8 }, { mobId: 'mob_12', count: 4, interval: 1.8 }] },
   { wave: 20, groups: [{ mobId: 'mob_04', count: 16, interval: 1.2 }, { mobId: 'boss_02', count: 1, interval: 1 }], isBoss: true },
@@ -461,7 +463,7 @@ export const DEFENSE_MAPS = {
     rounds: [
       { round: 1, groups: [{ mobId: 'mob_01', count: 8 }, { mobId: 'mob_02', count: 4 }] },
       { round: 2, groups: [{ mobId: 'mob_02', count: 10 }, { mobId: 'mob_03', count: 4 }, { mobId: 'mob_04', count: 2 }] },
-      { round: 3, groups: [{ mobId: 'mob_04', count: 8 }, { mobId: 'mob_03', count: 6 }, { mobId: 'mob_10', count: 1 }] },
+      { round: 3, groups: [{ mobId: 'mob_04', count: 6 }, { mobId: 'mob_13', count: 2 }, { mobId: 'mob_03', count: 6 }, { mobId: 'mob_10', count: 1 }] },
       // 通关线（4 轮）以内不放 3600 血的 TD 大 Boss：那一波由「无尽阶段」承担（§12.5 通关后再转无尽）
       { round: 4, groups: [{ mobId: 'mob_04', count: 10 }, { mobId: 'mob_11', count: 2 }, { mobId: 'mob_10', count: 2 }] },
     ],

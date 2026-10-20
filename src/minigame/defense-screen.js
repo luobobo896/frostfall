@@ -200,9 +200,18 @@ export function layoutDefense(m, model = {}) {
      * 以前它右对齐到小地图左边（393）——那一截正压在倍速键下面（通用几何用例量出来的）。
      */
     statsLine: { right: 372, y: 48 },
-    // 下一波有隐身才出现。不进 items，点它不算按键。让开顶栏、英雄行和小地图。
+    // 下一波有隐身 / 霜壳才出现。不进 items，点它不算按键。让开顶栏、英雄行和小地图。
     stealthChip: model.stealthAlert
       ? { x: 12, y: 70, w: 228, h: 44, count: model.stealthAlert.count ?? 0 }
+      : null,
+    resistChip: model.resistAlert
+      ? {
+        x: 12,
+        y: model.stealthAlert ? 118 : 70,
+        w: 228,
+        h: 44,
+        count: model.resistAlert.count ?? 0,
+      }
       : null,
     items,
     byId: Object.fromEntries(items.map((it) => [it.id, it])),
@@ -323,6 +332,7 @@ export function drawDefenseHud(ctx, m, L, { message = null, stick = null } = {})
    * 样张里一眼就能看见半句话被切掉。底部这一带是空的（右排按钮在 x=579 往右，工事/回城都不在这）。
    */
   if (L.stealthChip) paintStealthChip(ctx, L.stealthChip);
+  if (L.resistChip) paintResistChip(ctx, L.resistChip);
   if (message) text(ctx, message, L.w / 2, 300, { size: 12, align: 'center', color: COLORS.gold });
   return L;
 }
@@ -359,6 +369,39 @@ function paintStealthChip(ctx, c) {
   ctx.restore();
   text(ctx, '隐身', c.x + 44, c.y + 16, { size: 14, weight: 'bold' });
   text(ctx, '需要侦测', c.x + 44, c.y + 32, { size: 12, color: COLORS.dim });
+  text(ctx, String(c.count), c.x + c.w - 14, c.y + 22, { size: 14, align: 'right', weight: 'bold' });
+}
+
+function paintResistChip(ctx, c) {
+  ctx.fillStyle = 'rgba(10, 16, 28, 0.94)';
+  roundRect(ctx, c.x, c.y, c.w, c.h, 8);
+  ctx.fill();
+  ctx.strokeStyle = '#e7edf4';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  ctx.lineWidth = 1;
+  const s = 28 / 24;
+  ctx.save();
+  ctx.translate(c.x + 8, c.y + 8);
+  ctx.scale(s, s);
+  ctx.strokeStyle = '#e7edf4';
+  ctx.fillStyle = '#e7edf4';
+  ctx.lineWidth = 1.6;
+  for (const part of roleGlyph('resist')) {
+    ctx.beginPath();
+    if (part.ellipse) {
+      ctx.ellipse(part.ellipse[0], part.ellipse[1], part.ellipse[2], part.ellipse[3], 0, 0, Math.PI * 2);
+      if (part.stroke) ctx.stroke();
+      else ctx.fill();
+      continue;
+    }
+    part.d.forEach((p, i) => (i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1])));
+    if (part.stroke) ctx.stroke();
+    else { ctx.closePath(); ctx.fill(); }
+  }
+  ctx.restore();
+  text(ctx, '霜壳', c.x + 44, c.y + 16, { size: 14, weight: 'bold' });
+  text(ctx, '需要魔法', c.x + 44, c.y + 32, { size: 12, color: COLORS.dim });
   text(ctx, String(c.count), c.x + c.w - 14, c.y + 22, { size: 14, align: 'right', weight: 'bold' });
 }
 

@@ -339,19 +339,24 @@ export function towerSilhouette(towerId, level = 1, spec = null) {
 
 /**
  * 怪的剪影按特性，不按「再画一颗椭圆」。
- * 优先级：Boss 星形 > 空中（菱形身 + 翼，翼宽过身，不靠抬高认）> 死亡分裂双圆 > 重甲/攻城方块 > 地面带角的身体。
+ * 优先级：Boss 星形 > 空中（菱形身 + 翼，翼宽过身，不靠抬高认）> 死亡分裂双圆 > 霜壳（圆块 + 外圈）> 重甲/攻城方块 > 地面带角的身体。
  * `aura` 是叠加上去的外环，不把 Boss 或地面怪改成另一种身体。
  */
 export function mobSilhouette(def = {}) {
   const boss = def.tier === 'boss' || !!def.bossTier;
   const air = !!def.isAir;
   const split = !!def.onDeath;
+  const ward = ['normal', 'pierce', 'siege'].some((k) => {
+    const n = Number(def.resist?.[k]);
+    return n > 0 && n < 1;
+  });
   const fortified = def.armorType === 'fortified' || !!def.siege;
   const aura = !!def.aura;
   let shape = 'ground';
   if (boss) shape = 'boss';
   else if (air) shape = 'air';
   else if (split) shape = 'split';
+  else if (ward) shape = 'ward';
   else if (fortified) shape = 'fortified';
   let parts;
   if (shape === 'boss') {
@@ -366,6 +371,12 @@ export function mobSilhouette(def = {}) {
     parts = [
       { role: 'body', ellipse: [-0.46, 0.04, 0.5, 0.44] },
       { role: 'body', ellipse: [0.46, -0.02, 0.42, 0.38] },
+    ];
+  } else if (shape === 'ward') {
+    parts = [
+      { role: 'body', ellipse: [0, 0.02, 0.42, 0.55] },
+      { role: 'rim', ellipse: [0, 0.02, 0.62, 0.82], strokeOnly: true },
+      { role: 'crystal', points: [[0.08, -1.05], [-0.16, -0.18], [0.28, -0.12]], closed: true },
     ];
   } else if (shape === 'fortified') {
     parts = [
@@ -1269,7 +1280,7 @@ export function createRenderer(canvas, { size = null } = {}) {
     } else {
       paintSilhouette(ctx, c.x, c.y, r, bodySpec, {
         fill,
-        accent: veiled ? '#e7edf4' : (spec.aura ? COLORS.aura : fill),
+        accent: veiled || spec.shape === 'ward' ? '#e7edf4' : (spec.aura ? COLORS.aura : fill),
         stroke: veiled ? '#e7edf4' : undefined,
       });
     }
@@ -1317,6 +1328,7 @@ export function createRenderer(canvas, { size = null } = {}) {
     }
     bar(c.x, c.y - r - 8, r * 2.2, 4, mo.hp / mo.maxHp, veiled ? '#d5dde8' : (tier === 'boss' ? '#d1503f' : '#8ee08a'));
     if (mo.def.armorType === 'fortified') label('盾', c.x, c.y + r + 8, '#c5d0dc', 10);
+    if (spec.shape === 'ward') label('壳', c.x, c.y + r + 8, '#e7edf4', 10);
     if (mo.attacking) label('!', c.x + r, c.y - r, '#ffb4a0', 12);
   }
 
@@ -1841,6 +1853,14 @@ export function createMinimap(canvas, { size = null } = {}) {
         ctx.setLineDash([]);
       } else {
         dot(mo.cell.x, mo.cell.y, mo.tier === 'boss' ? 3 : 1.8, mo.isAir ? '#9ad8ff' : '#e06a5c');
+        if (mo.def?.resist) {
+          const p = toMinimap(mo.cell.x, mo.cell.y);
+          ctx.beginPath();
+          ctx.strokeStyle = '#e7edf4';
+          ctx.lineWidth = 1.25;
+          ctx.arc(p.x, p.y, (mo.tier === 'boss' ? 3 : 1.8) + 1.6, 0, Math.PI * 2);
+          ctx.stroke();
+        }
       }
     }
     dot(m.castle.cell.x, m.castle.cell.y, 3.2, '#7fd4ff');
@@ -2027,6 +2047,17 @@ export function createLaneMinimap(canvas, { size = null } = {}) {
       ctx.stroke();
       ctx.setLineDash([]);
       stealthMarks += 1;
+    }
+    let wardMarks = 0;
+    for (const mo of m.monsters ?? []) {
+      if (wardMarks >= 12 || mo.dead || !mo.cell || !mo.def?.resist) continue;
+      const at = toMini(mo.cell.x, mo.cell.y);
+      ctx.beginPath();
+      ctx.strokeStyle = '#e7edf4';
+      ctx.lineWidth = 1.25;
+      ctx.arc(at.x, at.y, 3.1, 0, Math.PI * 2);
+      ctx.stroke();
+      wardMarks += 1;
     }
     for (const cue of invasionArrows(m)) drawArrow(cue);
     const heroes = laneHeroes(m);

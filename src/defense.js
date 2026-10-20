@@ -346,14 +346,30 @@ export function assaultStealthCount(m) {
   return n;
 }
 
+/** 下一波里带着霜壳的只数。0 表示这波不用特意补魔法。 */
+export function assaultResistCount(m) {
+  let n = 0;
+  for (const g of upcomingAssaultGroups(m)) {
+    const resist = MONSTERS[g.mobId]?.resist;
+    if (!resist) continue;
+    const soft = ['normal', 'pierce', 'siege'].some((k) => Number(resist[k]) > 0 && Number(resist[k]) < 1);
+    if (soft) n += g.count ?? 0;
+  }
+  return n;
+}
+
 function stepAssault(m, dt) {
   const a = m.assault;
   a.timer -= dt;
   if (!a.warning && a.timer <= DEFENSE_RULES.assaultWarnSec) {
     a.warning = true;
     const stealth = assaultStealthCount(m);
-    addLog(m, stealth > 0
-      ? '⚠ 进攻预警：30 秒后抵达，有隐身，需要侦测，回防！'
+    const resist = assaultResistCount(m);
+    const notes = [];
+    if (stealth > 0) notes.push('有隐身，需要侦测');
+    if (resist > 0) notes.push('有霜壳，需要魔法');
+    addLog(m, notes.length
+      ? `⚠ 进攻预警：30 秒后抵达，${notes.join('，')}，回防！`
       : '⚠ 进攻预警：30 秒后抵达，回防！', 'warn');
   }
   if (a.timer <= 0) {
@@ -477,7 +493,7 @@ function stepForts(m, dt) {
     if (p.progress >= 1) {
       damageMonster(m, p.target, computeDamage({
         atk: p.damage, attackType: p.stats.attackType, armor: p.target.armor,
-        armorType: p.target.armorType, rng: m.rng,
+        armorType: p.target.armorType, resist: p.target.def?.resist, rng: m.rng,
       }).damage, p.towerId);
       p.life = 0;
     }

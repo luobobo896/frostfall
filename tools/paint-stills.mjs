@@ -324,6 +324,10 @@ const paintMob = (id, clip, frame) => {
     u.poly([[-1.02, 0], [-0.82, 0], [-0.9, 0.14]], dark);
     u.poly([[0.62, 0], [0.82, 0], [0.7, 0.16]], dark);
     u.poly([[0.95, 0], [1.12, 0], [1.02, 0.12]], dark);
+  } else if (def.resist && (def.resist.normal < 1 || def.resist.siege < 1)) {
+    // 空心高壳。实心块归一化后会落进 Boss 扁星和加强甲横条；只留亮边和顶上的晶。
+    u.strokeEllipse(0, 0.46, 0.16, 0.46, SNOW, 5);
+    u.poly([[-0.04, 0.88], [0.1, 1.02], [0.02, 0.76]], SNOW);
   } else if (def.armorType === 'fortified' || def.siege) {
     u.poly([[-1.05, 0], [-1.05, 0.22], [0.55, 0.22], [0.55, 0]], color);
     u.poly([[0.15, 0.18], [0.85, 0.55], [0.62, 0.62], [0.05, 0.22]], SNOW);

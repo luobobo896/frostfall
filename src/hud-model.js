@@ -103,6 +103,7 @@ export const CREEP_ROLES = Object.freeze([
   Object.freeze({ id: 'heal', label: '治疗' }),
   Object.freeze({ id: 'sprint', label: '冲刺' }),
   Object.freeze({ id: 'invis', label: '隐身' }),
+  Object.freeze({ id: 'resist', label: '霜壳' }),
 ]);
 
 const ROLE_TEST = {
@@ -112,6 +113,10 @@ const ROLE_TEST = {
   heal: (d) => (d?.aura?.hps ?? 0) > 0,
   sprint: (d) => (d?.sprint?.mul ?? 0) > 1,
   invis: (d) => !!d?.invis && (d.invis.hidden ?? 0) > 0,
+  resist: (d) => ['normal', 'pierce', 'siege'].some((k) => {
+    const n = Number(d?.resist?.[k]);
+    return n > 0 && n < 1;
+  }),
 };
 
 /** 这只怪带哪些职责（空中 / 攻城 / 分裂 / 治疗 / 冲刺）。 */
@@ -160,6 +165,12 @@ export function roleGlyph(id) {
         { stroke: true, d: [[5, 18], [19, 6]] },
         { stroke: true, d: [[2, 12], [5, 12]] },
         { stroke: true, d: [[19, 12], [22, 12]] },
+      ];
+    case 'resist':
+      return [
+        { ellipse: [12, 14, 6.5, 5.5] },
+        { ellipse: [12, 14, 9.5, 8], stroke: true },
+        { d: [[12, 2], [16, 9], [8, 9]] },
       ];
     default:
       return [];
@@ -222,6 +233,7 @@ export function wavePreview(waveIndex, maxGroups = 3, waves = WAVES) {
   const total = groups.reduce((s, g) => s + g.count, 0);
   const chips = creepRoleChips(def.groups);
   const needsDetect = chips.some((c) => c.id === 'invis');
+  const needsMagic = chips.some((c) => c.id === 'resist');
   const sprintAid = Object.values(TOWER_SPEC).find((s) => s.counters?.includes('sprint'));
   const sprintNote = sprintAid && chips.some((c) => c.id === 'sprint') ? ` · ${sprintAid.counter}` : '';
   const mark = (g) => {
@@ -235,6 +247,7 @@ export function wavePreview(waveIndex, maxGroups = 3, waves = WAVES) {
     total,
     chips,
     needsDetect,
+    needsMagic,
     isElite: !!def.isElite,
     isMinorBoss: !!def.isMinorBoss,
     isBoss: !!def.isBoss,
@@ -244,6 +257,7 @@ export function wavePreview(waveIndex, maxGroups = 3, waves = WAVES) {
     text: groups.map((g) => `${g.count}×${g.name}（${g.armorLabel}${mark(g)}）`).join(' + ')
       + (groups.length > maxGroups ? ` 等 ${total} 只` : '')
       + (needsDetect ? ' · 需要侦测' : '')
+      + (needsMagic ? ' · 需要魔法' : '')
       + sprintNote,
   };
 }

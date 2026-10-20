@@ -99,7 +99,7 @@ test('纯黑剪影墙：跨职责重叠不超过 30%', () => {
     ['towers/tw_arrow_lv2', 'towers/tw_cannon_lv2', 'towers/tw_frost_lv2', 'towers/tw_static_lv2'],
     [
       'mobs/mob_01_idle', 'mobs/mob_02_idle', 'mobs/mob_03_idle', 'mobs/mob_04_idle',
-      'mobs/mob_10_idle', 'mobs/mob_11_idle', 'mobs/mob_12_idle', 'mobs/boss_01_idle',
+      'mobs/mob_10_idle', 'mobs/mob_11_idle', 'mobs/mob_12_idle', 'mobs/mob_13_idle', 'mobs/boss_01_idle',
     ],
     ['heroes/hero_warrior_idle', 'heroes/hero_mage_idle', 'heroes/hero_ranger_idle', 'heroes/hero_paladin_idle'],
     ['heroes/hero_warrior_idle', 'towers/tw_arrow_lv2', 'mobs/mob_01_idle', 'mobs/boss_01_idle'],

@@ -463,6 +463,14 @@ test('P0 怪剪影：空中有翼、重甲方块、分裂双圆、光环外圈�
   assert.ok(ground.parts.some((p) => p.role === 'horn'), '地面普通怪要有角/耳，不能只剩一颗椭圆');
   assert.equal(mobSilhouette(MONSTERS.mob_04).shape, 'ground', '重甲类型才换成方块；普通厚甲仍是地面怪');
 
+  const ward = mobSilhouette(MONSTERS.mob_13);
+  assert.equal(ward.shape, 'ward');
+  assert.ok(ward.parts.some((p) => p.role === 'body' && p.ellipse), '霜壳是圆块，不是加强甲的折线');
+  assert.ok(ward.parts.some((p) => p.role === 'rim' && p.strokeOnly && p.ellipse), '外圈只描边，灰阶也能看见壳');
+  assert.ok(ward.parts.some((p) => p.role === 'crystal' && p.closed), '头顶一块晶，不是地面怪的一对角');
+  assert.equal(JSON.stringify(ward.parts), JSON.stringify(mobSilhouette({ resist: MONSTERS.mob_13.resist }).parts));
+  assert.notEqual(JSON.stringify(ward.parts), JSON.stringify(fort.parts));
+
   const airBody = JSON.stringify(air.parts.find((p) => p.role === 'body').points);
   for (const id of ['tw_arrow', 'tw_cannon', 'tw_frost', 'tw_static']) {
     for (const lv of [1, 2, 3]) {
