@@ -5,7 +5,7 @@
 // 并把不依赖 DOM 的那一大半（内核、数据表、存档、联机协议、平台适配）先在小游戏里跑通。
 // 界面换 Canvas 是第 3 步，见 docs/minigame-port.md。
 import {
-  DEFENSE_MAPS, FORTS, MAPS, SHOP_ITEMS, TICK_STEP, TOWERS, WAVES, normalizeChoice,
+  DEFENSE_MAPS, FORTS, FORT_WATCH, MAPS, SHOP_ITEMS, TICK_STEP, TOWERS, TOWER_SPEC, WAVES, normalizeChoice,
 } from '../data.js';
 import {
   buildTower, buyItem, castSkill, craftEquipment, createMatch, describe as describeMatch, equipItem,
@@ -31,7 +31,7 @@ import { createLaneMinimap, createMinimap, createRenderer, pointHitsHero } from 
 import { bootSprites } from '../assets.js';
 import { damageFloaters, wavePreview } from '../hud-model.js';
 import {
-  assaultStealthCount, buildFort, createDefenseMatch, describeDefense, orderMove, repairCastle, steerGoal, teleportHome, updateDefense,
+  assaultStealthCount, buildFort, createDefenseMatch, describeDefense, fortTapTarget, orderMove, repairCastle, steerGoal, teleportHome, updateDefense, upgradeFort,
 } from '../defense.js';
 import {
   MINIMAP, drawDefenseHud, hitTestDefense, inStickZone, layoutDefense, layoutFortSheet, stickBase, stickVector,
@@ -316,6 +316,7 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
     b.sheetOf = () => (b.ui.sheetKind === 'fort'
       ? layoutFortSheet(m, {
         freeSlots: m.def.fortSlots.filter((_, i) => !m.forts.some((f) => f.slot === i)).length,
+        upgradeSlot: b.ui.upgradeSlot ?? null,
         stickFloating: settings.stick === 'floating',
       })
       : layoutSheet(m, { ...b.ui, rate: b.rate, settings }));
@@ -562,8 +563,13 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
         return action;
       }
       case 'upgrade': {
+        const before = towerAtSlot(b.m, action.slot);
         const ok = upgradeTower(b.m, action.slot);
-        note(b, ok ? '升级完成' : '金币不足或已满级');
+        const after = towerAtSlot(b.m, action.slot);
+        const named = ok && after?.spec && !before?.spec
+          ? `升为${TOWER_SPEC[after.towerId]?.name ?? '专精'}`
+          : null;
+        note(b, named ?? (ok ? '升级完成' : '金币不足或已满级'));
         return action;
       }
       case 'sell': {
@@ -613,6 +619,16 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
           : (slot == null ? '先在战场上点一个工事位（‘修’字）' : '金币不足或这里已经建过'), 2);
         if (ok) b.fortSlot = null;
         if (ok || slot == null) b.ui = { selectedSlot: null, panelSlot: null, sellArmed: false };
+        return action;
+      }
+      case 'upgradeFort': {
+        const slot = Number.isInteger(action.slot) ? action.slot : b.fortSlot;
+        const ok = slot == null ? false : upgradeFort(b.m, slot);
+        note(b, ok ? `箭塔升为${FORT_WATCH.name}` : '金币不足或这里不能升', 2);
+        if (ok) {
+          b.fortSlot = null;
+          b.ui = { selectedSlot: null, panelSlot: null, sellArmed: false };
+        }
         return action;
       }
       // ---- 商店 / 背包 / 物品 ----
@@ -719,11 +735,16 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
   /** 防守：点战场 = 走过去；点空工事位 = 开工事面板（浏览器版 `defenseTap` 的同一套语义） */
   const tapDefenseField = (b, x, y) => {
     const cell = b.renderer.toGrid(x, y);
-    const slot = b.m.def.fortSlots.findIndex((s, i) => gridDist(s, cell) <= 1 && !b.m.forts.some((f) => f.slot === i));
-    if (slot >= 0) {
-      b.fortSlot = slot;
+    const hit = fortTapTarget(b.m, cell);
+    if (hit?.kind === 'upgrade') {
+      b.fortSlot = hit.slot;
+      b.ui = { sheetKind: 'fort', upgradeSlot: hit.slot };
+      return { type: 'openFort', slot: hit.slot, upgrade: true };
+    }
+    if (hit?.kind === 'build') {
+      b.fortSlot = hit.slot;
       b.ui = { sheetKind: 'fort' };
-      return { type: 'openFort', slot };
+      return { type: 'openFort', slot: hit.slot };
     }
     const ok = orderMove(b.m, cell);
     note(b, ok ? '走过去' : '走不过去', 1.2);

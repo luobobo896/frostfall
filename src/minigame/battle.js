@@ -8,13 +8,13 @@
 // 还没搬过来——真机手感确认之后再决定照搬还是换成更适合拇指的两步式（见 docs/minigame-port.md §5.2）。
 import {
   EQUIP_SELL_BONUS_LUMBER, EQUIP_SELL_REFUND, EQUIP_SLOTS, QUALITY, QUALITY_ORDER,
-  SHOP_ITEMS, TARGET_PRIORITIES, TOWERS, TOWER_SELL_REFUND,
+  SHOP_ITEMS, TARGET_PRIORITIES, TOWERS, TOWER_SELL_REFUND, TOWER_SPEC,
 } from '../data.js';
-import { attackHint, commandStrip, detectNote, resultPanelModel, roleGlyph, scoreboard, shopRows, wavePreview } from '../hud-model.js';
+import { attackHint, commandStrip, detectNote, resultPanelModel, roleGlyph, scoreboard, shopRows, towerRoleNote, wavePreview } from '../hud-model.js';
 import { fitText } from '../render.js';
 import {
   REVIVE_LUMBER, TOWER_REPAIR_GOLD, craftableSlots, enhanceCostOf, potionCount, shopPriceOf, skillLevel,
-  heroMaxHp, towerStatsAt, upgradeCost,
+  heroMaxHp, nextUpgrade, towerStatsAt,
 } from '../match.js';
 
 export const DESIGN = { w: 667, h: 375 };
@@ -479,8 +479,9 @@ export function layoutSheet(m, ui = {}) {
     TOWER_ORDER.forEach((id, i) => {
       const col = i % 2, row = Math.floor(i / 2);
       const preview = ui.placingTowerId === id;
+      const support = id === 'tw_frost' && !preview ? ' · 满级支援' : '';
       rows.push({
-        id: `build-${id}`, label: TOWERS[id].name, sub: preview ? '再点确认' : `${TOWERS[id].cost} 金`,
+        id: `build-${id}`, label: TOWERS[id].name, sub: preview ? '再点确认' : `${TOWERS[id].cost} 金${support}`,
         x: 20 + col * 314, y: 96 + row * 50, w: 300, h: 44,
         disabled: m.gold < TOWERS[id].cost,
         on: preview,
@@ -495,6 +496,7 @@ export function layoutSheet(m, ui = {}) {
       title: `在这里建塔（第 ${slot + 1} 号塔位 · 金币 ${Math.round(m.gold)}）`,
       hint: ui.placingTowerId
         ? `${(TOWERS[ui.placingTowerId]?.special?.detectRadius > 0) ? '射程与侦测已标出' : '射程已标出'} · 再点一次建造${TOWERS[ui.placingTowerId]?.name ?? ''}`
+          + (ui.placingTowerId === 'tw_frost' ? ` · ${TOWER_SPEC.tw_frost.hint}` : '')
         : (cell ? `格 ${cell.x},${cell.y}` : ''),
       box: { x: 12, y: 62, w: 643, h: 194 },
       rows, byId: Object.fromEntries(rows.map((r) => [r.id, r])),
@@ -502,16 +504,18 @@ export function layoutSheet(m, ui = {}) {
   }
 
   // 塔面板：读数 + 升级 / 出售（两步）/ 优先级 / 修塔（只在攻城图）/ 关闭
-  const s = t.stats ?? towerStatsAt(m.map, t.cell, t.towerId, t.level);
-  const cost = upgradeCost(t.towerId, t.level);
+  const s = t.stats ?? towerStatsAt(m.map, t.cell, t.towerId, t.level, t.spec ?? null);
+  const next = nextUpgrade(t);
   const refund = Math.floor(t.invested * TOWER_SELL_REFUND);   // 与内核同一个常数，别手写比例
   const canRepair = !!m.map.def.siege && t.maxHp && t.hp < t.maxHp;
   const info = `Lv${t.level} · 伤害 ${s.damage.toFixed(1)} · 攻速 ${s.atkSpeed.toFixed(2)} · 射程 ${s.range.toFixed(1)}`
-    + (s.hitsAir ? ' · 对空' : ' · 不对空') + ` · ${attackHint(s.attackType)}` + detectNote(s);
+    + (s.hitsAir ? ' · 对空' : ' · 不对空') + ` · ${attackHint(s.attackType)}` + detectNote(s) + towerRoleNote(t);
 
   rows.push({
-    id: 'upgrade', label: cost == null ? '已满级' : `升级 → Lv${t.level + 1}`, sub: cost == null ? '' : `${cost} 金`,
-    x: 20, y: 96, w: 300, h: 44, disabled: cost == null || m.gold < cost,
+    id: 'upgrade',
+    label: next ? (next.kind === 'spec' ? next.label : `升级 → Lv${t.level + 1}`) : '已满级',
+    sub: next ? `${next.cost} 金` : '',
+    x: 20, y: 96, w: 300, h: 44, disabled: !next || m.gold < next.cost,
     action: { type: 'upgrade', slot },
   });
   rows.push({
@@ -541,7 +545,9 @@ export function layoutSheet(m, ui = {}) {
   });
   return {
     kind: 'tower',
-    title: `${TOWERS[t.towerId].name} · Lv${t.level}`,
+    title: t.spec
+      ? (TOWER_SPEC[t.towerId]?.name ?? TOWERS[t.towerId].name)
+      : `${TOWERS[t.towerId].name} · Lv${t.level}`,
     hint: info,
     box: { x: 12, y: 62, w: 643, h: canRepair ? 240 : 190 },
     rows, byId: Object.fromEntries(rows.map((r) => [r.id, r])),

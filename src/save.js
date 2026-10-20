@@ -1,7 +1,7 @@
 // 单人局存档（§10.3：杀进程重开后进度不丢）。
 // 只序列化「变化的状态」，定义表从 data.js 现取；半空中的弹道直接丢掉（重开后自然重发）。
 
-import { FORTS, MONSTERS } from './data.js';
+import { FORTS, MONSTERS, fortStatsOf } from './data.js';
 import { createMatch, isHoldCell, towerStatsAt } from './match.js';
 import { createDefenseMatch, onMonsterKilled } from './defense.js';
 import { storage } from './platform.js';   // §平台适配：存档走适配层（小游戏 = wx storage）
@@ -48,7 +48,7 @@ export function serializeTd(m) {
     },
     towers: m.towers.map((t) => ({
       towerId: t.towerId, slot: t.slot, level: t.level, cooldown: t.cooldown,
-      priority: t.priority, invested: t.invested,
+      priority: t.priority, invested: t.invested, spec: t.spec ?? null,
     })),
     monsters: m.monsters.filter((x) => !x.dead).map((x) => ({
       uid: x.uid, mobId: x.mobId, pathIndex: x.pathIndex, dist: x.dist, hp: x.hp,
@@ -114,9 +114,10 @@ export function deserializeTd(save) {
     return {
       uid: t.slot + 1, towerId: t.towerId, slot: t.slot, cell,
       level: t.level, cooldown: t.cooldown, priority: t.priority, invested: t.invested,
+      spec: t.spec || null,
       // §2.3：塔的射程/伤害要跟着**它站的那块地**算（沼泽 -1 射程、高地 +1.5 射程 +10% 攻击），
       // 读档时如果只按等级重算，地形加成会「读一次少一次」（存档链上的同一类坑，见验证记录 §69）
-      stats: towerStatsAt(m.map, cell, t.towerId, t.level),
+      stats: towerStatsAt(m.map, cell, t.towerId, t.level, t.spec || null),
     };
   });
   m.monsters = save.monsters.map((x) => {
@@ -179,7 +180,9 @@ export function serializeDefense(m) {
       skillUnlocked: m.hero.skillUnlocked.slice(), buffs: m.hero.buffs.map((b) => ({ ...b })),
       dead: m.hero.dead, reviveTimer: m.hero.reviveTimer, attackBuff: m.hero.attackBuff, reduceBuff: m.hero.reduceBuff,
     },
-    forts: m.forts.map((f) => ({ slot: f.slot, fortId: f.fortId, hp: f.hp, cooldown: f.cooldown ?? 0 })),
+    forts: m.forts.map((f) => ({
+      slot: f.slot, fortId: f.fortId, hp: f.hp, cooldown: f.cooldown ?? 0, tier: f.tier ?? 0,
+    })),
     monsters: m.monsters.filter((x) => !x.dead).map((x) => ({
       uid: x.uid, mobId: x.mobId, kind: x.kind, camp: x.camp ? m.camps.indexOf(x.camp) : -1,
       cell: { ...x.cell }, hp: x.hp, armor: x.armor, attacking: !!x.attacking, active: !!x.active,
@@ -228,10 +231,13 @@ export function deserializeDefense(save) {
   m.forts = save.forts.map((f) => {
     const fort = FORTS[f.fortId];
     const cell = m.def.fortSlots[f.slot];
+    const tier = f.tier ?? 0;
+    const stats = fort.blocks ? null : fortStatsOf(f.fortId, tier);
     if (fort.blocks) m.walls.add(`${cell.x},${cell.y}`);
     return {
-      slot: f.slot, cell: { ...cell }, fortId: f.fortId, hp: f.hp, maxHp: fort.hp,
-      cooldown: f.cooldown ?? 0, stats: fort.blocks ? null : { ...fort },
+      slot: f.slot, cell: { ...cell }, fortId: f.fortId, hp: f.hp, maxHp: stats?.hp ?? fort.hp,
+      tier: stats?.tier ?? 0,
+      cooldown: f.cooldown ?? 0, stats,
     };
   });
   m.monsters = save.monsters.map((x) => {

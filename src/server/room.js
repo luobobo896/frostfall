@@ -9,7 +9,7 @@ import {
 import { createMatch } from '../match.js';
 import { MAX_COMMANDS_PER_SEC, makeRoomCode, SNAPSHOT_RATE, TICK_RATE, snapshot, msg } from '../protocol.js';
 import { createDefenseSnapshotter, createSnapshotter, privateSnapshot } from '../protocol.js';
-import { buildFort, createDefenseMatch, orderMove, repairCastle, teleportHome, updateDefense } from '../defense.js';
+import { buildFort, createDefenseMatch, orderMove, repairCastle, teleportHome, updateDefense, upgradeFort } from '../defense.js';
 import { resultSummary } from '../result.js';
 import { addLog } from '../defense.js';
 
@@ -305,6 +305,7 @@ export class Room {
       case 'move': return m.mode === 'defense' ? orderMove(m, { x: cmd.x, y: cmd.y }) : false;
       case 'hold': return orderHold(m, { x: cmd.x | 0, y: cmd.y | 0 });
       case 'fort': return m.mode === 'defense' ? buildFort(m, cmd.slot, cmd.fortId) : false;
+      case 'fortUp': return m.mode === 'defense' ? upgradeFort(m, cmd.slot) : false;
       case 'repair': return m.mode === 'defense' ? repairCastle(m) : false;
       case 'teleport': return m.mode === 'defense' ? teleportHome(m) : false;
       // §148：这里原来写的是 `m.mode === 'td'`——**TD 局的 `m.mode` 是 `undefined`**（只有防守局写

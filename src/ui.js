@@ -2,14 +2,14 @@
 // 布局按横屏 1334×750 的浮层方案（§14.1.1 / §14.3 第 4 稿）。
 
 import {
-  DEFENSE_RULES, EQUIP_SELL_BONUS_LUMBER, EQUIP_SELL_REFUND, EQUIP_SLOTS, QUALITY, QUALITY_ORDER, SHOP_ITEMS,
-  TARGET_PRIORITIES, TOWERS, WAVES, WEAPONS,
+  DEFENSE_RULES, EQUIP_SELL_BONUS_LUMBER, EQUIP_SELL_REFUND, EQUIP_SLOTS, FORT_WATCH, QUALITY, QUALITY_ORDER, SHOP_ITEMS,
+  TARGET_PRIORITIES, TOWER_SPEC, TOWERS, WAVES, WEAPONS,
 } from './data.js';
 import {
-  craftableSlots, enhanceCostOf, heroMaxHp, shopPriceOf, skillLevel, TOWER_REPAIR_GOLD, towerStats, upgradeCost,
+  craftableSlots, enhanceCostOf, heroMaxHp, nextUpgrade, shopPriceOf, skillLevel, TOWER_REPAIR_GOLD, towerStats,
 } from './match.js';
 import { qualityColor, towerName } from './render.js';
-import { attackHint, commandStrip, detectNote, heroCard, heroCards, isLowHp, resultPanelModel, roleGlyphSvg, scoreboard, shopRows, wavePreview, zoneLabel } from './hud-model.js';
+import { attackHint, commandStrip, detectNote, heroCard, heroCards, isLowHp, resultPanelModel, roleGlyphSvg, scoreboard, shopRows, towerRoleNote, wavePreview, zoneLabel } from './hud-model.js';
 import { assaultStealthCount, zoneAt } from './defense.js';
 
 const $ = (id) => document.getElementById(id);
@@ -347,7 +347,8 @@ export function createUI(handlers) {
       btn.title = attackHint(t.attackType);   // 轮盘只有 60pt，克制说明走标题，不挤版面
       btn.style.left = `${Math.cos(a) * radius}px`;
       btn.style.top = `${Math.sin(a) * radius}px`;
-      btn.innerHTML = `<span>${t.name}</span><span class="cost">${t.cost}</span>`;
+      const support = id === 'tw_frost' ? ' · 支援' : '';
+      btn.innerHTML = `<span>${t.name}</span><span class="cost">${t.cost}${support}</span>`;
       btn.onclick = () => {
         const ok = handlers.build(slotIndex, id);
         toast(ok ? `建造 ${t.name}` : (handlers.isOffline?.() ? '掉线中，重连后再试' : '金币不足'));
@@ -376,17 +377,21 @@ export function createUI(handlers) {
     el.towerPanel.classList.remove('hidden');
     el.towerPanel.style.left = `${Math.min(window.innerWidth - 280, Math.max(12, screenPoint.x - 130))}px`;
     el.towerPanel.style.top = `${Math.min(window.innerHeight - 260, Math.max(90, screenPoint.y - 40))}px`;
-    const s = t.stats ?? towerStats(t.towerId, t.level);   // §2.3：面板读塔自己的那份（含地形加成）
-    el.twName.textContent = towerName(t.towerId);
-    el.twLevel.textContent = `Lv${t.level}`;
+    const s = t.stats ?? towerStats(t.towerId, t.level, t.spec ?? null);   // §2.3：面板读塔自己的那份（含地形加成）
+    const offer = TOWER_SPEC[t.towerId];
+    el.twName.textContent = t.spec && offer ? offer.name : towerName(t.towerId);
+    el.twLevel.textContent = t.spec ? '专精' : `Lv${t.level}`;
     el.twStats.textContent = `伤害 ${s.damage.toFixed(1)} · 攻速 ${s.atkSpeed.toFixed(2)} · 射程 ${s.range.toFixed(1)}`
       + (s.hitsAir ? ' · 对空' : ' · 不对空')
       // §3.8 / §6.2：UI 要给克制提示（数字直接从克制表算，见 hud-model.attackHint）
       + ` · ${attackHint(s.attackType)}`
-      + detectNote(s);
+      + detectNote(s)
+      + towerRoleNote(t);
     el.twPriority.textContent = PRIORITY_LABEL[t.priority] ?? t.priority;
-    const cost = upgradeCost(t.towerId, t.level);
-    el.btnUpgrade.textContent = cost == null ? '已满级' : `升级 ${cost} 金`;
+    const next = nextUpgrade(t);
+    el.btnUpgrade.textContent = next
+      ? (next.kind === 'spec' ? `${next.label} ${next.cost} 金` : `升级 ${next.cost} 金`)
+      : '已满级';
     // 5★/6★ 图的塔会被攻城怪拆：补一个「修复」按钮（60 金满血，§7.4）
     const canRepair = !!m.map.def.siege && t.maxHp && t.hp < t.maxHp;
     if (el.btnSell) el.btnSell.textContent = sellArmed ? '确认出售' : '出售';
@@ -402,8 +407,14 @@ export function createUI(handlers) {
       el.btnRepairTower.classList.toggle('hidden', !canRepair);
       el.btnRepairTower.textContent = `修塔 ${TOWER_REPAIR_GOLD} 金`;   // §155：与内核同一个常数
     }
-    el.btnUpgrade.disabled = cost == null || m.gold < cost;
-    el.btnUpgrade.onclick = () => { toast(handlers.upgrade(slotIndex) ? '升级完成' : '金币不足或已满级'); };
+    el.btnUpgrade.disabled = !next || m.gold < next.cost;
+    el.btnUpgrade.onclick = () => {
+      const before = t.spec;
+      const ok = handlers.upgrade(slotIndex);
+      const named = ok && t.spec && !before ? `升为${TOWER_SPEC[t.towerId]?.name ?? '专精'}` : null;
+      toast(named ?? (ok ? '升级完成' : '金币不足或已满级'));
+      if (ok) openTower(m, slotIndex, screenPoint);
+    };
     el.btnSell.textContent = sellArmed ? '确认出售' : '出售';
     el.btnSell.onclick = () => {
       if (!sellArmed) { sellArmed = true; el.btnSell.textContent = '确认出售'; return; }
@@ -455,6 +466,32 @@ export function createUI(handlers) {
       };
       el.wheel.appendChild(btn);
     });
+    const cancel = document.createElement('button');
+    cancel.className = 'cancel';
+    cancel.textContent = '取消';
+    cancel.onclick = closeWheel;
+    el.wheel.appendChild(cancel);
+  }
+
+  /** 已建箭塔：同一张轮盘只给「升哨楼」，热区仍是 76px，不用悬停。 */
+  function openFortUpgrade(m, slotIndex, screenPoint) {
+    openSlot = slotIndex;
+    el.wheel.classList.remove('hidden');
+    const o = wheelOrigin(screenPoint);
+    el.wheel.style.left = `${o.x}px`;
+    el.wheel.style.top = `${o.y}px`;
+    el.wheel.innerHTML = '';
+    const btn = document.createElement('button');
+    btn.className = `opt${m.gold < FORT_WATCH.cost ? ' cant' : ''}`;
+    btn.style.left = '0px';
+    btn.style.top = '-62px';
+    btn.innerHTML = `<span>${FORT_WATCH.name}</span><span class="cost">${FORT_WATCH.cost} · 更远</span>`;
+    btn.onclick = () => {
+      const ok = handlers.upgradeFort(slotIndex);
+      toast(ok ? `箭塔升为${FORT_WATCH.name}` : (handlers.isOffline?.() ? '掉线中，重连后再试' : '金币不足或这里不能升'));
+      closeWheel();
+    };
+    el.wheel.appendChild(btn);
     const cancel = document.createElement('button');
     cancel.className = 'cancel';
     cancel.textContent = '取消';
@@ -749,7 +786,7 @@ export function createUI(handlers) {
    * 于是关掉轮盘之后那一格还亮着——同一个决定两处状态，就会这样）。
    */
   return {
-    render, toast, openWheel, closeWheel, openFortWheel, openTower, closeTower, showOverlay, renderHeroCards,
+    render, toast, openWheel, closeWheel, openFortWheel, openFortUpgrade, openTower, closeTower, showOverlay, renderHeroCards,
     el, openSlotIndex: () => openSlot, placingTowerId: () => placingId,
   };
 }

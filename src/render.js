@@ -242,6 +242,8 @@ export const HERO_GLOW = { stroke: '#ffd68a', lineWidth: 3, halo: 'rgba(255, 214
 export const HERO_SKILL_RING = { stroke: '#7ec8ff', lineWidth: 1.5, dash: [5, 4] };
 /** 侦测圈：灰白虚线加四角括号，不填奶油底，和射程实线圈、技能冷色圈都分开。 */
 export const DETECT_RING = { stroke: '#d5dde8', lineWidth: 1.75, dash: [2, 6] };
+/** 寒霜光环：实线冷蓝，不虚线、不填奶油。低特效只停呼吸，圈本身还在。 */
+export const AURA_RING = { stroke: '#9fd4ff', lineWidth: 2.5, fill: 'rgba(159, 212, 255, .14)' };
 /** 点英雄的半径下限（直径约 44px）。视觉半径更大时跟视觉走。 */
 export const HERO_HIT_PX = 44;
 
@@ -270,7 +272,7 @@ const towerLevel = (level) => Math.min(3, Math.max(1, Math.round(Number(level) |
  * 箭塔 = 细柱 + 三角顶，炮塔 = 矮墩 + 横炮管，冰塔 = 尖晶簇，电塔 = 细杆 + 两侧电弧。
  * Lv2/Lv3 加构件，升级不只是把同一颗菱形放大。
  */
-export function towerSilhouette(towerId, level = 1) {
+export function towerSilhouette(towerId, level = 1, spec = null) {
   const lv = towerLevel(level);
   let parts;
   if (towerId === 'tw_cannon') {
@@ -293,6 +295,14 @@ export function towerSilhouette(towerId, level = 1) {
       { role: 'crystal', points: [[0.58, r3(-0.55 - side)], [0.92, 0.38], [0.2, 0.22]], closed: true },
     ];
     if (lv >= 3) parts.push({ role: 'spike', points: [[0, -1.98], [-0.34, 0.08], [0.34, 0.08]], closed: true });
+    // 寒霜祭坛：石环比水晶簇更宽，两侧立石是建筑体量，不是换一个图标
+    if (spec === 'frost_shrine') {
+      parts.push(
+        { role: 'plinth', points: [[-1.35, 0.62], [1.35, 0.62], [1.15, 0.28], [-1.15, 0.28]], closed: true },
+        { role: 'menhir', points: [[-1.28, 0.28], [-0.96, 0.28], [-1.02, -0.62], [-1.22, -0.48]], closed: true },
+        { role: 'menhir', points: [[0.96, 0.28], [1.28, 0.28], [1.22, -0.48], [1.02, -0.62]], closed: true },
+      );
+    }
   } else if (towerId === 'tw_static') {
     const top = [-1.02, -1.14, -1.26][lv - 1];
     parts = [
@@ -446,19 +456,25 @@ export function wallKindAt(walls, x, y) {
  * 工事比 TD 塔矮。箭塔工事是带门洞的门楼，不是把 TD 箭塔缩小一圈。
  * 单位高度约 0.98，TD 箭塔 Lv1（柱底到顶尖）约 1.67。
  */
-export function fortSilhouette(fortId = 'fort_arrow') {
+export function fortSilhouette(fortId = 'fort_arrow', tier = 0) {
   if (fortId === 'fort_wall') return wallSilhouette('gate');
-  return {
-    id: 'fort_arrow',
-    parts: [
-      { role: 'pier', points: [[-0.78, 0.28], [-0.34, 0.28], [-0.34, -0.18], [-0.78, -0.18]], closed: true },
-      { role: 'pier', points: [[0.34, 0.28], [0.78, 0.28], [0.78, -0.18], [0.34, -0.18]], closed: true },
-      { role: 'lintel', points: [[-0.84, -0.18], [0.84, -0.18], [0.84, -0.36], [-0.84, -0.36]], closed: true },
-      { role: 'merlon', points: [[-0.74, -0.36], [-0.46, -0.36], [-0.46, -0.62], [-0.74, -0.62]], closed: true },
-      { role: 'merlon', points: [[0.46, -0.36], [0.74, -0.36], [0.74, -0.62], [0.46, -0.62]], closed: true },
-      { role: 'roof', points: [[-0.4, -0.56], [0, -0.7], [0.4, -0.56]], closed: true },
-    ],
-  };
+  const parts = [
+    { role: 'pier', points: [[-0.78, 0.28], [-0.34, 0.28], [-0.34, -0.18], [-0.78, -0.18]], closed: true },
+    { role: 'pier', points: [[0.34, 0.28], [0.78, 0.28], [0.78, -0.18], [0.34, -0.18]], closed: true },
+    { role: 'lintel', points: [[-0.84, -0.18], [0.84, -0.18], [0.84, -0.36], [-0.84, -0.36]], closed: true },
+    { role: 'merlon', points: [[-0.74, -0.36], [-0.46, -0.36], [-0.46, -0.62], [-0.74, -0.62]], closed: true },
+    { role: 'merlon', points: [[0.46, -0.36], [0.74, -0.36], [0.74, -0.62], [0.46, -0.62]], closed: true },
+    { role: 'roof', points: [[-0.4, -0.56], [0, -0.7], [0.4, -0.56]], closed: true },
+  ];
+  if ((tier | 0) >= 1) {
+    // 哨楼：两侧望柱比门楼更宽更高，中间一根尖垛。仍然矮于 TD 箭塔。
+    parts.push(
+      { role: 'watch', points: [[-1.12, 0.42], [-0.82, 0.42], [-0.82, -0.95], [-1.12, -0.95]], closed: true },
+      { role: 'watch', points: [[0.82, 0.42], [1.12, 0.42], [1.12, -0.95], [0.82, -0.95]], closed: true },
+      { role: 'watch', points: [[-0.16, -0.62], [0.16, -0.62], [0.16, -1.05], [-0.16, -1.05]], closed: true },
+    );
+  }
+  return { id: 'fort_arrow', tier: (tier | 0) >= 1 ? 1 : 0, parts };
 }
 
 /** 工事屏幕半径。严格小于同缩放下的 TD 塔（含 Lv1）。 */
@@ -849,12 +865,15 @@ export function createRenderer(canvas, { size = null } = {}) {
     }
   }
 
-  function drawTowerBody(towerId, level, cx, cy, size, style, frame) {
-    const sprite = frame === undefined
-      ? resolveSprite(towerSpriteKey(towerId, level), 'idle', 0)
-      : frame;
-    if (sprite && drawSprite(sprite, cx, cy + size * 0.5, size * 2.4)) return;
-    paintSilhouette(ctx, cx, cy, size, towerSilhouette(towerId, level), style);
+  function drawTowerBody(towerId, level, cx, cy, size, style, frame, spec = null) {
+    // 专精阶没有自己的静帧。用 Lv3 那张图会把加宽的石环盖掉，所以这一阶只画剪影。
+    if (!spec) {
+      const sprite = frame === undefined
+        ? resolveSprite(towerSpriteKey(towerId, level), 'idle', 0)
+        : frame;
+      if (sprite && drawSprite(sprite, cx, cy + size * 0.5, size * 2.4)) return;
+    }
+    paintSilhouette(ctx, cx, cy, size, towerSilhouette(towerId, level, spec), style);
   }
 
   function drawTiles(m, decor) {
@@ -1031,8 +1050,9 @@ export function createRenderer(canvas, { size = null } = {}) {
     const charge = chargePulse(t.cooldown, t.stats?.atkSpeed);
     const clip = poseClip({ pulse, dead: t.hp <= 0 });
     const index = poseFrame(clip, { now: frameNow, pulse, uid: t.uid ?? 0 });
+    const specId = t.spec || null;
     const base = towerSpriteKey(t.towerId, t.level);
-    const frame = resolveSprite(base, clip, index);
+    const frame = specId ? null : resolveSprite(base, clip, index);
     const posed = !!(frame && frame.key !== base);
     const nudge = posed ? { dx: 0, dy: 0 } : towerNudge(t.towerId, pulse);
     const bx = c.x + nudge.dx * view.scale;
@@ -1045,7 +1065,7 @@ export function createRenderer(canvas, { size = null } = {}) {
       accent: color,
       stroke: selected ? '#8ee08a' : 'rgba(10,20,30,.6)',
       lineWidth: selected ? 2.5 : 1,
-    }, frame);
+    }, frame, specId);
     const marks = posed ? [] : towerMarks(t.towerId, pulse, charge);
     if (marks.length) drawGlyphs(placeGlyphs(marks, bx, by - size * 0.2, view.scale), color, 1.5);
     if (ghost) ctx.globalAlpha = 1;
@@ -1118,6 +1138,27 @@ export function createRenderer(canvas, { size = null } = {}) {
     ctx.strokeStyle = DETECT_RING.stroke;
     ctx.lineWidth = DETECT_RING.lineWidth;
     ctx.stroke();
+    ctx.lineWidth = 1;
+  }
+
+  /** 寒霜光环：实线冷蓝椭圆。选中时加一层淡填充。低特效不呼吸，圈仍在。 */
+  function drawAuraRing(cell, range, { selected = false, alpha = 0.92 } = {}) {
+    if (!cell || !(Number(range) > 0)) return;
+    const c = toScreen(cell.x, cell.y, 0);
+    const rx = range * (GRID.tileW / 2) * view.scale;
+    const ry = range * (GRID.tileH / 2) * view.scale;
+    ctx.beginPath();
+    ctx.ellipse(c.x, c.y, rx, ry, 0, 0, Math.PI * 2);
+    if (selected) {
+      ctx.fillStyle = AURA_RING.fill;
+      ctx.fill();
+    }
+    ctx.globalAlpha = selected ? 1 : alpha;
+    ctx.setLineDash([]);
+    ctx.strokeStyle = AURA_RING.stroke;
+    ctx.lineWidth = selected ? AURA_RING.lineWidth + 1 : AURA_RING.lineWidth;
+    ctx.stroke();
+    ctx.globalAlpha = 1;
     ctx.lineWidth = 1;
   }
 
@@ -1533,6 +1574,13 @@ export function createRenderer(canvas, { size = null } = {}) {
     }
     const heroDetect = heroDetectRadius(m);
     if (heroDetect > 0) drawDetectRing(heroPos(m.hero), heroDetect);
+    const auraStill = isoView.fx === 'low' || pulses === false;
+    for (const t of m.towers) {
+      const aura = t.stats?.special?.aura;
+      if (!(aura?.radius > 0)) continue;
+      const alpha = auraStill ? 0.92 : (0.78 + 0.18 * Math.sin((now || 0) * 3));
+      drawAuraRing(t.cell, aura.radius, { selected: selectedTower === t.slot, alpha });
+    }
     drawReviveMark(m);
     drawFloaters(floaters, now);
   }
@@ -1630,10 +1678,11 @@ export function createRenderer(canvas, { size = null } = {}) {
             stroke: 'rgba(8,14,22,.65)',
           });
         } else {
-          paintSilhouette(ctx, c.x, c.y, size, fortSilhouette('fort_arrow'), {
+          paintSilhouette(ctx, c.x, c.y, size, fortSilhouette('fort_arrow', built.tier ?? 0), {
             fill: '#c5d0dc',
             accent: '#dbe6f2',
-            stroke: 'rgba(8,14,22,.65)',
+            stroke: selectedFortSlot === i ? '#ffd68a' : 'rgba(8,14,22,.65)',
+            lineWidth: selectedFortSlot === i ? 2.5 : 1,
           });
         }
         if (!isWall) bar(c.x, c.y + size * 0.7, size * 1.8, 4, 1, '#8ee08a');

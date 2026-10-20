@@ -2,8 +2,8 @@
 // 原则：客户端只发「指令」，服务端是唯一权威（§10.3）。
 
 export const PROTOCOL_VERSION = 1;
-import { HEROES, MONSTERS, TARGET_PRIORITIES, TIMING, TOWERS } from './data.js';
-import { FORTS, EQUIP_SLOTS, QUALITY_ORDER } from './data.js';
+import { HEROES, MONSTERS, TARGET_PRIORITIES, TIMING, TOWERS, TOWER_SPEC } from './data.js';
+import { FORTS, EQUIP_SLOTS, QUALITY_ORDER, fortStatsOf } from './data.js';
 import { project } from './core.js';
 import { isHoldCell, towerStatsAt } from './match.js';
 export const TICK_RATE = TIMING.tickRate;   // 逻辑帧（§119：只从 data.js 取，别再写一份 20）
@@ -21,7 +21,7 @@ export const COMMANDS = [
   'buy', 'potion', 'craft',
   'equip', 'enhance', 'sellitem',          // §5.4：穿戴（自由换装）/ 强化 / 出售装备
   'early', 'revive', 'ping',
-  'move', 'fort', 'repair', 'teleport', 'repairTower',
+  'move', 'fort', 'fortUp', 'repair', 'teleport', 'repairTower',
   'resync',                                // §10.3：客户端发现序号跳跃 → 要一份全量快照
   /**
    * STATUS §3.1 #23（已拍板）：**主动退房**要与「掉线」分开。
@@ -116,7 +116,7 @@ export function createDefenseSnapshotter() {
         m.hero.skillCd.map((x) => +x.toFixed(1)), m.hero.skillUnlocked.map((b) => (b ? 1 : 0)),
         +((m.hero.teleportCd ?? 0).toFixed(1)),
       ],
-      forts: m.forts.map((f) => [f.slot, FORT_IDS.indexOf(f.fortId), Math.round(f.hp)]),
+      forts: m.forts.map((f) => [f.slot, FORT_IDS.indexOf(f.fortId), Math.round(f.hp), f.tier ?? 0]),
       items: m.groundItems.slice(0, 40).map((it) => [
         it.cell.x, it.cell.y, Object.keys(EQUIP_SLOTS).indexOf(it.slot),
         QUALITY_ORDER.indexOf(it.quality), it.ilvl,
@@ -153,9 +153,12 @@ export function applyDefenseShared(m, s) {
   m.hero.teleportCd = h[11] ?? 0;
   m.forts = s.forts.map((row) => {
     const fort = FORTS[FORT_IDS[row[1]]];
+    const tier = row[3] | 0;
+    const stats = fort.blocks ? null : fortStatsOf(fort.id, tier);
     return {
-      slot: row[0], fortId: fort.id, hp: row[2], maxHp: fort.hp,
-      cell: m.def.fortSlots[row[0]], stats: fort.blocks ? null : { ...fort },
+      slot: row[0], fortId: fort.id, hp: row[2], maxHp: stats?.hp ?? fort.hp,
+      tier: stats?.tier ?? 0,
+      cell: m.def.fortSlots[row[0]], stats,
     };
   });
   m.groundItems = s.items.map((row) => ({
@@ -235,7 +238,7 @@ export function createSnapshotter() {
     if (!full) for (const uid of prevMonsters.keys()) if (!seen.has(uid)) removed.push(uid);
     prevMonsters = rows;
 
-    const towerSig = m.towers.map((t) => `${t.slot}:${t.towerId}:${t.level}:${t.priority}:${t.invested}`).join('|');
+    const towerSig = m.towers.map((t) => `${t.slot}:${t.towerId}:${t.level}:${t.priority}:${t.invested}:${t.spec ?? ''}`).join('|');
     const towersChanged = full || towerSig !== prevTowerSig;
     prevTowerSig = towerSig;
 
@@ -265,7 +268,7 @@ export function createSnapshotter() {
       shared.pr = m.projectiles.slice(-40).map((p) => [p.slot ?? -1, p.target?.uid ?? 0, +((p.progress ?? 0) * 20).toFixed(0)]);
     }
     if (towersChanged) {
-      shared.tw = m.towers.map((t) => [t.slot, TOWER_IDS.indexOf(t.towerId), t.level, PRIORITY_IDS.indexOf(t.priority), t.invested, t.owner ?? 0]);
+      shared.tw = m.towers.map((t) => [t.slot, TOWER_IDS.indexOf(t.towerId), t.level, PRIORITY_IDS.indexOf(t.priority), t.invested, t.owner ?? 0, t.spec ? 1 : 0]);
     }
     // 双守护目标（§2.2 map_06）：客户端会画**每一个**核心的血条，只发 core[0] 的话第二个永远是满血
     if ((m.cores ?? []).length > 1) shared.cores = m.cores.map((c) => [Math.round(c.hp), c.maxHp]);
@@ -332,13 +335,14 @@ export function applyShared(m, s) {
     m.towers = s.tw.map((row) => {
       const cell = m.map.slots[row[0]];
       const towerId = TOWER_IDS[row[1]];
+      const spec = row[6] === 1 ? (TOWER_SPEC[towerId]?.id ?? null) : null;
       return {
         uid: row[0] + 1, towerId, slot: row[0], level: row[2],
         priority: PRIORITY_IDS[row[3]], invested: row[4], owner: row[5] ?? 0, cooldown: 0,
-        cell,
+        spec, cell,
         // §2.3 / §69：镜像的塔也要带**自己的**统计（含地形加成），而且**结算/本地续玩要用它**——
         // 漏掉的话，「掉线后转单人继续」时塔开火会去读 undefined.range（验证记录 §104）
-        stats: towerStatsAt(m.map, cell, towerId, row[2]),
+        stats: towerStatsAt(m.map, cell, towerId, row[2], spec),
       };
     });
   }

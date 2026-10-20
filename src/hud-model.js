@@ -1,7 +1,7 @@
 // HUD 的纯计算部分：波次预告、伤害飘字、队伍色。
 // 独立成模块是为了能直接测：这些逻辑在单机与联机下都要对。
 
-import { ARMOR_LABEL, ARMOR_TYPES, ATTACK_LABEL, DAMAGE_MATRIX, DEFENSE_MAPS, FORTS, MONSTERS, TEAM_COLORS, WAVES } from './data.js';
+import { ARMOR_LABEL, ARMOR_TYPES, ATTACK_LABEL, DAMAGE_MATRIX, DEFENSE_MAPS, FORTS, MONSTERS, TEAM_COLORS, TOWER_MAX_LEVEL, TOWER_SPEC, WAVES } from './data.js';
 import { EQUIP_SLOTS, HEROES, POTION_BAG_SLOTS, QUALITY, SHOP_ITEMS, TOWERS } from './data.js';
 import { potionCount } from './match.js';
 import { gridDist } from './core.js';
@@ -222,6 +222,8 @@ export function wavePreview(waveIndex, maxGroups = 3, waves = WAVES) {
   const total = groups.reduce((s, g) => s + g.count, 0);
   const chips = creepRoleChips(def.groups);
   const needsDetect = chips.some((c) => c.id === 'invis');
+  const sprintAid = Object.values(TOWER_SPEC).find((s) => s.counters?.includes('sprint'));
+  const sprintNote = sprintAid && chips.some((c) => c.id === 'sprint') ? ` · ${sprintAid.counter}` : '';
   const mark = (g) => {
     const labels = g.roles.map((id) => CREEP_ROLES.find((r) => r.id === id)?.label).filter(Boolean);
     return labels.length ? `·${labels.join('·')}` : '';
@@ -241,8 +243,18 @@ export function wavePreview(waveIndex, maxGroups = 3, waves = WAVES) {
     // 隐身波再补一句「需要侦测」，开波前就知道普通塔锁不住。
     text: groups.map((g) => `${g.count}×${g.name}（${g.armorLabel}${mark(g)}）`).join(' + ')
       + (groups.length > maxGroups ? ` 等 ${total} 只` : '')
-      + (needsDetect ? ' · 需要侦测' : ''),
+      + (needsDetect ? ' · 需要侦测' : '')
+      + sprintNote,
   };
+}
+
+/** 塔面板上的支援身份。没到专精阶不写，免得每座冰塔都占一行。 */
+export function towerRoleNote(tower) {
+  const offer = TOWER_SPEC[tower?.towerId];
+  if (!offer) return '';
+  if (tower.spec) return ` · ${offer.hint}`;
+  if ((tower.level ?? 1) >= TOWER_MAX_LEVEL) return ` · 可升${offer.name}（${offer.hint}）`;
+  return '';
 }
 
 /** 塔 / 工事面板上的侦测半径。没有侦测就返回空串，不改原来那行读数。 */
