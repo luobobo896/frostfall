@@ -226,8 +226,14 @@ test('小游戏弹层：塔面板给读数 + 升级 / 出售 / 四档优先级�
   assert.ok(sheet.byId['prio-front'].on, '当前优先级要高亮');
   assert.match(sheet.hint, /伤害 18\.0/, '面板要写清塔的读数');
   assert.match(sheet.byId.sell.sub, /返还 \d+ 金/);
-  // 满级：升级行灰掉且写「已满级」
-  const maxed = layoutSheet({ ...m, towers: [{ ...tower, level: TOWER_MAX_LEVEL }] }, { panelSlot: 0 });
+  // 箭塔满级还能升穿云箭楼；买下专精之后才是已满级，升级行灰掉
+  const offered = layoutSheet({ ...m, towers: [{ ...tower, level: TOWER_MAX_LEVEL }] }, { panelSlot: 0 });
+  assert.equal(offered.byId.upgrade.disabled, false);
+  assert.equal(offered.byId.upgrade.label, '穿云箭楼');
+  const maxed = layoutSheet({
+    ...m,
+    towers: [{ ...tower, level: TOWER_MAX_LEVEL, spec: 'cloud_keep' }],
+  }, { panelSlot: 0 });
   assert.equal(maxed.byId.upgrade.disabled, true);
   assert.match(maxed.byId.upgrade.label, /已满级/);
   // 出售两步：armed 之后标签变「确认出售」，颜色转危险色

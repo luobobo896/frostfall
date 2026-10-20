@@ -249,6 +249,8 @@ export const AURA_RING = { stroke: '#9fd4ff', lineWidth: 2.5, fill: 'rgba(159, 2
 export const SCORCH_RING = { stroke: '#e7a15a', lineWidth: 2.5, fill: 'rgba(231, 161, 90, .16)' };
 /** 风暴电笼：实线浅紫，外圈加左右两道弧。低特效只停呼吸，圈本身还在。 */
 export const STORM_RING = { stroke: '#d7b3ff', lineWidth: 2.5, fill: 'rgba(215, 179, 255, .16)' };
+/** 穿云箭楼：两条风线加两端风标，不是圆圈。低特效只停呼吸，线本身还在。 */
+export const WIND_RING = { stroke: '#b6f3d4', lineWidth: 2.5, fill: 'rgba(182, 243, 212, .16)' };
 /** 急路：暖色折线、暖色箭头、一个「急」字。不是按钮。 */
 export const URGENT_LANE = '#e7a15a';
 /** 点英雄的半径下限（直径约 44px）。视觉半径更大时跟视觉走。 */
@@ -360,6 +362,17 @@ export function towerSilhouette(towerId, level = 1, spec = null) {
         { role: 'battlement', points: [[-0.82, -0.42], [-0.5, -0.42], [-0.5, -0.78], [-0.82, -0.78]], closed: true },
         { role: 'battlement', points: [[-0.16, -0.42], [0.16, -0.42], [0.16, -0.84], [-0.16, -0.84]], closed: true },
         { role: 'battlement', points: [[0.5, -0.42], [0.82, -0.42], [0.82, -0.78], [0.5, -0.78]], closed: true },
+      );
+    }
+    // 穿云箭楼：女墙再拔高，中间两道射孔，左右风标高出屋顶。不是把 Lv3 垛口再放大一圈。
+    if (spec === 'cloud_keep') {
+      parts.push(
+        { role: 'battlement', points: [[-1.12, -0.42], [-0.72, -0.42], [-0.72, -1.52], [-1.12, -1.52]], closed: true },
+        { role: 'battlement', points: [[0.72, -0.42], [1.12, -0.42], [1.12, -1.52], [0.72, -1.52]], closed: true },
+        { role: 'slit', points: [[-0.42, -0.5], [-0.28, -0.5], [-0.28, -1.22], [-0.42, -1.22]], closed: true },
+        { role: 'slit', points: [[0.28, -0.5], [0.42, -0.5], [0.42, -1.22], [0.28, -1.22]], closed: true },
+        { role: 'vane', points: [[-0.95, -1.42], [-0.7, -1.42], [-1.22, -1.98], [-1.38, -1.78]], closed: true },
+        { role: 'vane', points: [[0.7, -1.42], [0.95, -1.42], [1.38, -1.78], [1.22, -1.98]], closed: true },
       );
     }
   }
@@ -1257,6 +1270,45 @@ export function createRenderer(canvas, { size = null } = {}) {
     ctx.lineWidth = 1;
   }
 
+  /** 风线：两条平行实线，两端各一道风标。选中时中间加一层淡填。低特效不呼吸。 */
+  function drawWindLine(cell, reach, { selected = false, alpha = 0.92 } = {}) {
+    if (!cell || !(Number(reach) > 0)) return;
+    const c = toScreen(cell.x, cell.y, 0);
+    const rx = reach * (GRID.tileW / 2) * view.scale;
+    const gap = Math.max(3, Math.min(rx, reach * (GRID.tileH / 2) * view.scale) * 0.16);
+    ctx.setLineDash([]);
+    ctx.strokeStyle = WIND_RING.stroke;
+    ctx.globalAlpha = selected ? 1 : alpha;
+    if (selected) {
+      ctx.beginPath();
+      ctx.moveTo(c.x - rx, c.y);
+      ctx.lineTo(c.x, c.y - gap * 1.6);
+      ctx.lineTo(c.x + rx, c.y);
+      ctx.lineTo(c.x, c.y + gap * 1.6);
+      ctx.closePath();
+      ctx.fillStyle = WIND_RING.fill;
+      ctx.fill();
+    }
+    ctx.lineWidth = selected ? WIND_RING.lineWidth + 1 : WIND_RING.lineWidth;
+    ctx.beginPath();
+    ctx.moveTo(c.x - rx, c.y - gap);
+    ctx.lineTo(c.x + rx, c.y - gap);
+    ctx.moveTo(c.x - rx, c.y + gap);
+    ctx.lineTo(c.x + rx, c.y + gap);
+    ctx.stroke();
+    ctx.lineWidth = WIND_RING.lineWidth;
+    ctx.beginPath();
+    ctx.moveTo(c.x - rx, c.y - gap * 2.4);
+    ctx.lineTo(c.x - rx + gap * 1.4, c.y);
+    ctx.lineTo(c.x - rx, c.y + gap * 2.4);
+    ctx.moveTo(c.x + rx, c.y - gap * 2.4);
+    ctx.lineTo(c.x + rx - gap * 1.4, c.y);
+    ctx.lineTo(c.x + rx, c.y + gap * 2.4);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+    ctx.lineWidth = 1;
+  }
+
   /** 英雄技能圈：虚线冷色，不铺塔那种奶油填充。四个刻度再和实线圈拉开。 */
   function drawHeroSkillRing(cell, range) {
     if (!cell || !(Number(range) > 0)) return;
@@ -1688,6 +1740,13 @@ export function createRenderer(canvas, { size = null } = {}) {
       if (!(storm?.radius > 0)) continue;
       const alpha = ringStill ? 0.92 : (0.78 + 0.18 * Math.sin((now || 0) * 3));
       drawStormRing(t.cell, storm.radius, { selected: selectedTower === t.slot, alpha });
+    }
+    for (const t of m.towers) {
+      const wind = t.stats?.special?.wind;
+      if (!(wind?.reach > 0)) continue;
+      const alpha = ringStill ? 0.92 : (0.78 + 0.18 * Math.sin((now || 0) * 3));
+      const reach = t.stats?.range > 0 ? Math.min(wind.reach, t.stats.range) : wind.reach;
+      drawWindLine(t.cell, reach, { selected: selectedTower === t.slot, alpha });
     }
     drawReviveMark(m);
     drawFloaters(floaters, now);

@@ -162,7 +162,12 @@ test('寒霜祭坛：满级才开，价钱与攻击曲线分开，卖掉按投�
   assert.equal(buildTower(m, arrowSlot, 'tw_arrow'), true);
   assert.equal(upgradeTower(m, arrowSlot), true);
   assert.equal(upgradeTower(m, arrowSlot), true);
-  assert.equal(upgradeTower(m, arrowSlot), false, '箭塔满级没有专精');
+  assert.equal(upgradeTower(m, arrowSlot), true);
+  const arrow = m.towers.find((t) => t.slot === arrowSlot);
+  assert.equal(arrow.spec, TOWER_SPEC.tw_arrow.id);
+  assert.equal(arrow.level, 3);
+  assert.equal(arrow.stats.special.aura, undefined, '穿云箭楼不挂寒霜光环');
+  assert.equal(arrow.stats.attackType, 'normal');
 
   const frost = raiseFrost(m, slot);
   frost.hp = 10;

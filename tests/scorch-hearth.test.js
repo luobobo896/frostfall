@@ -156,7 +156,8 @@ test('燎野炮台：满级才开，价钱与炮弹曲线分开，卖掉按投�
   assert.equal(Math.round(TOWERS.tw_cannon.cost * HEARTH.costMul), 288);
   assert.equal(upgradeCost('tw_cannon', 3), null);
   assert.equal(upgradeCost('tw_static', 3), null);
-  assert.equal(TOWER_SPEC.tw_arrow, undefined);
+  assert.notEqual(TOWER_SPEC.tw_arrow?.id, HEARTH.id);
+  assert.equal(towerStats('tw_arrow', 3, TOWER_SPEC.tw_arrow.id).special.scorch, undefined);
   assert.notEqual(TOWER_SPEC.tw_static?.id, HEARTH.id);
 
   const plain = towerStats('tw_cannon', 3);
@@ -417,7 +418,8 @@ test('波次预告和建造面板写出焦土身份，寒霜那句还在', () =>
   const build = layoutSheet(m, { selectedSlot: 1 });
   assert.match(build.byId['build-tw_cannon'].sub, /满级焦土/);
   assert.match(build.byId['build-tw_frost'].sub, /满级支援/);
-  assert.doesNotMatch(build.byId['build-tw_arrow'].sub, /满级/);
+  assert.match(build.byId['build-tw_arrow'].sub, /满级穿刺/);
+  assert.doesNotMatch(build.byId['build-tw_arrow'].sub, /焦土/);
   assert.match(build.byId['build-tw_static'].sub, /满级雷暴/);
   assert.ok(build.byId['build-tw_cannon'].h >= 44);
   const preview = layoutSheet(m, { selectedSlot: 1, placingTowerId: 'tw_cannon' });
