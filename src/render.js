@@ -2,7 +2,7 @@
 
 import { DEFENSE_MAPS, GRID, HERO_REVIVE, MAPS, MONSTERS, QUALITY, TEAM_COLORS, TOWERS } from './data.js';
 import { buildMap, heroPos, posAt, project } from './core.js';
-import { heroAbilityRange, heroMaxHp, holdCells, sprintState, towerStatsAt } from './match.js';
+import { heroAbilityRange, heroMaxHp, holdCells, revivePoint, sprintState, towerStatsAt } from './match.js';
 import { isLowHp } from './hud-model.js';
 import { viewport } from './platform.js';   // §平台适配：像素比在两个环境里的取法不同
 import { heroSpriteKey, mobSpriteKey, resolveSprite, tileSpriteKey, towerSpriteKey } from './assets.js';
@@ -994,6 +994,39 @@ export function createRenderer(canvas, { size = null } = {}) {
   const monPos = (m, mo) => (mo.pathIndex != null && Number.isFinite(mo.dist) && m.map.paths[mo.pathIndex])
     ? posAt(m.map.paths[mo.pathIndex], mo.dist) : mo.cell;
 
+  /**
+   * 地面上的复活点：石色菱形 + 秒数。不描金、不走技能虚线、不走塔的奶油圈。
+   * 只描边，不放粒子，60 与 120 同一条路径。
+   */
+  function drawReviveMark(m) {
+    const pt = revivePoint(m);
+    if (!pt) return;
+    const c = toScreen(pt.x, pt.y, 0.15);
+    const rx = Math.max(14, 16 * view.scale);
+    const ry = rx * 0.5;
+    ctx.beginPath();
+    ctx.moveTo(c.x, c.y - ry);
+    ctx.lineTo(c.x + rx, c.y);
+    ctx.lineTo(c.x, c.y + ry);
+    ctx.lineTo(c.x - rx, c.y);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(90, 100, 116, .55)';
+    ctx.fill();
+    ctx.strokeStyle = '#d7e2ec';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.strokeStyle = '#8b95a3';
+    ctx.lineWidth = 1.5;
+    ctx.moveTo(c.x - rx * 0.45, c.y);
+    ctx.lineTo(c.x + rx * 0.45, c.y);
+    ctx.moveTo(c.x, c.y - ry * 0.55);
+    ctx.lineTo(c.x, c.y + ry * 0.55);
+    ctx.stroke();
+    ctx.lineWidth = 1;
+    label(`${Math.ceil(m.hero.reviveTimer ?? 0)}s`, c.x, c.y - ry - 10, '#d7e2ec', 13);
+  }
+
   function drawHero(m, localSlot) {
     const h = m.hero;
     // 人物同样按小数位置画：防守里 `carry` 就是「走向下一格的进度」（相机也用它，见 drawDefense）
@@ -1181,6 +1214,7 @@ export function createRenderer(canvas, { size = null } = {}) {
       const ability = heroAbilityRange(m.hero);
       if (ability > 0) drawHeroSkillRing(heroPos(m.hero), ability);
     }
+    drawReviveMark(m);
     drawFloaters(floaters, now);
   }
 
@@ -1347,6 +1381,7 @@ export function createRenderer(canvas, { size = null } = {}) {
       label('⚠ 进攻方向', c.x, c.y - 20, '#ffb4a0', 14);
     }
 
+    drawReviveMark(m);
     drawFloaters(floaters, now);
   }
 

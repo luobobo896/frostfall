@@ -10,7 +10,7 @@ import {
   EQUIP_SELL_BONUS_LUMBER, EQUIP_SELL_REFUND, EQUIP_SLOTS, QUALITY, QUALITY_ORDER,
   SHOP_ITEMS, TARGET_PRIORITIES, TOWERS, TOWER_SELL_REFUND,
 } from '../data.js';
-import { attackHint, resultPanelModel, roleGlyph, shopRows, wavePreview } from '../hud-model.js';
+import { attackHint, commandStrip, resultPanelModel, roleGlyph, shopRows, wavePreview } from '../hud-model.js';
 import { fitText } from '../render.js';
 import {
   REVIVE_LUMBER, TOWER_REPAIR_GOLD, craftableSlots, enhanceCostOf, potionCount, shopPriceOf, skillLevel,
@@ -86,6 +86,18 @@ export const skillKeys = (m) => [...m.hero.def.skills, m.hero.def.thirdSkill].fi
  */
 export function layoutBattle(model = {}) {
   const items = [];
+  const ui = model.ui ?? {};
+  const towerFocus = model.selection === 'tower'
+    || ui.panelSlot != null
+    || ui.selectedSlot != null
+    || ui.sheetKind === 'fort';
+  const dead = !!model.hero?.dead;
+  // 纯布局用例不传选择态：仍画出技能。游戏里会显式传 heroCommand / selection。
+  const unspecified = model.heroCommand == null && model.selection == null
+    && ui.heroSelected == null && model.hero?.selected == null;
+  const heroOn = !towerFocus && model.heroCommand !== false
+    && (unspecified || !!ui.heroSelected || !!model.hero?.selected || model.heroCommand === true);
+  const strip = commandStrip({ towerOpen: towerFocus, heroSelected: heroOn, dead });
   /**
    * 底部一排（从左到右）：商店 / 背包 / 药品 / 开波（结算时变「再开一局」）/ 技能 1 / 技能 2 / 回大厅。
    * 上一版这里是四个塔种快捷键——建塔改成「点塔位弹面板」之后它们就没用了（同一个决定两个入口），
@@ -109,10 +121,10 @@ export function layoutBattle(model = {}) {
    * 英雄吃伤害、15 秒 × 人物等级后自动复活），而阵亡时本来就放不了技能——
    * 浏览器版这条只有键盘 `r`（手机上够不着），小游戏给按钮。木材不够就灰掉（内核会再判一次）。
    */
-  if (model.hero?.dead) {
+  if (strip.revive) {
     items.push(item('revive', 358, 315, 190, 48, `快速复活 · ${REVIVE_LUMBER} 木`, { type: 'revive' },
       { disabled: (model.lumber ?? 0) < REVIVE_LUMBER }));
-  } else {
+  } else if (strip.skills) {
     const skills = model.skills ?? [{ name: '技能 1' }, { name: '技能 2' }];
     skills.forEach((sk, i) => {
       items.push(item(`skill-${i}`, 358 + i * 66, 315, 58, 48, sk.name ?? `技能 ${i + 1}`,
@@ -133,8 +145,13 @@ export function layoutBattle(model = {}) {
    */
   const tutorial = model.tutorial ?? null;
   if (tutorial) items.push(item('tutorialSkip', 574, 261, 81, 44, '跳过', { type: 'tutorialSkip' }));
-  // 左侧拇指区的驻守肖像。整块 ≥44 是选择热区；技能仍是底排那几颗胖按钮。
-  items.push(item('portrait', 12, 188, 160, 64, '驻守英雄', { type: 'selectHero' }, { on: !!model.hero?.selected }));
+  // 塔面板盖住这一带时肖像让开。没选中时肖像仍在，当作胖选择热区；背包点只在命令条开着时画。
+  if (!towerFocus) {
+    items.push(item('portrait', 12, 188, 160, 64, '驻守英雄', { type: 'selectHero' }, {
+      on: !!model.hero?.selected || !!ui.heroSelected,
+      showDots: strip.open && !dead,
+    }));
+  }
   return {
     w: DESIGN.w, h: DESIGN.h,
     capsule: { x: DESIGN.w - CAPSULE.w - 8, y: 6, w: CAPSULE.w, h: CAPSULE.h },
@@ -173,17 +190,21 @@ function drawPortrait(ctx, m, it, selected) {
   text(ctx, '驻', mx + mark / 2, my + mark / 2, { size: 16, align: 'center', color: '#e8d7a2', weight: 'bold' });
   const name = m.hero?.def?.name ?? '英雄';
   const lv = m.hero?.level ?? 1;
-  text(ctx, `${name}  Lv${lv}`, it.x + 56, it.y + 16, { size: 12, weight: 'bold' });
+  const dead = !!m.hero?.dead;
+  text(ctx, dead ? `复活 ${Math.ceil(m.hero.reviveTimer ?? 0)}s` : `${name}  Lv${lv}`, it.x + 56, it.y + 16,
+    { size: 12, weight: 'bold', color: dead ? COLORS.danger : COLORS.ink });
   const max = Math.max(1, m.hero ? heroMaxHp(m.hero) : 1);
   const pct = Math.max(0, Math.min(1, (m.hero?.hp ?? 0) / max));
   ctx.fillStyle = 'rgba(255,255,255,.12)';
   ctx.fillRect(it.x + 56, it.y + 28, 108, 6);
   ctx.fillStyle = pct < 0.2 ? '#d1503f' : '#35a85a';
   ctx.fillRect(it.x + 56, it.y + 28, 108 * pct, 6);
-  const dots = Math.min(6, m.inventory?.length ?? 0);
-  for (let i = 0; i < 6; i++) {
-    ctx.fillStyle = i < dots ? '#e0c36a' : 'rgba(255,255,255,.18)';
-    ctx.fillRect(it.x + 56 + i * 10, it.y + 44, 6, 6);
+  if (!dead && it.showDots !== false) {
+    const dots = Math.min(6, m.inventory?.length ?? 0);
+    for (let i = 0; i < 6; i++) {
+      ctx.fillStyle = i < dots ? '#e0c36a' : 'rgba(255,255,255,.18)';
+      ctx.fillRect(it.x + 56 + i * 10, it.y + 44, 6, 6);
+    }
   }
   ctx.lineWidth = 1;
 }

@@ -281,7 +281,7 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
     renderer.fit(m.map?.grid ?? m.grid);
     const b = {
       m, renderer, selectedTower: 'tw_arrow', message: null, until: 0, layout: null,
-      ui: { selectedSlot: null, panelSlot: null, sellArmed: false },
+      ui: { selectedSlot: null, panelSlot: null, sellArmed: false, heroSelected: m.mode !== 'defense' },
       extra: null,     // 结算那一下记档的收获（声望 / 升级），画面板用
       paused: false, rate: 1,
       saveClock: 0,    // §10.3 单人局自动存档：每 5 秒一次 + 切后台补一次
@@ -319,8 +319,15 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
       : layoutSheet(m, { ...b.ui, rate: b.rate, settings }));
     b.model = () => (m.mode === 'defense'
       ? { ...defModel(b), sheet: b.sheetOf() }
-      : {
-        ...describeBattleModel(m), selectedTower: b.selectedTower, paused: b.paused, rate: b.rate,
+      : (() => {
+        const base = describeBattleModel(m);
+        const towerFocus = b.ui.panelSlot != null || b.ui.selectedSlot != null || b.ui.sheetKind === 'fort';
+        return {
+        ...base,
+        hero: { ...base.hero, selected: !!b.ui.heroSelected },
+        heroCommand: !towerFocus && (!!b.ui.heroSelected || !!base.hero.dead),
+        selection: towerFocus ? 'tower' : 'none',
+        selectedTower: b.selectedTower, paused: b.paused, rate: b.rate,
         // 结算面板一出来就收掉提示条（浏览器版 `view.tutorial` 同源）
         tutorial: m.result ? null : (b.tutorial?.current()?.text ?? null),
         /**
@@ -331,7 +338,8 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
         preview: m.result ? null : nextWavePack(m).text,
         roster: m.result ? [] : nextWavePack(m).chips,
         ui: b.ui, sheet: b.sheetOf(),
-      });
+        };
+      })());
     b.layout = m.mode === 'defense' ? layoutDefense(m, defModel(b)) : layoutBattle(b.model());
     battle = b;
     return b;
@@ -379,7 +387,9 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
     const g = gridAt(b, x, y);
     if (heroHit(b, x, y)) {
       b.ui = { selectedSlot: null, panelSlot: null, sellArmed: false, heroSelected: true };
-      note(b, '已选驻守英雄 · 点路径旁设驻守点', 1.6);
+      note(b, b.m.hero.dead
+        ? `阵亡 · 复活 ${Math.ceil(b.m.hero.reviveTimer ?? 0)}s`
+        : '已选驻守英雄 · 点路径旁设驻守点', 1.6);
       return { type: 'selectHero' };
     }
     const slots = b.m.map.slots;
@@ -404,7 +414,16 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
       const d = (s.x - g.x) ** 2 + (s.y - g.y) ** 2;
       if (d < bestD) { bestD = d; best = i; }
     });
-    if (best < 0 || bestD > 4) { note(b, '这一格不是塔位'); return null; }
+    if (best < 0 || bestD > 4) {
+      const had = !!b.ui.heroSelected || b.ui.selectedSlot != null || b.ui.panelSlot != null;
+      if (had) {
+        b.ui = { selectedSlot: null, panelSlot: null, sellArmed: false };
+        note(b, '已取消选择');
+        return { type: 'clear' };
+      }
+      note(b, '这一格不是塔位');
+      return null;
+    }
     const existing = towerAtSlot(b.m, best);
     if (existing) {
       b.ui = { selectedSlot: null, panelSlot: best, sellArmed: false };
@@ -425,13 +444,15 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
     const slot = b.ui.panelSlot ?? b.ui.selectedSlot;
     switch (action.type) {
       // ---- HUD 上的通用键 ----
-      case 'shop': b.ui = { sheetKind: 'shop' }; return action;
-      case 'bag': b.ui = { sheetKind: 'bag' }; return action;
+      case 'shop': b.ui = { sheetKind: 'shop', heroSelected: !!b.ui.heroSelected }; return action;
+      case 'bag': b.ui = { sheetKind: 'bag', heroSelected: !!b.ui.heroSelected }; return action;
       case 'speed': b.rate = b.rate === 2 ? 1 : 2; return action;
       case 'pause': {
         // 单机局真暂停（联机才不谈暂停，§114）；暂停时顺手把面板摊开——玩家按暂停多半是想看点东西
         b.paused = !b.paused;
-        b.ui = b.paused ? { sheetKind: 'pause' } : { selectedSlot: null, panelSlot: null, sellArmed: false };
+        b.ui = b.paused
+          ? { sheetKind: 'pause', heroSelected: !!b.ui.heroSelected }
+          : { selectedSlot: null, panelSlot: null, sellArmed: false, heroSelected: !!b.ui.heroSelected };
         return action;
       }
       case 'potion': {
@@ -506,7 +527,7 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
         return action;
       }
       case 'close':
-        b.ui = { selectedSlot: null, panelSlot: null, sellArmed: false };
+        b.ui = { selectedSlot: null, panelSlot: null, sellArmed: false, heroSelected: !!b.ui.heroSelected };
         return action;
       case 'build': {
         // 第一下只预览射程（和浏览器轮盘悬停同一件事）。同一座再点一次才真的建。
@@ -560,6 +581,7 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
       case 'revive': {
         // §7.6 快速复活（50 木材）：浏览器版这条只有键盘 `r`（手机上根本够不着），小游戏补了按钮
         const ok = reviveNow(b.m);
+        if (ok) b.ui = { ...b.ui, heroSelected: true };
         note(b, ok ? '快速复活' : '木材不够或没阵亡', 1.6);
         return action;
       }
@@ -621,7 +643,7 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
       // ---- 暂停面板上的四个动作 ----
       case 'resume':
         b.paused = false;
-        b.ui = { selectedSlot: null, panelSlot: null, sellArmed: false };
+        b.ui = { selectedSlot: null, panelSlot: null, sellArmed: false, heroSelected: !!b.ui.heroSelected };
         return action;
       case 'camera': {
         settings = { ...settings, tdFitAll: settings.tdFitAll === false };
@@ -712,7 +734,7 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
     return b.renderer.toGrid(w.x, w.y);
   };
   const heroHit = (b, x, y) => {
-    if (!b.m.hero || b.m.hero.dead) return false;
+    if (!b.m.hero) return false;
     const p = heroPos(b.m.hero);
     const screen = b.renderer.toScreen(p.x, p.y, 1);
     const w = worldOf(x, y);
@@ -1145,6 +1167,7 @@ const battleLayoutSig = (model) => {
     h.level ?? 0, h.dead ? 1 : 0, Math.ceil(h.reviveIn || 0),
     model.tutorial ?? '', model.rate ?? 1, model.paused ? 1 : 0, model.result ?? '',
     model.wave ?? 0, model.phase ?? '', model.lumber ?? 0, skills,
+    model.heroCommand === false ? 0 : 1, model.selection ?? '', model.hero?.selected ? 1 : 0,
   ].join('|');
 };
 
@@ -1196,6 +1219,8 @@ export const defModel = (b) => ({
   stickOrigin: b.stick.active ? b.stick.origin : null,
   stick: b.stick,   // 调试/验收用：能断言「推着走了没有」
   ui: b.ui,
+  // 工事面板开着时收起技能/复活。省略这一项的布局仍把英雄当作当前操作对象。
+  heroCommand: b.ui?.sheetKind !== 'fort',
 });
 
 /**

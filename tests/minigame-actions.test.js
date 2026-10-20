@@ -147,7 +147,7 @@ test('小游戏模型对齐：布局读的每个字段，模型都提供了（�
   // TD 的 HUD：布局读的字段来自 describeBattleModel，加上 game.js 组装时补的那几个
   const td = createMatch({ seed: 5 });
   const tdModel = Object.keys(describeBattleModel(td));
-  const tdExtra = ['paused', 'rate', 'tutorial', 'ui', 'sheet'];
+  const tdExtra = ['paused', 'rate', 'tutorial', 'ui', 'sheet', 'heroCommand', 'selection'];
   const tdReads = modelReads(section(srcOf('../src/minigame/battle.js'), 'export function layoutBattle', '/** 触点 → HUD 动作'));
   for (const key of tdReads) {
     assert.ok(tdModel.includes(key) || tdExtra.includes(key),

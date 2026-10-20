@@ -232,6 +232,7 @@ body { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none
    回到 TD，日志面板**整页**都不会再出现（验证记录 §94）。 */
 #stage.defense .hud-right { display: none; }
 .hero-panel { min-width: 220px; display: flex; gap: 8px; align-items: center; }
+.hero-panel.open { border-color: rgba(160, 190, 220, .55); }
 .hero-panel.selected { border-color: #e0c36a; }
 .hero-readout { flex: 1; min-width: 0; }
 .hero-mark { width: 56px; height: 56px; min-width: 56px; min-height: 56px; flex: none;
@@ -262,6 +263,7 @@ body { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none
 /* 技能与药品：右下拇指弧内（§1.9.2） */
 /* §1.9.2：按钮间距 ≥24pt（防误触） */
 .skill-row { display: flex; gap: 24px; }
+.skill-row.closed { display: none; }
 .skill { width: var(--btn); height: var(--btn); border-radius: 50%; border: 2px solid rgba(140, 200, 255, .5);
   background: radial-gradient(circle at 35% 30%, rgba(90, 169, 230, .55), rgba(12, 22, 38, .95));
   color: var(--ink); font-size: 13px; font-weight: 700; display: flex; flex-direction: column;

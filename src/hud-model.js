@@ -61,6 +61,18 @@ export function zoneLabel(zone) {
   return `${zone.name} Lv${zone.lvMin}-${zone.lvMax}` + (bonus > 1 ? ` · 掉落 ×${bonus}` : '');
 }
 
+/**
+ * 选塔和选英雄的命令条互斥。塔面板开着时只留升级 / 出售 / 射程；
+ * 英雄选中（防守里英雄一直是被操作的那个）时才给技能和背包点。
+ * 阵亡时命令条改成复活，技能关掉——除非塔面板正开着，那时塔面板优先。
+ */
+export function commandStrip({ towerOpen = false, heroSelected = false, dead = false, implicitHero = false } = {}) {
+  if (towerOpen) return { open: false, skills: false, revive: false, tower: true };
+  const open = !!(heroSelected || implicitHero || dead);
+  if (!open) return { open: false, skills: false, revive: false, tower: false };
+  return { open: true, skills: !dead, revive: !!dead, tower: false };
+}
+
 const mmss = (sec) => `${Math.floor(sec / 60)}:${String(Math.round(sec) % 60).padStart(2, '0')}`;
 
 /**
