@@ -2,13 +2,13 @@
 
 import { DEFENSE_MAPS, GRID, HERO_REVIVE, MAPS, MONSTERS, QUALITY, TEAM_COLORS, TOWERS } from './data.js';
 import { buildMap, heroPos, posAt, project } from './core.js';
-import { heroAbilityRange, heroMaxHp, holdCells, towerStatsAt } from './match.js';
+import { heroAbilityRange, heroMaxHp, holdCells, sprintState, towerStatsAt } from './match.js';
 import { isLowHp } from './hud-model.js';
 import { viewport } from './platform.js';   // §平台适配：像素比在两个环境里的取法不同
 import { heroSpriteKey, mobSpriteKey, resolveSprite, tileSpriteKey, towerSpriteKey } from './assets.js';
 import {
-  DEATH_SEC, attackPulse, chargePulse, fxBudget, heroMotion, hitSlash, impactGlyphs, mobMotion,
-  poseClip, poseFrame, shotGlyphs, shotKind, slowShards, towerMarks, towerNudge,
+  DEATH_SEC, attackPulse, chargePulse, fxBudget, heroMotion, hitSlash, impactGlyphs, leanParts, mobMotion,
+  poseClip, poseFrame, shotGlyphs, shotKind, slowShards, sprintStreaks, towerMarks, towerNudge,
 } from './motion.js';
 
 /**
@@ -94,6 +94,8 @@ export function towerSilhouette(towerId, level = 1) {
     ];
     if (lv >= 3) {
       parts.push({ role: 'barrel', points: [[0.1, -0.42], [reach - 0.18, -0.42], [reach - 0.18, -0.68], [0.1, -0.68]], closed: true });
+      // 炮尾在炮管后方，不把炮口再往前伸（barrelReach 仍看第一根炮管）
+      parts.push({ role: 'breech', points: [[-0.92, 0.22], [-0.18, 0.16], [-0.18, -0.62], [-0.92, -0.5]], closed: true });
     }
   } else if (towerId === 'tw_frost') {
     const tip = [-1.15, -1.31, -1.47][lv - 1];
@@ -103,7 +105,7 @@ export function towerSilhouette(towerId, level = 1) {
       { role: 'crystal', points: [[-0.62, r3(-0.42 - side)], [-0.9, 0.42], [-0.22, 0.28]], closed: true },
       { role: 'crystal', points: [[0.58, r3(-0.55 - side)], [0.92, 0.38], [0.2, 0.22]], closed: true },
     ];
-    if (lv >= 3) parts.push({ role: 'crystal', points: [[0, -0.35], [-0.16, 0.2], [0.16, 0.2]], closed: true });
+    if (lv >= 3) parts.push({ role: 'spike', points: [[0, -1.98], [-0.34, 0.08], [0.34, 0.08]], closed: true });
   } else if (towerId === 'tw_static') {
     const top = [-1.02, -1.14, -1.26][lv - 1];
     parts = [
@@ -114,8 +116,8 @@ export function towerSilhouette(towerId, level = 1) {
     ];
     if (lv >= 3) {
       parts.push(
-        { role: 'arc', points: [[0, -0.2], [-0.48, 0.05], [-0.2, 0.28], [-0.7, 0.42]], closed: false },
-        { role: 'arc', points: [[0, -0.12], [0.5, 0.12], [0.22, 0.34], [0.72, 0.48]], closed: false },
+        { role: 'coil', points: [[-0.28, -0.58], [0.28, -0.74], [0.28, -0.5], [-0.28, -0.34]], closed: true },
+        { role: 'coil', points: [[-0.32, -0.16], [0.32, -0.32], [0.32, -0.06], [-0.32, 0.1]], closed: true },
       );
     }
   } else {
@@ -125,7 +127,15 @@ export function towerSilhouette(towerId, level = 1) {
       { role: 'roof', points: [[-0.64, -0.26], [0, -1.12], [0.64, -0.26]], closed: true },
     ];
     if (lv >= 2) parts.push({ role: 'brace', points: [[-0.28, -0.05], [0.28, -0.05], [0.28, 0.08], [-0.28, 0.08]], closed: true });
-    if (lv >= 3) parts.push({ role: 'spire', points: [[-0.2, -1.02], [0, -1.48], [0.2, -1.02]], closed: true });
+    if (lv >= 3) {
+      // 女墙比 Lv1 屋顶（±0.64）更宽，三块垛口是建筑体量，不是英雄的头或武器
+      parts.push(
+        { role: 'battlement', points: [[-0.88, -0.22], [0.88, -0.22], [0.88, -0.42], [-0.88, -0.42]], closed: true },
+        { role: 'battlement', points: [[-0.82, -0.42], [-0.5, -0.42], [-0.5, -0.78], [-0.82, -0.78]], closed: true },
+        { role: 'battlement', points: [[-0.16, -0.42], [0.16, -0.42], [0.16, -0.84], [-0.16, -0.84]], closed: true },
+        { role: 'battlement', points: [[0.5, -0.42], [0.82, -0.42], [0.82, -0.78], [0.5, -0.78]], closed: true },
+      );
+    }
   }
   return { id: towerId, level: lv, parts };
 }
@@ -201,20 +211,77 @@ export function heroSilhouette(heroId = 'hero_warrior') {
   return { heroId, weapon, parts };
 }
 
-/** 防守围墙：矮垛口，不再画成和塔一样的菱形。 */
-export function wallSilhouette() {
-  return {
-    parts: [{
-      role: 'wall',
-      points: [
-        [-0.9, 0.42], [0.9, 0.42], [0.9, -0.08],
-        [0.55, -0.08], [0.55, -0.48], [0.2, -0.48], [0.2, -0.08],
-        [-0.2, -0.08], [-0.2, -0.48], [-0.55, -0.48], [-0.55, -0.08],
-        [-0.9, -0.08],
+/** 防守围墙。`run` 是直段垛口，`corner` 多一块角垛，`gate` 是门洞（两根门垛 + 门梁，中间留空）。 */
+export function wallSilhouette(kind = 'run') {
+  if (kind === 'gate') {
+    return {
+      kind: 'gate',
+      parts: [
+        { role: 'jamb', points: [[-0.9, 0.42], [-0.28, 0.42], [-0.28, -0.06], [-0.9, -0.06]], closed: true },
+        { role: 'jamb', points: [[0.28, 0.42], [0.9, 0.42], [0.9, -0.06], [0.28, -0.06]], closed: true },
+        { role: 'lintel', points: [[-0.9, -0.06], [0.9, -0.06], [0.9, -0.28], [-0.9, -0.28]], closed: true },
+        { role: 'post', points: [[-0.9, -0.28], [-0.58, -0.28], [-0.58, -0.68], [-0.9, -0.68]], closed: true },
+        { role: 'post', points: [[0.58, -0.28], [0.9, -0.28], [0.9, -0.68], [0.58, -0.68]], closed: true },
       ],
-      closed: true,
-    }],
+    };
+  }
+  const run = {
+    role: 'wall',
+    points: [
+      [-0.9, 0.42], [0.9, 0.42], [0.9, -0.08],
+      [0.55, -0.08], [0.55, -0.48], [0.2, -0.48], [0.2, -0.08],
+      [-0.2, -0.08], [-0.2, -0.48], [-0.55, -0.48], [-0.55, -0.08],
+      [-0.9, -0.08],
+    ],
+    closed: true,
   };
+  if (kind === 'corner') {
+    return {
+      kind: 'corner',
+      parts: [
+        run,
+        { role: 'buttress', points: [[-0.9, 0.42], [-0.38, 0.42], [-0.38, 0.92], [-0.9, 0.92]], closed: true },
+      ],
+    };
+  }
+  return { kind: 'run', parts: [run] };
+}
+
+/** 横竖相邻都是墙，才是转角；直段只有一个方向的邻居。 */
+export function wallKindAt(walls, x, y) {
+  const has = (dx, dy) => !!walls?.has?.(`${x + dx},${y + dy}`);
+  const horizontal = has(-1, 0) || has(1, 0);
+  const vertical = has(0, -1) || has(0, 1);
+  return horizontal && vertical ? 'corner' : 'run';
+}
+
+/**
+ * 工事比 TD 塔矮。箭塔工事是带门洞的门楼，不是把 TD 箭塔缩小一圈。
+ * 单位高度约 0.98，TD 箭塔 Lv1（柱底到顶尖）约 1.67。
+ */
+export function fortSilhouette(fortId = 'fort_arrow') {
+  if (fortId === 'fort_wall') return wallSilhouette('gate');
+  return {
+    id: 'fort_arrow',
+    parts: [
+      { role: 'pier', points: [[-0.78, 0.28], [-0.34, 0.28], [-0.34, -0.18], [-0.78, -0.18]], closed: true },
+      { role: 'pier', points: [[0.34, 0.28], [0.78, 0.28], [0.78, -0.18], [0.34, -0.18]], closed: true },
+      { role: 'lintel', points: [[-0.84, -0.18], [0.84, -0.18], [0.84, -0.36], [-0.84, -0.36]], closed: true },
+      { role: 'merlon', points: [[-0.74, -0.36], [-0.46, -0.36], [-0.46, -0.62], [-0.74, -0.62]], closed: true },
+      { role: 'merlon', points: [[0.46, -0.36], [0.74, -0.36], [0.74, -0.62], [0.46, -0.62]], closed: true },
+      { role: 'roof', points: [[-0.4, -0.56], [0, -0.7], [0.4, -0.56]], closed: true },
+    ],
+  };
+}
+
+/** 工事屏幕半径。严格小于同缩放下的 TD 塔（含 Lv1）。 */
+export function fortDrawSize(scale = 1) {
+  return bodyRadius('tower', scale, 1) * 0.72;
+}
+
+/** 围墙 / 门洞比工事再矮一截，仍然低于 TD 塔。 */
+export function wallDrawSize(scale = 1) {
+  return bodyRadius('tower', scale, 1) * 0.58;
 }
 
 /** 把 `*Silhouette()` 的单位坐标画到锚点上。封闭块填色，开口折线（电弧、武器）用 accent 描。 */
@@ -499,6 +566,7 @@ export function createRenderer(canvas, { size = null } = {}) {
 
   let frameNow = 0;
   let frameFx = fxBudget('high');
+  let sprintLeft = frameFx.sprint ?? 0;
   const poses = new Map();
   const flashes = new Map();
   const corpses = [];
@@ -508,6 +576,7 @@ export function createRenderer(canvas, { size = null } = {}) {
   function beginFrame(isoView) {
     frameNow = isoView.now ?? 0;
     frameFx = fxBudget(isoView.fx);
+    sprintLeft = frameFx.sprint ?? 0;
   }
 
   function drawGlyphs(glyphs, color, width = 1.5) {
@@ -868,6 +937,17 @@ export function createRenderer(canvas, { size = null } = {}) {
     }
     const fill = mo.isAir ? COLORS.air : COLORS.mob[tier] ?? '#c9d6e6';
     const spec = mobSilhouette({ ...mo.def, isAir: mo.isAir || mo.def.isAir });
+    // 冲刺：前倾。有 transform 就剪整个身体（含静帧）；假画布没有 transform 时改剪影点。
+    // 攻击中不倾，受击斜线那一笔才对得上。速度线在还原之后画，保持水平。
+    const sprinting = sprintState(mo.def, m.time).on && !mo.attacking;
+    const canShear = sprinting && typeof ctx.transform === 'function';
+    const bodySpec = sprinting && !canShear ? { ...spec, parts: leanParts(spec.parts, 0.35) } : spec;
+    if (canShear) {
+      ctx.save();
+      ctx.translate(c.x, c.y);
+      ctx.transform(1, 0, -0.35, 1, 0, 0);
+      ctx.translate(-c.x, -c.y);
+    }
     if (frame && drawSprite(frame, c.x, c.y + r * 0.62, r * 2.5)) {
       // 光环是怪的法术圈，不是英雄光。英雄光只属于英雄。
       if (spec.aura) {
@@ -879,10 +959,19 @@ export function createRenderer(canvas, { size = null } = {}) {
         ctx.lineWidth = 1;
       }
     } else {
-      paintSilhouette(ctx, c.x, c.y, r, spec, {
+      paintSilhouette(ctx, c.x, c.y, r, bodySpec, {
         fill,
         accent: spec.aura ? COLORS.aura : fill,
       });
+    }
+    if (canShear) ctx.restore();
+    if (sprinting && sprintLeft > 0) {
+      const n = Math.min(3, sprintLeft);
+      sprintLeft -= n;
+      drawGlyphs(sprintStreaks(n).map((g) => ({
+        closed: false,
+        points: g.points.map(([x, y]) => [c.x + x * r, c.y + y * r]),
+      })), '#e7edf4', 1.5);
     }
     const slowed = mo.effects?.some((e) => e.type === 'slow' && !(e.until <= (m.time ?? 0)));
     if (slowed) {
@@ -1129,13 +1218,26 @@ export function createRenderer(canvas, { size = null } = {}) {
       }
     }
 
-    // 基地围墙
+    // 基地围墙。玩家砌的围墙工事单独画成门段，不在这里再盖一层直墙。
+    const builtWalls = new Set(
+      (m.forts ?? []).filter((f) => f.fortId === 'fort_wall' || !f.stats).map((f) => `${f.cell.x},${f.cell.y}`),
+    );
+    const wallSize = wallDrawSize(view.scale);
     for (const k of m.walls) {
+      if (builtWalls.has(k)) continue;
       const [x, y] = k.split(',').map(Number);
       if (x < bounds.x0 - 1 || x > bounds.x1 + 1 || y < bounds.y0 - 1 || y > bounds.y1 + 1) continue;
       const c = toScreen(x, y, 0.6);
-      const s = 15 * view.scale + 5;
-      paintSilhouette(ctx, c.x, c.y, s, wallSilhouette(), { fill: '#5b6b80', stroke: 'rgba(8,14,22,.65)' });
+      paintSilhouette(ctx, c.x, c.y, wallSize, wallSilhouette(wallKindAt(m.walls, x, y)), {
+        fill: '#5b6b80', stroke: 'rgba(8,14,22,.65)',
+      });
+    }
+    for (const g of [m.def?.base?.gate, m.def?.base?.gate2].filter(Boolean)) {
+      if (g.x < bounds.x0 - 1 || g.x > bounds.x1 + 1 || g.y < bounds.y0 - 1 || g.y > bounds.y1 + 1) continue;
+      const c = toScreen(g.x, g.y, 0.6);
+      paintSilhouette(ctx, c.x, c.y, wallSize, wallSilhouette('gate'), {
+        fill: '#6a7c90', stroke: 'rgba(8,14,22,.75)',
+      });
     }
 
     // 城堡
@@ -1166,16 +1268,16 @@ export function createRenderer(canvas, { size = null } = {}) {
       const c = toScreen(s.x, s.y, built ? 0.8 : 0);
       if (built) {
         const isWall = built.fortId === 'fort_wall' || !built.stats;
-        const size = isWall ? (14 * view.scale + 6) : bodyRadius('tower', view.scale, 1);
+        const size = isWall ? wallDrawSize(view.scale) : fortDrawSize(view.scale);
         if (isWall) {
-          paintSilhouette(ctx, c.x, c.y, size, wallSilhouette(), {
+          paintSilhouette(ctx, c.x, c.y, size, wallSilhouette('gate'), {
             fill: '#6b7a90',
             accent: '#dbe6f2',
             stroke: 'rgba(8,14,22,.65)',
           });
         } else {
-          drawTowerBody('tw_arrow', 1, c.x, c.y, size, {
-            fill: '#dbe6f2',
+          paintSilhouette(ctx, c.x, c.y, size, fortSilhouette('fort_arrow'), {
+            fill: '#c5d0dc',
             accent: '#dbe6f2',
             stroke: 'rgba(8,14,22,.65)',
           });

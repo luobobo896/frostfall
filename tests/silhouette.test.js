@@ -103,6 +103,12 @@ test('纯黑剪影墙：跨职责重叠不超过 30%', () => {
     ],
     ['heroes/hero_warrior_idle', 'heroes/hero_mage_idle', 'heroes/hero_ranger_idle', 'heroes/hero_paladin_idle'],
     ['heroes/hero_warrior_idle', 'towers/tw_arrow_lv2', 'mobs/mob_01_idle', 'mobs/boss_01_idle'],
+    ['heroes/hero_warrior_idle', 'towers/tw_arrow_lv3'],
+    ['heroes/hero_mage_idle', 'towers/tw_cannon_lv3'],
+    ['heroes/hero_ranger_idle', 'towers/tw_frost_lv3'],
+    ['heroes/hero_paladin_idle', 'towers/tw_static_lv3'],
+    ['mobs/mob_01_idle', 'towers/tw_arrow_lv3'],
+    ['mobs/boss_01_idle', 'towers/tw_cannon_lv3'],
   ];
   const bad = [];
   for (const group of groups) {

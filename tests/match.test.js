@@ -6,12 +6,12 @@ import assert from 'node:assert/strict';
 
 import { autoPlay } from '../src/ai.js';
 import {
-  buildTower, castSkill, createMatch, damageMonster, describe, heroDamageReduce, heroMaxHp, setPriority, talentValue, update, waveQueue,
+  buildTower, castSkill, createMatch, damageMonster, describe, heroDamageReduce, heroMaxHp, setPriority, sprintState, talentValue, update, waveQueue,
 } from '../src/match.js';
-import { MAPS, MONSTERS, TICK_STEP, TIMING, WAVES } from '../src/data.js';
+import { DAMAGE_MATRIX, MAPS, MONSTERS, TICK_STEP, TIMING, WAVES } from '../src/data.js';
 import { TICK_RATE } from '../src/protocol.js';
 import { reviveMulOf } from '../src/profile.js';
-import { gridDist } from '../src/core.js';
+import { gridDist, typeMultiplier } from '../src/core.js';
 import * as data from '../src/data.js';
 
 /**
@@ -709,4 +709,42 @@ test('§123 塔位下标必须是整数：`slot:"abc"` 这类指令一律拒绝�
   // 对照组：正常的整数下标照常能建
   assert.equal(buildTower(m, 0, 'tw_arrow'), true, '合法下标必须照常可用');
   assert.equal(m.towers.length, 1);
+});
+
+test('霜狼冲刺：爆发窗内更快，巡航回到表速，攻击×护甲不变', () => {
+  assert.equal(MONSTERS.mob_02.speed, 380);
+  assert.equal(sprintState(MONSTERS.mob_02, 0).on, true);
+  assert.equal(sprintState(MONSTERS.mob_02, 0).mul, 1.45);
+  assert.equal(sprintState(MONSTERS.mob_02, 2).on, false);
+  assert.equal(sprintState(MONSTERS.mob_02, 2).mul, 1);
+  assert.equal(sprintState(MONSTERS.mob_01, 0).mul, 1);
+  assert.equal(typeMultiplier('pierce', 'light'), DAMAGE_MATRIX.pierce.light);
+
+  const travel = (time, def, speed = def.speed) => {
+    const m = createMatch({ mapId: 'map_01', seed: 1 });
+    m.hero.dead = true;
+    m.hero.reviveTimer = 999;
+    m.time = time;
+    m.towers = [];
+    m.monsters = [{
+      uid: 1, mobId: def.id, def, pathIndex: 0, dist: 64,
+      cell: { ...m.map.paths[0].spawn }, hp: 1e6, maxHp: 1e6,
+      armor: def.armor, armorType: def.armorType,
+      speed, attack: 0, atkSpeed: 1, cooldown: 99,
+      isAir: false, effects: [], dead: false, attacking: false,
+    }];
+    const start = m.monsters[0].dist;
+    const steps = Math.round(1 / TICK_STEP);
+    for (let i = 0; i < steps; i++) update(m, TICK_STEP);
+    assert.ok(m.monsters[0], '这一秒里不该漏到核心');
+    return m.monsters[0].dist - start;
+  };
+
+  const burst = travel(0, MONSTERS.mob_02);
+  const cruise = travel(2, MONSTERS.mob_02);
+  const ghoul = travel(0, MONSTERS.mob_01);
+  const plain = travel(0, { ...MONSTERS.mob_02, sprint: null }, 380);
+  assert.ok(burst > plain * 1.3, `爆发窗应明显快于表速（${burst.toFixed(0)} vs ${plain.toFixed(0)}）`);
+  assert.ok(Math.abs(cruise - plain) / plain < 0.08, `巡航应回到 380（${cruise.toFixed(0)} vs ${plain.toFixed(0)}）`);
+  assert.ok(burst / ghoul > (380 / 300) * 1.3, '爆发中的狼要比食尸鬼快出表速差');
 });

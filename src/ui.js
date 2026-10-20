@@ -9,7 +9,7 @@ import {
   craftableSlots, enhanceCostOf, heroMaxHp, shopPriceOf, skillLevel, TOWER_REPAIR_GOLD, towerStats, upgradeCost,
 } from './match.js';
 import { qualityColor, towerName } from './render.js';
-import { attackHint, heroCard, heroCards, isLowHp, playerPanel, resultPanelModel, shopRows, wavePreview, zoneLabel } from './hud-model.js';
+import { attackHint, heroCard, heroCards, isLowHp, playerPanel, resultPanelModel, roleGlyphSvg, shopRows, wavePreview, zoneLabel } from './hud-model.js';
 import { zoneAt } from './defense.js';
 
 const $ = (id) => document.getElementById(id);
@@ -50,7 +50,7 @@ export function createUI(handlers) {
     setZoom: $('setZoom'), setEffects: $('setEffects'), setFps: $('setFps'), setStick: $('setStick'), setToggles: $('setToggles'),
     btnReplayTutorial: $('btnReplayTutorial'), btnResetSettings: $('btnResetSettings'),
     btnLeaveRoom: $('btnLeaveRoom'), rowLeaveRoom: $('rowLeaveRoom'),
-    playerPanel: $('playerPanel'), nextWaveLabel: $('nextWaveLabel'),
+    playerPanel: $('playerPanel'), nextWaveLabel: $('nextWaveLabel'), nextWaveRoles: $('nextWaveRoles'),
     tutorialBar: $('tutorialBar'), tutorialText: $('tutorialText'), btnTutorialSkip: $('btnTutorialSkip'),
     defensePanel: $('defensePanel'), defRound: $('defRound'), defTimer: $('defTimer'),
     defWarnBar: $('defWarnBar'), defCastle: $('defCastle'), defCastleBar: $('defCastleBar'),
@@ -225,16 +225,26 @@ export function createUI(handlers) {
     el.log.innerHTML = recent.map((e) => `<div class="${e.kind === 'warn' ? 'warn' : ''}">${esc(e.text)}</div>`).join('');
   }
 
-  /** 下一波预告（§8.3 UI）：把波次表翻成人话，含空中与 Boss 提示。 */
+  /** 下一波预告（§8.3 UI）：把波次表翻成人话，含空中与 Boss 提示。职责芯片常显，不靠悬停。 */
   function renderNextWave(m) {
+    const clearRoles = () => { if (el.nextWaveRoles) el.nextWaveRoles.replaceChildren(); };
     if (!el.nextWaveLabel) return;
     if (handlers.getSettings && !handlers.getSettings().showWavePreview) {
       el.nextWaveLabel.textContent = '（已在设置里关闭）';
+      clearRoles();
       return;
     }
     const p = wavePreview(m.wave.index + 1, 3, m.waves);
-    if (!p) { el.nextWaveLabel.textContent = '—'; return; }
+    if (!p) { el.nextWaveLabel.textContent = '—'; clearRoles(); return; }
     el.nextWaveLabel.textContent = `${p.tag ? `【${p.tag}】` : ''}${p.text}`;
+    if (!el.nextWaveRoles) return;
+    el.nextWaveRoles.replaceChildren();
+    for (const c of p.chips ?? []) {
+      const chip = document.createElement('span');
+      chip.className = 'role-chip';
+      chip.innerHTML = `${roleGlyphSvg(c.id)}<b>${esc(c.label)}</b><span>${c.count}</span>`;
+      el.nextWaveRoles.appendChild(chip);
+    }
   }
 
   /** 玩家面板：4 格固定位 + 队伍色 + 掉线状态（联机时才知道谁在）。 */

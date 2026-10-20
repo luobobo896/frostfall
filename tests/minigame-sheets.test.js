@@ -104,12 +104,14 @@ test('小游戏 HUD 互不重叠：同一帧里同时出现的那几块（含「
   const L1 = layoutBattle(model);
   clash('TD（第一局）', [['顶栏', box(L1.top)], ['胶囊区', box(L1.capsule)],
     ['下一波预告', line(L1.preview.x, L1.preview.y, L1.preview.w)],
+    ['职责芯片', box(L1.roster)],
     ['英雄读数', line(L1.heroLine.x - 80, L1.heroLine.y, 80)],
     ['引导条', box(L1.tutorial)], ...L1.items.map((it) => [it.id, box(it)])]);
 
   // TD：结算那一帧（面板 + 底排 + 右上的两个键）
   const L2 = layoutBattle({ ...model, result: 'win', tutorial: null });
   clash('TD（结算）', [['顶栏', box(L2.top)], ['胶囊区', box(L2.capsule)], ['结算面板', box(L2.result)],
+    ['职责芯片', box(L2.roster)],
     ['英雄读数', line(L2.heroLine.x - 80, L2.heroLine.y, 80)], ...L2.items.map((it) => [it.id, box(it)])]);
 
   // 防守：整局中途那一帧（顶栏 / 小地图 / 英雄读数 + 击杀 / 竖排键 / 技能排）

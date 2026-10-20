@@ -8,7 +8,7 @@ import {
   buildFort, createDefenseMatch, describeDefense, orderMove, repairCastle, spawnAssaultWave,
   defenseHeroStats, onMonsterKilled, stepPickups, steerGoal, updateDefense, zoneAt,
 } from '../src/defense.js';
-import { buyItem, castSkill, damageMonster, heroStats, makeEquipment, updateHeroBuffs } from '../src/match.js';
+import { buyItem, castSkill, damageMonster, heroStats, makeEquipment, sprintState, updateHeroBuffs } from '../src/match.js';
 import { emptyProfile, mapLocked, reviveMulOf, unlockedMaps } from '../src/profile.js';
 
 const advance = (m, seconds) => { for (let i = 0; i < Math.round(seconds / TICK_STEP); i++) updateDefense(m, TICK_STEP); };
@@ -622,4 +622,34 @@ test('§138 防守内容里的怪不许带没实现的能力（当前口径：�
 
   // 对照组：亡语分裂在防守里是实现了的（§136）——这条守卫不该把它也算成「没实现」
   assert.ok([...used].some((id) => MONSTERS[id].onDeath?.splitInto), '防守里确实有带亡语的怪（mob_11）');
+  assert.ok([...used].includes('mob_02'), '霜狼在防守内容里，冲刺必须在这边也生效');
+  assert.equal(sprintState(MONSTERS.mob_02, 0).on, true);
+});
+
+test('冲刺在防守里也加快赶路（同速、同路径，爆发窗多走几格）', () => {
+  const stepsOf = (def) => {
+    const m = createDefenseMatch({ heroId: 'hero_warrior', seed: 4 });
+    m.hero.dead = true;
+    m.hero.reviveTimer = 999;
+    m.time = 0.05;
+    const spawn = m.def.assaultSpawns[0];
+    const mon = {
+      uid: 1, mobId: 'mob_02', def, kind: 'assault',
+      cell: { x: spawn.x, y: spawn.y },
+      hp: 1e6, maxHp: 1e6, armor: 0, armorType: 'light',
+      attack: 1, atkSpeed: 1, speed: 380,
+      cooldown: 0, isAir: false, effects: [], dead: false, attacking: false,
+      active: true, path: [], pathAt: m.time,
+    };
+    mon.path = findPath(m.grid.w, m.grid.h, mon.cell, m.castle.cell, m.isBlocked) ?? [];
+    assert.ok(mon.path.length > 8, '路径要够长，1 秒走不完');
+    m.monsters = [mon];
+    const before = mon.path.length;
+    const n = Math.round(1 / TICK_STEP);
+    for (let i = 0; i < n; i++) updateDefense(m, TICK_STEP);
+    return before - mon.path.length;
+  };
+  const burst = stepsOf(MONSTERS.mob_02);
+  const plain = stepsOf({ ...MONSTERS.mob_02, sprint: null });
+  assert.ok(burst > plain, `冲刺该多走几格（${burst} vs ${plain}）`);
 });

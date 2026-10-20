@@ -83,34 +83,138 @@ export function recordLabel(mapId, rec) {
  */
 export const isLowHp = (hp, maxHp, pct = 0.2) => maxHp > 0 && hp / maxHp < pct;
 
+/** 波次预告上的职责。顺序固定，图标和字都在，不靠颜色区分。 */
+export const CREEP_ROLES = Object.freeze([
+  Object.freeze({ id: 'air', label: '空中' }),
+  Object.freeze({ id: 'siege', label: '攻城' }),
+  Object.freeze({ id: 'split', label: '分裂' }),
+  Object.freeze({ id: 'heal', label: '治疗' }),
+  Object.freeze({ id: 'sprint', label: '冲刺' }),
+]);
+
+const ROLE_TEST = {
+  air: (d) => !!d?.isAir,
+  siege: (d) => !!d?.siege,
+  split: (d) => !!d?.onDeath,
+  heal: (d) => (d?.aura?.hps ?? 0) > 0,
+  sprint: (d) => (d?.sprint?.mul ?? 0) > 1,
+};
+
+/** 这只怪带哪些职责（空中 / 攻城 / 分裂 / 治疗 / 冲刺）。 */
+export function creepRoles(def = {}) {
+  return CREEP_ROLES.filter((r) => ROLE_TEST[r.id](def)).map((r) => r.id);
+}
+
+/**
+ * 职责图标，单位盒 0..24。封闭块填色，开口折线描边。
+ * 浏览器画 SVG，小游戏按同一份点去描，两处不会各写一套形状。
+ */
+export function roleGlyph(id) {
+  switch (id) {
+    case 'air':
+      return [
+        { d: [[12, 2], [16, 10], [12, 16], [8, 10]] },
+        { d: [[8, 9], [1, 4], [3, 14]] },
+        { d: [[16, 9], [23, 4], [21, 14]] },
+      ];
+    case 'siege':
+      return [
+        { d: [[3, 16], [3, 8], [18, 8], [18, 16]] },
+        { d: [[14, 10], [22, 6], [22, 12], [14, 14]] },
+      ];
+    case 'split':
+      return [
+        { ellipse: [8, 13, 5, 5] },
+        { ellipse: [16, 11, 4.5, 4.5] },
+      ];
+    case 'heal':
+      return [
+        { ellipse: [12, 12, 8, 8], stroke: true },
+        { d: [[11, 6], [13, 6], [13, 18], [11, 18]] },
+        { d: [[6, 11], [18, 11], [18, 13], [6, 13]] },
+      ];
+    case 'sprint':
+      return [
+        { d: [[7, 18], [11, 18], [17, 6], [13, 6]] },
+        { stroke: true, d: [[1, 8], [7, 8]] },
+        { stroke: true, d: [[1, 12], [8, 12]] },
+        { stroke: true, d: [[2, 16], [9, 16]] },
+      ];
+    default:
+      return [];
+  }
+}
+
+export function roleGlyphSvg(id) {
+  const segs = roleGlyph(id).map((p) => {
+    if (p.ellipse) {
+      const [x, y, rx, ry] = p.ellipse;
+      const paint = p.stroke
+        ? 'fill="none" stroke="currentColor" stroke-width="1.6"'
+        : 'fill="currentColor"';
+      return `<ellipse cx="${x}" cy="${y}" rx="${rx}" ry="${ry}" ${paint}/>`;
+    }
+    const d = p.d.map((pt, i) => `${i ? 'L' : 'M'}${pt[0]} ${pt[1]}`).join(' ') + (p.stroke ? '' : ' Z');
+    return p.stroke
+      ? `<path d="${d}" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>`
+      : `<path d="${d}" fill="currentColor"/>`;
+  }).join('');
+  return `<svg viewBox="0 0 24 24" aria-hidden="true">${segs}</svg>`;
+}
+
+function creepRoleChips(groups) {
+  const chips = [];
+  for (const g of groups) {
+    const def = MONSTERS[g.mobId];
+    for (const role of CREEP_ROLES) {
+      if (!ROLE_TEST[role.id](def)) continue;
+      const hit = chips.find((c) => c.id === role.id);
+      if (hit) hit.count += g.count;
+      else chips.push({ id: role.id, label: role.label, count: g.count });
+    }
+  }
+  return chips;
+}
+
 /**
  * 下一波预告（§8.3 的 UI 部分）：把当前波次表翻译成「4×沼泽巨魔 + 1×霜嚎巨兽」。
  * 客户端本地就能算——波次表是静态数据，不需要服务端下发。
+ * `chips` 汇总整波的职责（不受 maxGroups 截断），给触控芯片用。
  */
 export function wavePreview(waveIndex, maxGroups = 3, waves = WAVES) {
   const def = waves[waveIndex - 1];
   if (!def) return null;
-  const groups = def.groups.map((g) => ({
-    mobId: g.mobId,
-    name: MONSTERS[g.mobId].name,
-    count: g.count,
-    tier: MONSTERS[g.mobId].tier,
-    isAir: !!MONSTERS[g.mobId].isAir,
-    armorType: MONSTERS[g.mobId].armorType,
-    armorLabel: ARMOR_LABEL[MONSTERS[g.mobId].armorType] ?? MONSTERS[g.mobId].armorType,
-  }));
+  const groups = def.groups.map((g) => {
+    const mon = MONSTERS[g.mobId];
+    const roles = creepRoles(mon);
+    return {
+      mobId: g.mobId,
+      name: mon.name,
+      count: g.count,
+      tier: mon.tier,
+      isAir: !!mon.isAir,
+      armorType: mon.armorType,
+      armorLabel: ARMOR_LABEL[mon.armorType] ?? mon.armorType,
+      roles,
+    };
+  });
   const total = groups.reduce((s, g) => s + g.count, 0);
+  const mark = (g) => {
+    const labels = g.roles.map((id) => CREEP_ROLES.find((r) => r.id === id)?.label).filter(Boolean);
+    return labels.length ? `·${labels.join('·')}` : '';
+  };
   return {
     wave: waveIndex,
     groups: groups.slice(0, maxGroups),
     rest: Math.max(0, groups.length - maxGroups),
     total,
+    chips: creepRoleChips(def.groups),
     isElite: !!def.isElite,
     isMinorBoss: !!def.isMinorBoss,
     isBoss: !!def.isBoss,
     tag: def.isBoss ? '最终 Boss' : def.isMinorBoss ? '小 Boss' : def.isElite ? '精英波' : '',
     // 护甲类型写进预告：玩家在**开波之前**就能决定这一波该补哪种塔（§6.2 的克制博弈）
-    text: groups.map((g) => `${g.count}×${g.name}（${g.armorLabel}${g.isAir ? '·空中' : ''}）`).join(' + ')
+    text: groups.map((g) => `${g.count}×${g.name}（${g.armorLabel}${mark(g)}）`).join(' + ')
       + (groups.length > maxGroups ? ` 等 ${total} 只` : ''),
   };
 }

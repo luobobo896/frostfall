@@ -3,8 +3,8 @@
 
 /** 粒子上限。低档少留几条拖尾和命中，起伏仍然算（一个正弦，不占预算）。 */
 export const FX_LIMITS = {
-  high: { trail: 3, impacts: 8, corpses: 12 },
-  low: { trail: 1, impacts: 4, corpses: 6 },
+  high: { trail: 3, impacts: 8, corpses: 12, sprint: 12 },
+  low: { trail: 1, impacts: 4, corpses: 6, sprint: 1 },
 };
 
 export function fxBudget(level) {
@@ -101,6 +101,35 @@ export function poseFrame(clip, { now = 0, pulse = 0, uid = 0, deathT = 0 } = {}
     return (Math.floor(now * WALK_HZ + (uid % 5)) % 2) + 1;
   }
   return 0;
+}
+
+/**
+ * 冲刺速度线。灰白短划，不跟身体同色。每只怪最多 3 条，调用方再按预算裁。
+ * 开口折线，灰度下靠「身后拖线」认，不靠变色。
+ */
+export function sprintStreaks(count) {
+  const n = Math.max(0, Math.min(3, count | 0));
+  const lines = [];
+  for (let i = 0; i < n; i++) {
+    const y = -0.55 + i * 0.38;
+    const x0 = -1.35 - (i % 2) * 0.15;
+    lines.push({ closed: false, points: [[x0, y], [x0 + 0.55, y]] });
+  }
+  return lines;
+}
+
+/** 没有 ctx.transform 时，把剪影按前倾剪切。k 为 0 原样返回。 */
+export function leanParts(parts, k) {
+  if (!(k > 0)) return parts;
+  const shear = (x, y) => x + k * (0.22 - y);
+  return parts.map((part) => {
+    if (part.ellipse) {
+      const [x, y, rx, ry] = part.ellipse;
+      return { ...part, ellipse: [shear(x, y), y, rx, ry] };
+    }
+    if (!part.points) return part;
+    return { ...part, points: part.points.map(([x, y]) => [shear(x, y), y]) };
+  });
 }
 
 /** 受击：两道斜线，不是变色。 */

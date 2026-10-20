@@ -132,7 +132,17 @@ body { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none
 .hud-minimap { top: 218px; right: max(12px, var(--safe-r)); }
 .hud-minimap canvas { display: block; width: 224px; height: 168px; border-radius: 10px;
   border: 1px solid var(--panel-line); background: rgba(12, 20, 32, .75); cursor: pointer; }
-.next-wave { font-size: 13px; display: flex; gap: 6px; align-items: baseline; }
+.next-wave { font-size: 13px; display: flex; flex-direction: column; align-items: stretch; gap: 6px; }
+.next-wave-line { display: flex; gap: 6px; align-items: baseline; }
+.role-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.role-row:empty { display: none; }
+.role-chip {
+  min-height: 44px; min-width: 44px; display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 10px; background: #121a28; border: 1px solid rgba(180, 200, 220, .4);
+  color: #e7edf4; font-size: 14px; line-height: 1;
+}
+.role-chip svg { width: 22px; height: 22px; flex: none; }
+.role-chip b { font-weight: 700; }
 .hud-tutorial { bottom: max(120px, calc(var(--safe-b) + 12px)); left: 0; right: 0; display: flex; justify-content: center; }
 .tutorial { display: flex; align-items: center; gap: 12px; font-size: 15px; max-width: 720px; }
 .tutorial .btn { min-width: 64px; }

@@ -2,6 +2,7 @@
 // 重画：node tools/paint-stills.mjs
 import { createHash } from 'node:crypto';
 import { deflateSync } from 'node:zlib';
+import { existsSync, readFileSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -221,24 +222,37 @@ const paintTower = (id, level, clip, frame) => {
   if (id === 'tw_arrow') {
     u.poly([[-0.22, 0], [0.22, 0], [0.16, 0.1], [-0.16, 0.1]], STONE_DARK);
     u.poly([[-0.05, 0.08], [0.05, 0.08], [0.04, 0.58], [-0.04, 0.58]], STONE);
-    u.poly([[-0.82, 0.58], [0.82, 0.58], [0, 1.05]], color);
+    if (level < 3) u.poly([[-0.82, 0.58], [0.82, 0.58], [0, 1.05]], color);
+    else {
+      u.poly([[-0.16, 0.48], [0.16, 0.48], [0, 0.7]], color);
+      u.poly([[-0.98, 0.16], [-0.66, 0.16], [-0.66, 0.98], [-0.98, 0.98]], color);
+      u.poly([[-0.14, 0.4], [0.14, 0.4], [0.14, 1], [-0.14, 1]], accent);
+      u.poly([[0.66, 0.16], [0.98, 0.16], [0.98, 0.98], [0.66, 0.98]], color);
+    }
     u.poly([[-0.36, 0.52], [-0.12, 0.55], [-0.22, 0.78]], SNOW);
     if (level >= 2) u.poly([[-0.55, 0.08], [-0.16, 0.08], [-0.14, 0.36]], TIMBER);
-    if (level >= 3) u.poly([[-0.1, 0.9], [0.1, 0.9], [0, 1.12]], accent);
   } else if (id === 'tw_cannon') {
     u.poly([[-0.55, 0], [0.28, 0], [0.22, 0.28], [-0.48, 0.32]], STONE);
     u.poly([[-0.4, 0.28], [0.08, 0.26], [0.06, 0.4], [-0.36, 0.42]], STONE_DARK);
     const reach = [0.72, 0.98, 1.22][level - 1];
     u.poly([[-0.02, 0.16], [reach, 0.12], [reach, 0.34], [-0.02, 0.38]], color);
     u.poly([[reach - 0.08, 0.1], [reach + 0.06, 0.1], [reach + 0.06, 0.36], [reach - 0.08, 0.36]], IRON);
-    if (level >= 3) u.poly([[-0.02, 0.4], [0.86, 0.38], [0.86, 0.52], [-0.02, 0.54]], shade(color, 0.72));
+    if (level >= 3) {
+      u.poly([[-0.02, 0.34], [0.4, 0.32], [0.4, 0.44], [-0.02, 0.46]], shade(color, 0.72));
+      u.poly([[-0.96, 0], [-0.74, 0], [-0.72, 0.36], [-0.98, 0.34]], STONE_DARK);
+      u.poly([[-0.62, 0.02], [-0.48, 0.02], [-0.46, 0.28], [-0.64, 0.26]], IRON);
+    }
   } else if (id === 'tw_frost') {
     u.poly([[-0.2, 0], [0.22, 0], [0.16, 0.08], [-0.14, 0.08]], STONE);
     const h = [0.78, 0.92, 1.08][level - 1];
     u.poly([[-0.78, 0.06], [-0.66, 0.06], [-0.74, h * 0.55]], color);
     u.poly([[-0.05, 0.06], [0.05, 0.06], [0, h]], shade(color, 1.15));
     u.poly([[0.64, 0.06], [0.78, 0.06], [0.7, h * 0.48]], accent);
-    if (level >= 3) u.poly([[-0.04, 0.2], [0.04, 0.2], [0, h * 1.08]], SNOW);
+    if (level >= 3) {
+      u.poly([[-0.12, 0.18], [0.12, 0.18], [0, 1.02]], SNOW);
+      u.poly([[-0.34, 0.12], [-0.16, 0.12], [-0.26, 0.62]], shade(color, 1.25));
+      u.poly([[0.16, 0.12], [0.34, 0.12], [0.24, 0.55]], SNOW);
+    }
   } else {
     u.poly([[-0.16, 0], [0.16, 0], [0.12, 0.1], [-0.12, 0.1]], STONE);
     u.poly([[-0.045, 0.08], [0.045, 0.08], [0.035, 0.55], [-0.035, 0.55]], IRON);
@@ -255,7 +269,11 @@ const paintTower = (id, level, clip, frame) => {
     arc(-1, 0);
     arc(1, 0);
     if (level >= 2) u.poly([[-0.22, 0.5], [0.22, 0.5], [0, 0.7]], shade(color, 0.85));
-    if (level >= 3) { arc(-1, 0.12); arc(1, 0.12); }
+    if (level >= 3) {
+      u.poly([[-0.62, 0.22], [-0.08, 0.3], [-0.08, 0.44], [-0.62, 0.36]], shade(color, 0.7));
+      u.poly([[0.08, 0.4], [0.66, 0.5], [0.66, 0.64], [0.08, 0.54]], IRON);
+      u.poly([[-0.58, 0.58], [-0.1, 0.66], [-0.1, 0.8], [-0.58, 0.72]], shade(color, 0.85));
+    }
   }
   return u.surf;
 };
@@ -450,6 +468,8 @@ for (const key of keys) {
   bytes += png.length;
   largest = Math.max(largest, png.length);
   const file = join(ROOT, 'assets', `${key}.png`);
+  const prev = existsSync(file) ? readFileSync(file) : null;
+  if (prev && prev.equals(png)) continue;
   await mkdir(dirname(file), { recursive: true });
   await writeFile(file, png);
 }
