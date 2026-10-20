@@ -23,7 +23,7 @@ function fakeContext() {
 }
 
 const {
-  createRenderer, hintPulseAlpha, terrainPaint, towerSilhouette, mobSilhouette, heroSilhouette,
+  createRenderer, hintPulseAlpha, terrainPaint, towerSilhouette, mobSilhouette, heroSilhouette, bodyRadius,
 } = await import('../src/render.js');
 
 test('等距投影：格坐标 → 屏幕往返可逆（点击判定依赖它）', () => {
@@ -507,7 +507,7 @@ test('P0 绘制路径：四塔、五种怪、四职业走的折线互不相同�
   });
   const tower = placed.m.towers[0];
   const origin = placed.r.toScreen(tower.cell.x, tower.cell.y, 0.9);
-  const size = (16 + tower.level * 3) * placed.r.scale + 7;
+  const size = bodyRadius('tower', placed.r.scale, tower.level);
   const ring = placed.ctx.calls.find((c) => c.name === 'ellipse'
     && Math.abs(c.args[0] - origin.x) < 0.5
     && Math.abs(c.args[1] - (origin.y + size * 0.42)) < 0.5
@@ -638,7 +638,7 @@ test('英雄比原来大一档，活着时有暖色轮廓，倒下后轮廓变�
   };
   const alive = draw(false);
   const hp = alive.r.toScreen(alive.m.hero.cell.x, alive.m.hero.cell.y, 1);
-  const radius = 16 * alive.r.scale + 8;
+  const radius = bodyRadius('hero', alive.r.scale);
   const glow = alive.ctx.calls.find((c) => c.name === 'ellipse'
     && Math.abs(c.args[0] - hp.x) < 1
     && Math.abs(c.args[2] - radius * 1.05) < 1);
@@ -648,4 +648,25 @@ test('英雄比原来大一档，活着时有暖色轮廓，倒下后轮廓变�
   const dead = draw(true);
   assert.ok(dead.ctx.calls.some((c) => c.name === 'stroke' && c.strokeStyle === '#8b95a3'));
   assert.ok(!dead.ctx.calls.some((c) => c.name === 'stroke' && c.strokeStyle === '#ffd68a'));
+});
+
+test('英雄光不描到怪和塔上', () => {
+  const ctx = inkContext();
+  const canvas = { clientWidth: 1334, clientHeight: 750, width: 0, height: 0, getContext: () => ctx };
+  const r = createRenderer(canvas);
+  const m = createMatch({ mapId: 'map_01', seed: 1 });
+  m.gold = 9999;
+  m.towers = [];
+  assert.ok(buildTower(m, 0, 'tw_arrow'));
+  const aura = MONSTERS.mob_12;
+  const spawn = m.map.paths[0].spawn;
+  m.monsters = [{
+    uid: 3, mobId: aura.id, def: aura, pathIndex: 0, dist: 10,
+    cell: { ...spawn }, hp: aura.hp, maxHp: aura.hp,
+    armorType: aura.armorType, isAir: false, attacking: false, dead: false,
+  }];
+  r.draw({ m, selectedSlot: null, selectedTower: null, now: 0.2 });
+  const glow = ctx.calls.filter((c) => c.name === 'stroke' && c.strokeStyle === '#ffd68a' && c.lineWidth === 3);
+  assert.equal(glow.length, 1, '一帧里只有活着的英雄带那圈暖色轮廓');
+  assert.ok(ctx.calls.some((c) => c.name === 'stroke' && c.strokeStyle === '#7f9e92'), '亡灵光环用冷色，不是英雄光');
 });

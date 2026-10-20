@@ -8,8 +8,9 @@ import { HEROES, MONSTERS, TOWERS } from '../src/data.js';
 import { createMatch, buildTower, upgradeTower } from '../src/match.js';
 import { createRenderer } from '../src/render.js';
 import {
-  TILE_KINDS, bootSprites, catalogKeys, clearSprites, heroSpriteKey, loadSprite,
-  mobSpriteKey, registerSprite, spriteCanvasSize, spriteFrame, spriteSrc, tileSpriteKey, towerSpriteKey,
+  TILE_KINDS, actionKeys, actionSpriteKey, bootSprites, catalogKeys, clearSprites, heroSpriteKey, loadSprite,
+  mobSpriteKey, registerSprite, resolveSprite, spriteCanvasSize, spriteFrame, spriteSrc, stillKeyOf,
+  tileSpriteKey, towerSpriteKey,
 } from '../src/assets.js';
 
 globalThis.window = globalThis.window ?? { devicePixelRatio: 1 };
@@ -235,5 +236,43 @@ describe('静帧热替换', { concurrency: 1 }, () => {
     assert.ok(alive.images >= 1);
     assert.equal(dead.images, 0);
     assert.ok(dead.lines > alive.lines);
+  });
+
+  test('短序列和静帧同一画布，缺了就回退，死亡不借用站立图', async () => {
+    assert.ok(actionKeys().length > catalogKeys().length);
+    assert.equal(stillKeyOf('mobs/boss_01_walk_2'), 'mobs/boss_01_idle');
+    assert.equal(spriteCanvasSize('mobs/boss_01_death_1').w, 256);
+    assert.equal(spriteCanvasSize('towers/tw_frost_lv3_attack_2').w, 192);
+    assert.equal(actionSpriteKey(heroSpriteKey('hero_mage'), 'walk', 1), 'heroes/hero_mage_walk_1');
+    let bytes = 0;
+    for (const key of actionKeys()) {
+      const buf = readFileSync(new URL(`../${spriteSrc(key)}`, import.meta.url));
+      assert.equal(buf.toString('ascii', 1, 4), 'PNG', key);
+      assert.deepEqual(pngSize(buf), spriteCanvasSize(key), key);
+      assert.ok(buf.length < 12_000, `${key} 有 ${buf.length} 字节，手机上不该这么大`);
+      bytes += buf.length;
+    }
+    assert.ok(bytes < 1_500_000, `动作帧合计 ${bytes} 字节`);
+
+    const idle = { width: 128, height: 128, tag: 'idle' };
+    const walk = { width: 128, height: 128, tag: 'walk' };
+    registerSprite(mobSpriteKey('mob_01'), idle);
+    assert.equal(resolveSprite(mobSpriteKey('mob_01'), 'walk', 1), spriteFrame(mobSpriteKey('mob_01')));
+    registerSprite(actionSpriteKey(mobSpriteKey('mob_01'), 'walk', 1), walk);
+    assert.equal(resolveSprite(mobSpriteKey('mob_01'), 'walk', 0).image, idle);
+    assert.equal(resolveSprite(mobSpriteKey('mob_01'), 'walk', 1).image, walk);
+    assert.equal(resolveSprite(mobSpriteKey('mob_01'), 'death', 2), null);
+
+    const drawn = (now) => {
+      const ctx = drawingContext();
+      const canvas = { clientWidth: 800, clientHeight: 450, width: 0, height: 0, getContext: () => ctx };
+      const r = createRenderer(canvas);
+      const m = mobOn(MONSTERS.mob_01);
+      r.draw({ m, selectedSlot: null, selectedTower: null, floaters: [], now });
+      return ctx.calls.filter((c) => c.name === 'drawImage').map((c) => c.args[0]);
+    };
+    assert.ok(drawn(0).includes(idle));
+    assert.ok(!drawn(0).includes(walk));
+    assert.ok(drawn(0.2).includes(walk));
   });
 });

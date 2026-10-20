@@ -8,7 +8,7 @@ import { MONSTERS, TOWERS } from '../src/data.js';
 import { project } from '../src/core.js';
 import {
   FX_LIMITS, attackPulse, chargePulse, fxBudget, heroMotion, impactGlyphs, mobMotion,
-  shotGlyphs, shotKind, slowShards, towerMarks, towerNudge,
+  poseClip, poseFrame, shotGlyphs, shotKind, slowShards, towerMarks, towerNudge,
 } from '../src/motion.js';
 
 globalThis.window = globalThis.window ?? { devicePixelRatio: 1 };
@@ -31,6 +31,15 @@ test('静止姿势没有偏移，开火才有后坐和蓄力', () => {
   assert.ok(towerNudge('tw_cannon', 1).dx > towerNudge('tw_arrow', 1).dx);
   assert.equal(heroMotion({ now: 0, cooldown: 0, atkSpeed: 1 }).dx, 0);
   assert.equal(heroMotion({ dead: true }).dissolve, true);
+  assert.equal(poseClip({ moving: true }), 'walk');
+  assert.equal(poseClip({ pulse: 1, moving: true }), 'attack');
+  assert.equal(poseClip({ dead: true, pulse: 1 }), 'death');
+  assert.equal(poseFrame('walk', { now: 0 }), 0, 'now===0 停在休息帧');
+  assert.ok(poseFrame('walk', { now: 0.2 }) >= 1);
+  assert.equal(poseFrame('attack', { pulse: 0 }), 0);
+  assert.equal(poseFrame('attack', { pulse: 0.9 }), 1);
+  assert.equal(poseFrame('death', { deathT: 0 }), 1);
+  assert.equal(poseFrame('death', { deathT: 0.8 }), 2);
   for (const id of Object.keys(TOWERS)) assert.equal(towerMarks(id, 0, 0).length, 0);
 });
 
