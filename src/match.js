@@ -19,15 +19,18 @@ export function towerStats(towerId, level = 1, spec = null) {
   const t = TOWERS[towerId];
   const g = TOWER_LEVEL_GAIN;
   const offer = TOWER_SPEC[towerId];
-  // 专精只挂光环或焦土，不改共享的 special 对象（否则同族每一座塔都会带上）
+  // 专精只挂光环、焦土或雷场，不改共享的 special 对象（否则同族每一座塔都会带上）
   let special = t.special;
-  if (spec && offer && offer.id === spec && (offer.aura || offer.scorch)) {
+  if (spec && offer && offer.id === spec && (offer.aura || offer.scorch || offer.storm)) {
     special = { ...t.special };
     if (offer.aura) {
       special.aura = { radius: offer.aura.radius, slowPct: offer.aura.slowPct, chip: offer.aura.chip };
     }
     if (offer.scorch) {
       special.scorch = { radius: offer.scorch.radius, dps: offer.scorch.dps, vsSiege: offer.scorch.vsSiege };
+    }
+    if (offer.storm) {
+      special.storm = { radius: offer.storm.radius, chip: offer.storm.chip };
     }
   }
   return {
@@ -69,7 +72,7 @@ export function specCostOf(towerId) {
 
 /**
  * 下一档能买什么。3 级封顶的塔没有专精就是 null。
- * 冰塔满级之后是寒霜祭坛，炮塔满级之后是燎野炮台，都不是 Lv4。
+ * 冰塔满级之后是寒霜祭坛，炮塔满级之后是燎野炮台，静电塔满级之后是风暴电笼，都不是 Lv4。
  */
 export function nextUpgrade(tower) {
   if (!tower) return null;
@@ -1317,6 +1320,37 @@ function stepScorchHearths(m, dt) {
   }
 }
 
+/**
+ * 风暴电笼的雷场：半径内、已经能被锁定的空中和地面敌人，每秒吃一次魔法刮伤。
+ * 不改链式那一发的段数、衰减和跳跃距离。不减速，不侦测。
+ * 完全潜行且没被既有侦测揭开的怪，雷场碰不到。霜壳不削魔法。
+ */
+function stepStormCages(m, dt) {
+  const towers = m.towers;
+  let any = false;
+  for (let i = 0; i < towers.length; i++) {
+    if (towers[i].stats?.special?.storm?.radius > 0) { any = true; break; }
+  }
+  if (!any) return;
+  for (let i = 0; i < towers.length; i++) {
+    const t = towers[i];
+    const storm = t.stats?.special?.storm;
+    if (!(storm?.radius > 0) || !(storm.chip > 0)) continue;
+    t.stormClock = (t.stormClock ?? 0) + dt;
+    if (t.stormClock < 1) continue;
+    t.stormClock -= 1;
+    for (const mon of m.monsters) {
+      if (!isTargetable(m, mon, true)) continue;
+      if (gridDist(monsterCell(m, mon), t.cell) > storm.radius) continue;
+      const dealt = computeDamage({
+        atk: storm.chip, attackType: 'magic', armor: mon.armor, armorType: mon.armorType,
+        resist: mon.def?.resist, rng: m.rng,
+      }).damage;
+      damageMonster(m, mon, dealt, t.towerId, t.owner ?? 0);
+    }
+  }
+}
+
 function towerFire(m, tower) {
   const target = pickTarget(m, tower);
   if (!target) return;
@@ -1703,6 +1737,7 @@ export function update(m, dtRaw) {
   markReveal(m);
   stepTowerAuras(m, dt);
   stepScorchHearths(m, dt);
+  stepStormCages(m, dt);
   for (const t of m.towers) {
     t.cooldown = Math.max(0, t.cooldown - dt);
     if (t.cooldown <= 0) towerFire(m, t);

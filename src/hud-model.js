@@ -210,7 +210,7 @@ function creepRoleChips(groups) {
 
 /**
  * 专精只在自己克制的波次后面补一句。`counterMin` 挡住「每波都提」：
- * 寒霜祭坛见冲刺就写，燎野炮台要至少两只攻城单位才写。
+ * 寒霜祭坛见冲刺就写，燎野炮台要至少两只攻城单位才写，风暴电笼要空中成团才写。
  */
 function specCounterNote(chips) {
   let note = '';

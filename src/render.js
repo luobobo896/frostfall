@@ -246,6 +246,8 @@ export const DETECT_RING = { stroke: '#d5dde8', lineWidth: 1.75, dash: [2, 6] };
 export const AURA_RING = { stroke: '#9fd4ff', lineWidth: 2.5, fill: 'rgba(159, 212, 255, .14)' };
 /** 燎野焦土：实线暖褐，内圈收成地面一块。低特效只停呼吸，圈本身还在。 */
 export const SCORCH_RING = { stroke: '#e7a15a', lineWidth: 2.5, fill: 'rgba(231, 161, 90, .16)' };
+/** 风暴电笼：实线浅紫，外圈加左右两道弧。低特效只停呼吸，圈本身还在。 */
+export const STORM_RING = { stroke: '#d7b3ff', lineWidth: 2.5, fill: 'rgba(215, 179, 255, .16)' };
 /** 点英雄的半径下限（直径约 44px）。视觉半径更大时跟视觉走。 */
 export const HERO_HIT_PX = 44;
 
@@ -326,6 +328,19 @@ export function towerSilhouette(towerId, level = 1, spec = null) {
       parts.push(
         { role: 'coil', points: [[-0.28, -0.58], [0.28, -0.74], [0.28, -0.5], [-0.28, -0.34]], closed: true },
         { role: 'coil', points: [[-0.32, -0.16], [0.32, -0.32], [0.32, -0.06], [-0.32, 0.1]], closed: true },
+      );
+    }
+    // 风暴电笼：笼架比电杆更宽，两侧线圈塔尖，再加一对更开的电弧。不是把杆再拔高一截。
+    if (spec === 'storm_cage') {
+      parts.push(
+        { role: 'cage', points: [[-1.42, 0.72], [1.42, 0.72], [1.18, 0.42], [-1.18, 0.42]], closed: true },
+        { role: 'cage', points: [[-1.22, 0.42], [-0.96, 0.42], [-1.02, -1.35], [-1.22, -1.18]], closed: true },
+        { role: 'cage', points: [[0.96, 0.42], [1.22, 0.42], [1.22, -1.18], [1.02, -1.35]], closed: true },
+        { role: 'cage', points: [[-1.08, -1.52], [-1.22, -1.28], [1.22, -1.28], [1.08, -1.52]], closed: true },
+        { role: 'spire', points: [[-0.82, 0.28], [-0.52, 0.28], [-0.58, -1.72], [-0.86, -1.48]], closed: true },
+        { role: 'spire', points: [[0.52, 0.28], [0.82, 0.28], [0.86, -1.48], [0.58, -1.72]], closed: true },
+        { role: 'arc', points: [[-0.2, -0.9], [-0.95, -0.35], [-0.55, 0.15], [-1.35, 0.42]], closed: false },
+        { role: 'arc', points: [[0.2, -0.78], [0.98, -0.22], [0.58, 0.22], [1.38, 0.48]], closed: false },
       );
     }
   } else {
@@ -1209,6 +1224,35 @@ export function createRenderer(canvas, { size = null } = {}) {
     ctx.lineWidth = 1;
   }
 
+  /** 雷场：实线浅紫外圈，左右两道弧。选中时外圈加淡填充。低特效不呼吸。 */
+  function drawStormRing(cell, range, { selected = false, alpha = 0.92 } = {}) {
+    if (!cell || !(Number(range) > 0)) return;
+    const c = toScreen(cell.x, cell.y, 0);
+    const rx = range * (GRID.tileW / 2) * view.scale;
+    const ry = range * (GRID.tileH / 2) * view.scale;
+    ctx.beginPath();
+    ctx.ellipse(c.x, c.y, rx, ry, 0, 0, Math.PI * 2);
+    if (selected) {
+      ctx.fillStyle = STORM_RING.fill;
+      ctx.fill();
+    }
+    ctx.globalAlpha = selected ? 1 : alpha;
+    ctx.setLineDash([]);
+    ctx.strokeStyle = STORM_RING.stroke;
+    ctx.lineWidth = selected ? STORM_RING.lineWidth + 1 : STORM_RING.lineWidth;
+    ctx.stroke();
+    const bow = Math.min(rx, ry) * 0.72;
+    ctx.lineWidth = STORM_RING.lineWidth;
+    ctx.beginPath();
+    ctx.arc(c.x, c.y, bow, Math.PI * 0.85, Math.PI * 1.55);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(c.x, c.y, bow, -Math.PI * 0.15, Math.PI * 0.55);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+    ctx.lineWidth = 1;
+  }
+
   /** 英雄技能圈：虚线冷色，不铺塔那种奶油填充。四个刻度再和实线圈拉开。 */
   function drawHeroSkillRing(cell, range) {
     if (!cell || !(Number(range) > 0)) return;
@@ -1634,6 +1678,12 @@ export function createRenderer(canvas, { size = null } = {}) {
       if (!(scorch?.radius > 0)) continue;
       const alpha = ringStill ? 0.92 : (0.78 + 0.18 * Math.sin((now || 0) * 3));
       drawScorchRing(t.cell, scorch.radius, { selected: selectedTower === t.slot, alpha });
+    }
+    for (const t of m.towers) {
+      const storm = t.stats?.special?.storm;
+      if (!(storm?.radius > 0)) continue;
+      const alpha = ringStill ? 0.92 : (0.78 + 0.18 * Math.sin((now || 0) * 3));
+      drawStormRing(t.cell, storm.radius, { selected: selectedTower === t.slot, alpha });
     }
     drawReviveMark(m);
     drawFloaters(floaters, now);

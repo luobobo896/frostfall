@@ -120,7 +120,7 @@ export function autoPlay(m, { untilWave = null, maxSeconds = 1800, dt = TICK_STE
     const upgradeGate = (m.map.slots.length >= 28 ? 1.5 : 2) * TOWERS[next].cost + 200;
     if (!built && (slot < 0 || m.gold >= upgradeGate)) {
       // 塔位铺满或钱不够新塔：升级已有塔（优先低等级的，收益最大）
-      // 满级专精（寒霜祭坛、燎野炮台）不买：只升到 Lv3
+      // 满级专精（寒霜祭坛、燎野炮台、风暴电笼）不买：只升到 Lv3
       const upgradable = m.towers
         .filter((t) => t.level < 3)
         .sort((a, b) => a.level - b.level || slotCoverage(m, b.slot) - slotCoverage(m, a.slot))[0];
