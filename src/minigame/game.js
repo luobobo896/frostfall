@@ -27,7 +27,7 @@ import { gridDist, heroPos } from '../core.js';
 import { loadSettings, saveSettings } from '../settings.js';
 import { createHaptics } from '../feedback.js';
 import { createCue } from '../audio.js';
-import { createMinimap, createRenderer, pointHitsHero } from '../render.js';
+import { createLaneMinimap, createMinimap, createRenderer, pointHitsHero } from '../render.js';
 import { bootSprites } from '../assets.js';
 import { damageFloaters, wavePreview } from '../hud-model.js';
 import {
@@ -38,7 +38,7 @@ import {
 } from './defense-screen.js';
 import { applyLobbyAction, drawLobby, hitTestLobby, layoutLobby } from './lobby.js';
 import {
-  DESIGN, PRIORITY_LABEL, drawBattleHud, drawResult, drawSheet, hitTestBattle, hitTestSheet,
+  DESIGN, PRIORITY_LABEL, TD_MINIMAP, drawBattleHud, drawResult, drawSheet, hitTestBattle, hitTestSheet,
   layoutBattle, layoutResult, layoutSheet, skillKeys,
 } from './battle.js';
 
@@ -294,14 +294,16 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
       floaters: [],        // 伤害飘字（§14.3：打出去多少看得见）；`lastMonsters` 是算它用的上一帧快照
       lastMonsters: [],
       /**
-       * 防守的小地图（§2.6）。小游戏里**第二张 `wx.createCanvas()` 就是离屏画布**：
-       * 用小地图那套现成的绘制（`render.js` 的 `createMinimap`，与浏览器版共用一份）画在它上面，
-       * 再整块贴到主画布上——省得在两处各画一遍「哪块地能刷、门在哪、怪从哪来」。
+       * 小地图走第二张 `wx.createCanvas()`（离屏）。防守仍是「点了回城」那张；
+       * TD 是路径折线 + 英雄点 + 下一波箭头，点一下只挪镜头。
        */
-      minimap: m.mode === 'defense' ? (() => {
+      minimap: (() => {
         const c = wx.createCanvas();
-        return { canvas: c, api: createMinimap(c, { size: () => ({ w: MINIMAP.w, h: MINIMAP.h }) }) };
-      })() : null,
+        if (m.mode === 'defense') {
+          return { canvas: c, api: createMinimap(c, { size: () => ({ w: MINIMAP.w, h: MINIMAP.h }) }) };
+        }
+        return { canvas: c, api: createLaneMinimap(c, { size: () => ({ w: TD_MINIMAP.w, h: TD_MINIMAP.h }) }) };
+      })(),
       ...over,
     };
     applyCamera(b);
@@ -381,7 +383,11 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
     const action = hitTestBattle(b.layout, x, y);
     if (action) {
       tap('light');   // §1.9.2：按下就震一下（开关在暂停面板里，关掉就静默）
-      return applyAction(b, action);
+      // 别把落点写进布局对象上：那一份 action 会被下一帧复用。
+      const next = action.type === 'focus' && b.layout.minimap && b.minimap?.api?.cellAt
+        ? { ...action, cell: b.minimap.api.cellAt(x - b.layout.minimap.x, y - b.layout.minimap.y, b.m) }
+        : action;
+      return applyAction(b, next);
     }
     // 战场：设计坐标先加回 HUD 偏移，再交给渲染器（大屏上 HUD 居中，格子在画布像素里）
     const g = gridAt(b, x, y);
@@ -447,6 +453,16 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
       case 'shop': b.ui = { sheetKind: 'shop', heroSelected: !!b.ui.heroSelected }; return action;
       case 'bag': b.ui = { sheetKind: 'bag', heroSelected: !!b.ui.heroSelected }; return action;
       case 'speed': b.rate = b.rate === 2 ? 1 : 2; return action;
+      case 'focus': {
+        const cell = action.cell;
+        const grid = b.m.map?.grid;
+        if (!cell || !grid || b.m.mode === 'defense') return action;
+        if (cell.x < 0 || cell.y < 0 || cell.x >= grid.w || cell.y >= grid.h) return action;
+        settings = { ...settings, tdFitAll: false };
+        try { saveSettings(settings); } catch { /* 存不了也先把镜头移过去 */ }
+        b.renderer.setCamera(cell.x, cell.y, settings.zoom ?? 1.5);
+        return action;
+      }
       case 'pause': {
         // 单机局真暂停（联机才不谈暂停，§114）；暂停时顺手把面板摊开——玩家按暂停多半是想看点东西
         b.paused = !b.paused;
@@ -1023,6 +1039,11 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
       drawBattleHud(ctx, b.m, b.layout, {
         selectedTower: b.selectedTower, message, preview: model.preview, roster: model.roster, heroSelected: !!b.ui.heroSelected,
       });
+      if (b.minimap && b.layout.minimap) {
+        b.minimap.api.draw(b.m);
+        const box = b.layout.minimap;
+        ctx.drawImage(b.minimap.canvas, box.x, box.y, box.w, box.h);
+      }
     }
     // 结算面板：内核出结果之后盖上来（内容是浏览器版那个 resultPanelModel，一份模型两个渲染器）
     recordIfFinished(b);

@@ -120,8 +120,8 @@ if (page === 'lobby' || page === 'hero') {
     window.__previewReady = true;
   } else {
   const { createMatch, buildTower, update, startWaveEarly, skillLevel } = await import('/src/match.js');
-  const { createRenderer } = await import('/src/render.js');
-  const { layoutBattle, drawBattleHud, layoutSheet, drawSheet, layoutResult, drawResult } = await import('/src/minigame/battle.js');
+  const { createLaneMinimap, createRenderer } = await import('/src/render.js');
+  const { TD_MINIMAP, layoutBattle, drawBattleHud, layoutSheet, drawSheet, layoutResult, drawResult } = await import('/src/minigame/battle.js');
   const { TICK_STEP } = await import('/src/data.js');
   const m = createMatch({ mapId: 'map_02', difficulty: 'normal', heroId: 'hero_ranger', seed: 7, players: 1 });
   const renderer = createRenderer(canvas, { size: () => ({ w, h }) });
@@ -159,19 +159,29 @@ if (page === 'lobby' || page === 'hero') {
     // 别的几张（商店 / 结算 / 暂停）不摆——真机上它们要么盖住条，要么（结算）本来就把条收掉了
     tutorial: page === 'battle' ? (await import('/src/tutorial.js')).TUTORIAL_STEPS[0].text : null,
   };
+  if (m.towers[0]) m.towers[0].level = 3;
   renderer.draw({
     m, selectedSlot: towerPage ? 1 : null, selectedTower: towerPage ? 1 : null, localSlot: 0, now: m.time, pulses: false,
     hintSlots: page === 'battle' ? 3 : 0,
     heroSelected: !towerPage && !m.hero.dead,
+    // 战场那张关掉装饰：车道明度带要在没有地块花纹时也认得出
+    fx: page === 'battle' ? 'low' : 'high',
   });
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   // 下一波预告那一行（§8.3）：文案与游戏入口一样取 wavePreview（一份两处用）
   const { wavePreview } = await import('/src/hud-model.js');
   const p = wavePreview(m.wave.index + 1, 3, m.waves);
   const preview = p ? '下一波：' + (p.tag ? '【' + p.tag + '】' : '') + p.text : '下一波：—';
+  const blitMini = () => {
+    const miniCanvas = document.createElement('canvas');
+    const mini = createLaneMinimap(miniCanvas, { size: () => ({ w: TD_MINIMAP.w, h: TD_MINIMAP.h }) });
+    mini.draw(m);
+    ctx.drawImage(miniCanvas, TD_MINIMAP.x, TD_MINIMAP.y, TD_MINIMAP.w, TD_MINIMAP.h);
+  };
   drawBattleHud(ctx, m, layoutBattle(model), {
     selectedTower: 'tw_arrow', message: '点塔位建塔 · 点「开波」提前开打', preview,
   });
+  blitMini();
   // 第三张样张：把塔面板摊开（点已建的塔就是这个界面）
   if (page === 'tower') {
     m.gold = 420;   // 让「升级」是亮着的，样张里能看出可点状态
@@ -188,6 +198,7 @@ if (page === 'lobby' || page === 'hero') {
   // 第六张：暂停面板（倍速 / 镜头 / 震动三个开关都真的接着东西）
   if (page === 'pause') {
     drawBattleHud(ctx, m, layoutBattle({ ...model, paused: true, rate: 2 }), { selectedTower: 'tw_arrow' });
+    blitMini();
     drawSheet(ctx, layoutSheet(m, { sheetKind: 'pause', rate: 2, settings: { tdFitAll: true, sfx: true } }));
   }
   }   // ← 这个 } 收的是「防守分支 else」；少了它整段脚本语法不过（headless 只会给一张空图）

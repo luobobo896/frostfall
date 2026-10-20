@@ -26,6 +26,9 @@ function fakeContext() {
 const {
   createRenderer, hintPulseAlpha, terrainPaint, towerSilhouette, mobSilhouette, heroSilhouette, bodyRadius,
   fortSilhouette, fortDrawSize, wallSilhouette, wallKindAt, wallDrawSize,
+  pathBandColor, pathProgressOf, colorLuma, lanePropSilhouette,
+  isoOcclusionRatio, shouldEaseOcclusion, OCCLUSION_ALPHA, OCCLUSION_LIMIT,
+  createLaneMinimap, nextInvasion, decimateCells, LANE_MINI_BUDGET, laneHeroes, BODY_PX,
 } = await import('../src/render.js');
 
 test('等距投影：格坐标 → 屏幕往返可逆（点击判定依赖它）', () => {
@@ -583,7 +586,7 @@ test('P0 绘制路径：四塔、五种怪、四职业走的折线互不相同�
   assert.equal(new Set(heroSigs).size, 4, '四职业英雄画出来的路径必须不同');
 });
 
-test('P0 地标：出生点有旗杆，核心脚下有一圈光', () => {
+test('P0 地标：入口是门洞、出口是石台，核心脚下仍有一圈光', () => {
   const ctx = fakeContext();
   const canvas = { clientWidth: 1334, clientHeight: 750, width: 0, height: 0, getContext: () => ctx };
   const r = createRenderer(canvas);
@@ -591,10 +594,16 @@ test('P0 地标：出生点有旗杆，核心脚下有一圈光', () => {
   m.towers = [];
   m.monsters = [];
   r.draw({ m, selectedSlot: null, selectedTower: null, now: 0 });
+  const entrance = lanePropSilhouette('entrance');
+  const exit = lanePropSilhouette('exit');
+  assert.ok(entrance.parts.filter((p) => p.role === 'pier').length >= 2, '入口要有两根分开的柱');
+  assert.ok(exit.parts.some((p) => p.role === 'stone'), '出口要有一块实心石');
+  assert.ok(!exit.parts.some((p) => p.role === 'pier'), '出口不能再画成门洞');
   const sp = m.map.paths[0].spawn;
-  const s = r.toScreen(sp.x, sp.y, 0);
-  const pole = ctx.calls.filter((c) => c.name === 'lineTo' && Math.abs(c.args[0] - s.x) < 1.5 && c.args[1] < s.y - 8);
-  assert.ok(pole.length >= 1, '出生格应有一根向上的旗杆');
+  const s = r.toScreen(sp.x, sp.y, 0.15);
+  const nearSpawn = ctx.calls.filter((c) => (c.name === 'lineTo' || c.name === 'moveTo')
+    && Math.abs(c.args[0] - s.x) < 40 && Math.abs(c.args[1] - s.y) < 40);
+  assert.ok(nearSpawn.length >= 4, '出生格要画出入口道具，不是一个点');
   const g = r.toScreen(m.core.cell.x, m.core.cell.y, 0);
   const expectRx = (GRID.tileW / 2) * r.scale * 0.92;
   const halo = ctx.calls.filter((c) => c.name === 'ellipse'
@@ -767,4 +776,219 @@ test('英雄光不描到怪和塔上', () => {
   const glow = ctx.calls.filter((c) => c.name === 'stroke' && c.strokeStyle === '#ffd68a' && c.lineWidth === 3);
   assert.equal(glow.length, 1, '一帧里只有活着的英雄带那圈暖色轮廓');
   assert.ok(ctx.calls.some((c) => c.name === 'stroke' && c.strokeStyle === '#7f9e92'), '亡灵光环用冷色，不是英雄光');
+});
+
+function styleContext() {
+  const calls = [];
+  const state = { fillStyle: '', strokeStyle: '', globalAlpha: 1, lineWidth: 1 };
+  const rec = (name) => (...args) => { calls.push({ name, args }); };
+  const ctx = {
+    calls,
+    setTransform: rec('setTransform'), fillRect: rec('fillRect'), fillText: rec('fillText'),
+    beginPath: rec('beginPath'), moveTo: rec('moveTo'), lineTo: rec('lineTo'),
+    closePath: rec('closePath'), fill: rec('fill'), stroke: rec('stroke'),
+    ellipse: rec('ellipse'), arc: rec('arc'), save: rec('save'), restore: rec('restore'),
+    setLineDash: rec('setLineDash'), strokeRect: rec('strokeRect'),
+  };
+  for (const key of ['fillStyle', 'strokeStyle', 'globalAlpha', 'lineWidth', 'lineCap', 'lineJoin']) {
+    Object.defineProperty(ctx, key, {
+      set(v) { state[key] = v; calls.push({ name: 'style', key, value: v }); },
+      get() { return state[key]; },
+    });
+  }
+  return ctx;
+}
+
+/** 剪影涂黑后放进同一张方格，比的是轮廓不是颜色。 */
+function propMask(spec, n = 48) {
+  const samples = [];
+  for (const part of spec.parts) {
+    if (part.points) samples.push(...part.points);
+    if (part.ellipse) {
+      const [x, y, rx, ry] = part.ellipse;
+      samples.push([x - rx, y - ry], [x + rx, y + ry]);
+    }
+  }
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const [x, y] of samples) {
+    minX = Math.min(minX, x); minY = Math.min(minY, y);
+    maxX = Math.max(maxX, x); maxY = Math.max(maxY, y);
+  }
+  const bw = Math.max(0.001, maxX - minX);
+  const bh = Math.max(0.001, maxY - minY);
+  const scale = (n - 2) / Math.max(bw, bh);
+  const ox = (n - bw * scale) / 2;
+  const oy = (n - bh * scale) / 2;
+  const to = (x, y) => [ox + (x - minX) * scale, oy + (y - minY) * scale];
+  const mask = new Uint8Array(n * n);
+  const plot = (x, y) => {
+    const ix = Math.max(0, Math.min(n - 1, Math.floor(x)));
+    const iy = Math.max(0, Math.min(n - 1, Math.floor(y)));
+    mask[iy * n + ix] = 1;
+  };
+  const inside = (poly, x, y) => {
+    let c = false;
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+      const [xi, yi] = poly[i];
+      const [xj, yj] = poly[j];
+      if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / ((yj - yi) || 1e-9) + xi) c = !c;
+    }
+    return c;
+  };
+  for (const part of spec.parts) {
+    if (part.ellipse) {
+      const [ex, ey, rx, ry] = part.ellipse;
+      const steps = 36;
+      for (let iy = 0; iy <= steps; iy++) {
+        for (let ix = 0; ix <= steps; ix++) {
+          const x = ex - rx + (2 * rx * ix) / steps;
+          const y = ey - ry + (2 * ry * iy) / steps;
+          const d = ((x - ex) / rx) ** 2 + ((y - ey) / ry) ** 2;
+          const on = part.strokeOnly ? d <= 1 && d >= 0.45 : d <= 1;
+          if (!on) continue;
+          const [px, py] = to(x, y);
+          plot(px, py);
+        }
+      }
+      continue;
+    }
+    const pts = part.points ?? [];
+    if (!part.closed) continue;
+    const poly = pts.map(([x, y]) => to(x, y));
+    for (let y = 0; y < n; y++) {
+      for (let x = 0; x < n; x++) {
+        if (inside(poly, x + 0.5, y + 0.5)) mask[y * n + x] = 1;
+      }
+    }
+  }
+  return mask;
+}
+
+const maskHit = (a, b) => {
+  let inter = 0, union = 0;
+  for (let i = 0; i < a.length; i++) {
+    const on = (a[i] ? 1 : 0) + (b[i] ? 1 : 0);
+    if (on) union += 1;
+    if (on === 2) inter += 1;
+  }
+  return union ? inter / union : 0;
+};
+
+test('关装饰后路径仍是出生暗、终点亮，入口和出口不是同一块剪影', () => {
+  const m = createMatch({ mapId: 'map_01', seed: 1 });
+  const bands = pathProgressOf(m.map);
+  const path = m.map.paths[0];
+  const spawn = path.spawn;
+  const last = path.cells[path.cells.length - 1];
+  assert.equal(bands.prog.get(`${spawn.x},${spawn.y}`), 0);
+  assert.equal(bands.prog.get(`${last.x},${last.y}`), 1);
+  const dark = pathBandColor(0);
+  const light = pathBandColor(1);
+  assert.ok(colorLuma(light) - colorLuma(dark) >= 80, '终点要比出生亮一档，不靠色相');
+  assert.ok(colorLuma(pathBandColor(0.5)) > colorLuma(dark));
+  assert.ok(colorLuma(pathBandColor(0.5)) < colorLuma(light));
+  assert.ok(colorLuma(dark) > colorLuma(terrainPaint('tileA').fill), '车道最暗的一头仍比可建地亮');
+  assert.ok(colorLuma(pathBandColor(1, 'air')) - colorLuma(pathBandColor(0, 'air')) >= 80);
+  let prev = -1;
+  for (const t of [0, 0.25, 0.5, 0.75, 1]) {
+    const luma = colorLuma(pathBandColor(t));
+    assert.ok(luma + 1e-6 >= prev, '明度只随走到终点的比例上升');
+    prev = luma;
+  }
+  assert.ok(colorLuma(pathBandColor(bands.prog.get(`${last.x},${last.y}`)))
+    > colorLuma(pathBandColor(bands.prog.get(`${spawn.x},${spawn.y}`))));
+  const paint = (fx) => {
+    const ctx = styleContext();
+    const canvas = { clientWidth: 1334, clientHeight: 750, width: 0, height: 0, getContext: () => ctx };
+    createRenderer(canvas).draw({ m, fx, now: 0, selectedSlot: null, selectedTower: null });
+    return ctx.calls.filter((c) => c.key === 'fillStyle').map((c) => c.value);
+  };
+  const low = paint('low');
+  assert.ok(low.includes(dark) && low.includes(light), '关掉装饰后两端颜色还在路径层上');
+  const specks = (fx) => {
+    const ctx = fakeContext();
+    const canvas = { clientWidth: 800, clientHeight: 450, width: 0, height: 0, getContext: () => ctx };
+    createRenderer(canvas).draw({ m: createMatch({ mapId: 'map_03', seed: 1 }), fx, now: 0 });
+    return ctx.calls.filter((c) => c.name === 'fillRect').length;
+  };
+  assert.ok(specks(undefined) > specks('low'), '低档不画沼泽噪点');
+
+  const entrance = propMask(lanePropSilhouette('entrance'));
+  const exit = propMask(lanePropSilhouette('exit'));
+  const air = propMask(lanePropSilhouette('air'));
+  const gateVsStone = maskHit(entrance, exit);
+  const gateVsAir = maskHit(entrance, air);
+  assert.ok(gateVsStone < 0.35, `入口和出口重叠 ${(gateVsStone * 100).toFixed(1)}%，不能只换色`);
+  assert.ok(gateVsAir < 0.35, `地面入口和空中入口重叠 ${(gateVsAir * 100).toFixed(1)}%`);
+});
+
+test('Lv3 塔和 Boss 挡住后一格超过四成时变透，矮塔不变', () => {
+  assert.ok(isoOcclusionRatio(BODY_PX.tower[2], BODY_PX.creep) > OCCLUSION_LIMIT);
+  assert.ok(isoOcclusionRatio(BODY_PX.boss, BODY_PX.hero) > OCCLUSION_LIMIT);
+  assert.equal(shouldEaseOcclusion('tower', 2, 'creep'), false);
+  assert.equal(shouldEaseOcclusion('tower', 3, 'creep'), true);
+  assert.equal(shouldEaseOcclusion('boss', 1, 'creep'), true);
+  assert.equal(shouldEaseOcclusion('creep', 1, 'creep'), false);
+
+  const alphas = (setup) => {
+    const ctx = styleContext();
+    const canvas = { clientWidth: 1334, clientHeight: 750, width: 0, height: 0, getContext: () => ctx };
+    const r = createRenderer(canvas);
+    const match = createMatch({ mapId: 'map_01', seed: 1 });
+    match.gold = 9999;
+    setup(match);
+    r.draw({ m: match, now: 0 });
+    return ctx.calls.filter((c) => c.key === 'globalAlpha').map((c) => c.value);
+  };
+  const behindTower = (level, withCreep) => alphas((match) => {
+    assert.ok(buildTower(match, 0, 'tw_arrow'));
+    match.towers[0].level = level;
+    match.monsters = withCreep ? [{
+      uid: 1, mobId: 'mob_01', def: MONSTERS.mob_01,
+      cell: { x: match.towers[0].cell.x - 1, y: match.towers[0].cell.y },
+      hp: 10, maxHp: 10, dead: false, attacking: false,
+    }] : [];
+  });
+  assert.ok(behindTower(3, true).includes(OCCLUSION_ALPHA), 'Lv3 挡住后一格要透');
+  assert.ok(!behindTower(3, false).includes(OCCLUSION_ALPHA), '身后没人就不透');
+  assert.ok(!behindTower(1, true).includes(OCCLUSION_ALPHA), '矮塔不走这条');
+  const boss = alphas((match) => {
+    match.towers = [];
+    match.monsters = [
+      { uid: 1, mobId: 'boss_01', def: MONSTERS.boss_01, cell: { x: 8, y: 8 }, hp: 10, maxHp: 10, dead: false, attacking: false },
+      { uid: 2, mobId: 'mob_01', def: MONSTERS.mob_01, cell: { x: 7, y: 8 }, hp: 10, maxHp: 10, dead: false, attacking: false },
+    ];
+  });
+  assert.ok(boss.includes(OCCLUSION_ALPHA), 'Boss 挡住后一格也透');
+});
+
+test('TD 小地图只描折线：英雄点跟着走，箭头指向下一只怪的入口', () => {
+  const ctx = styleContext();
+  const canvas = { clientWidth: 168, clientHeight: 122, width: 0, height: 0, getContext: () => ctx };
+  const mini = createLaneMinimap(canvas, { size: () => ({ w: 168, h: 122 }) });
+  const m = createMatch({ mapId: 'map_02', seed: 1 });
+  m.heroes = [{ cell: { x: 4, y: 6 }, dead: false, path: [], carry: 0 }];
+  mini.draw(m);
+  const widths = ctx.calls.filter((c) => c.key === 'lineWidth').map((c) => c.value);
+  assert.ok(widths.includes(LANE_MINI_BUDGET.stroke), '地面折线要够粗，手机上瞥得见');
+  const rects = ctx.calls.filter((c) => c.name === 'fillRect').length;
+  assert.ok(rects < 8, `不要逐格填色（fillRect ${rects}）`);
+  assert.equal(laneHeroes(m).length, 2, '主英雄之外的点也要画');
+  const ground = m.map.paths.filter((p) => !p.air);
+  assert.deepEqual(nextInvasion(m).spawn, ground[0].spawn);
+  m.wave.phase = 'spawning';
+  m.wave.spawned = 1;
+  m.wave.total = 6;
+  assert.deepEqual(nextInvasion(m).spawn, ground[1 % ground.length].spawn);
+  m.wave.phase = 'clearing';
+  assert.equal(nextInvasion(m), null, '清场没有下一只，箭头收起');
+  const at = mini.toMini(10, 8);
+  assert.deepEqual(mini.cellAt(at.x, at.y, m), { x: 10, y: 8 });
+  const long = decimateCells(Array.from({ length: 200 }, (_, i) => ({ x: i, y: 0 })));
+  assert.equal(long.length, LANE_MINI_BUDGET.maxPoints);
+  assert.equal(long[0].x, 0);
+  assert.equal(long[long.length - 1].x, 199);
+  const callsBefore = ctx.calls.length;
+  mini.draw(m);
+  assert.ok(ctx.calls.length - callsBefore < 400, '第二帧不能把格子再扫一遍');
 });
