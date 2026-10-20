@@ -2,8 +2,8 @@
 // 复用 TD 内核的伤害 / 技能 / 装备 / 掉落 / 英雄成长；新增的是移动寻路、营地刷怪、回防调度、基地工事。
 
 import {
-  DEFENSE_MAPS, DEFENSE_RULES, DIFFICULTY, DROP_TABLE, EQUIP_SLOTS, FORTS, GRID, HEROES, HERO_REGEN, HERO_REVIVE,
-  MONSTERS, QUALITY_ORDER, TICK_STEP,
+  DEFENSE_MAPS, DEFENSE_RULES, DIFFICULTY, DROP_TABLE, EQUIP_SLOTS, FORTS, FORT_WATCH, GRID, HEROES, HERO_REGEN, HERO_REVIVE,
+  MONSTERS, QUALITY_ORDER, TICK_STEP, fortStatsOf,
 } from './data.js';
 import { computeDamage, findPath, gridDist, makeRng, project } from './core.js';
 import { damageMonster, grantExp, heroAttack, heroDamageReduce, heroDodge, heroMaxHp, heroStats, isTargetable, makeEquipment, markReveal, sprintState, stepMonsterEffects, updateHeroBuffs } from './match.js';
@@ -398,12 +398,46 @@ export function buildFort(m, slotIndex, fortId) {
   if (m.gold < fort.cost) return false;
   m.gold -= fort.cost;
   const rec = {
-    slot: slotIndex, cell: { ...slot }, fortId, hp: fort.hp, maxHp: fort.hp,
-    cooldown: 0, stats: fort.blocks ? null : { ...fort, attackType: fort.attackType },
+    slot: slotIndex, cell: { ...slot }, fortId, hp: fort.hp, maxHp: fort.hp, tier: 0,
+    cooldown: 0, stats: fort.blocks ? null : fortStatsOf(fortId, 0),
   };
   m.forts.push(rec);
   if (fort.blocks) m.walls.add(key(slot.x, slot.y));   // 围墙加入阻挡，怪得绕路
   addLog(m, `建造 ${fort.name}`);
+  return true;
+}
+
+/** 点工事位时，空位是建造，已建箭塔是升哨楼。更近的那个优先。 */
+export function fortTapTarget(m, cell) {
+  if (!m?.def?.fortSlots || !cell) return null;
+  let bestUp = null;
+  let bestEmpty = null;
+  for (let i = 0; i < m.def.fortSlots.length; i++) {
+    const d = gridDist(m.def.fortSlots[i], cell);
+    if (d > 1) continue;
+    const built = m.forts.find((f) => f.slot === i);
+    if (!built) {
+      if (!bestEmpty || d < bestEmpty.d) bestEmpty = { slot: i, d, kind: 'build' };
+    } else if (built.fortId === 'fort_arrow' && (built.tier ?? 0) < 1) {
+      if (!bestUp || d < bestUp.d) bestUp = { slot: i, d, kind: 'upgrade' };
+    }
+  }
+  if (bestUp && bestEmpty) return bestUp.d <= bestEmpty.d ? bestUp : bestEmpty;
+  return bestUp || bestEmpty;
+}
+
+/** 箭塔工事升为哨楼：伤害与侦测不动，射程多一格，血量变厚。 */
+export function upgradeFort(m, slotIndex) {
+  const f = m.forts.find((x) => x.slot === slotIndex);
+  if (!f || f.fortId !== 'fort_arrow' || (f.tier ?? 0) >= 1) return false;
+  if (m.gold < FORT_WATCH.cost) return false;
+  m.gold -= FORT_WATCH.cost;
+  const stats = fortStatsOf(f.fortId, 1);
+  f.tier = 1;
+  f.maxHp = stats.hp;
+  f.hp = stats.hp;
+  f.stats = stats;
+  addLog(m, `${FORTS.fort_arrow.name} 升为 ${FORT_WATCH.name}`);
   return true;
 }
 

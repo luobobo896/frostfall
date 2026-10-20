@@ -7,7 +7,7 @@ import {
   QUALITY, QUALITY_ORDER, POTION_BAG_SLOTS, SHOP_ITEMS, TICK_STEP, TIMING, TOWERS, TARGET_PRIORITIES,
   SHOP_CAST_SEC, STAT_CAPS, HERO_DODGE_BASE, EQUIP_SELL_REFUND, EQUIP_SELL_BONUS_LUMBER,
   playerScaleOf, WEAPONS, WEAPON_IDS,
-  TOWER_ATK_SPEED_CAP, TOWER_LEVEL_GAIN, TOWER_MAX_LEVEL, TOWER_SELL_REFUND,
+  TOWER_ATK_SPEED_CAP, TOWER_LEVEL_GAIN, TOWER_MAX_LEVEL, TOWER_SELL_REFUND, TOWER_SPEC,
   SKILL_MAX_LEVEL, TOWER_UPGRADE_COST, WAVES, expToNext, ilvlForWave, skillLevelOf,
 } from './data.js';
 import { LONG_RUN, LONG_RUN_BOSS_HP, WAVES_LONG } from './data.js';
@@ -15,16 +15,25 @@ import { buildMap, cellAt, computeDamage, findPath, gridDist, makeRng, pathTotal
 
 /* ---------- 静态计算（UI 与测试共用同一份来源） ---------- */
 
-export function towerStats(towerId, level = 1) {
+export function towerStats(towerId, level = 1, spec = null) {
   const t = TOWERS[towerId];
   const g = TOWER_LEVEL_GAIN;
+  const offer = TOWER_SPEC[towerId];
+  // 专精只挂光环，不改共享的 special 对象（否则同族每一座塔都会带上光环）
+  let special = t.special;
+  if (spec && offer && offer.id === spec && offer.aura) {
+    special = {
+      ...t.special,
+      aura: { radius: offer.aura.radius, slowPct: offer.aura.slowPct, chip: offer.aura.chip },
+    };
+  }
   return {
     damage: t.damage * (1 + g.damage) ** (level - 1),
     range: t.range * (1 + g.range) ** (level - 1),
     atkSpeed: Math.min(TOWER_ATK_SPEED_CAP, t.atkSpeed * (1 + g.atkSpeed) ** (level - 1)),
     attackType: t.attackType,
     hitsAir: t.hitsAir,
-    special: t.special,
+    special,
   };
 }
 
@@ -36,8 +45,8 @@ export function towerStats(towerId, level = 1) {
  * 注意现状：**六张首发图的塔位没有一个落在沼泽/高地上**（实测），所以这条现在是潜在规则——
  * 一旦有地图把塔位放到这两种地形上就会生效，见验证记录 §69。
  */
-export function towerStatsAt(map, cell, towerId, level = 1) {
-  const base = towerStats(towerId, level);
+export function towerStatsAt(map, cell, towerId, level = 1, spec = null) {
+  const base = towerStats(towerId, level, spec);
   const onSwamp = map?.swamp?.has(`${cell.x},${cell.y}`);
   const onHighland = map?.highland?.has(`${cell.x},${cell.y}`);
   const range = base.range + (onSwamp ? -1 : 0) + (onHighland ? 1.5 : 0);
@@ -47,6 +56,30 @@ export function towerStatsAt(map, cell, towerId, level = 1) {
 
 export const upgradeCost = (towerId, level) =>
   level >= TOWER_MAX_LEVEL ? null : Math.round(TOWERS[towerId].cost * TOWER_UPGRADE_COST[level - 1]);
+
+/** 满级专精的价钱。没有这条专精的塔返回 null。 */
+export function specCostOf(towerId) {
+  const offer = TOWER_SPEC[towerId];
+  if (!offer || !TOWERS[towerId]) return null;
+  return Math.round(TOWERS[towerId].cost * offer.costMul);
+}
+
+/**
+ * 下一档能买什么。3 级封顶的塔没有专精就是 null；冰塔满级之后是寒霜祭坛，不是 Lv4。
+ */
+export function nextUpgrade(tower) {
+  if (!tower) return null;
+  if (tower.level < TOWER_MAX_LEVEL) {
+    const cost = upgradeCost(tower.towerId, tower.level);
+    if (cost == null) return null;
+    return { kind: 'level', cost, label: `升级 → Lv${tower.level + 1}` };
+  }
+  const offer = TOWER_SPEC[tower.towerId];
+  if (!offer || tower.spec) return null;
+  const cost = specCostOf(tower.towerId);
+  if (cost == null) return null;
+  return { kind: 'spec', cost, label: offer.name, hint: offer.hint, id: offer.id };
+}
 
 export const investedOf = (towerId, level) => {
   let sum = TOWERS[towerId].cost;
@@ -521,14 +554,27 @@ export function buildTower(m, slotIndex, towerId, owner = 0) {
   return true;
 }
 
+function specializeTower(m, t) {
+  const offer = TOWER_SPEC[t.towerId];
+  if (!offer || t.spec) return false;
+  const cost = specCostOf(t.towerId);
+  if (cost == null || !spend(m, cost)) return false;
+  t.spec = offer.id;
+  t.invested += cost;
+  t.stats = towerStatsAt(m.map, t.cell, t.towerId, t.level, t.spec);
+  addLog(m, `${TOWERS[t.towerId].name} 升为 ${offer.name}`);
+  return true;
+}
+
 export function upgradeTower(m, slotIndex) {
   const t = towerAtSlot(m, slotIndex);
   if (!t) return false;
+  if (t.level >= TOWER_MAX_LEVEL) return specializeTower(m, t);
   const cost = upgradeCost(t.towerId, t.level);
   if (cost == null || !spend(m, cost)) return false;
   t.level += 1;
   t.invested += cost;
-  t.stats = towerStatsAt(m.map, t.cell, t.towerId, t.level);
+  t.stats = towerStatsAt(m.map, t.cell, t.towerId, t.level, t.spec ?? null);
   t.maxHp = towerMaxHp(t.level);
   t.hp = t.maxHp;   // 升级顺带修满（省一次点击）
   addLog(m, `${TOWERS[t.towerId].name} 升到 ${t.level} 级`);
@@ -1202,6 +1248,38 @@ function pickTarget(m, tower) {
   }
 }
 
+/**
+ * 寒霜祭坛的光环：半径内、已经能被锁定的敌人减速，并每秒刮一点魔法伤害。
+ * 不写进侦测列表。完全潜行且没被既有侦测揭开的怪，光环碰不到。
+ */
+function stepTowerAuras(m, dt) {
+  const towers = m.towers;
+  let any = false;
+  for (let i = 0; i < towers.length; i++) {
+    if (towers[i].stats?.special?.aura?.radius > 0) { any = true; break; }
+  }
+  if (!any) return;
+  const until = m.time + Math.max(dt * 2, 0.08);
+  for (let i = 0; i < towers.length; i++) {
+    const t = towers[i];
+    const aura = t.stats?.special?.aura;
+    if (!(aura?.radius > 0)) continue;
+    t.auraClock = (t.auraClock ?? 0) + dt;
+    const chipNow = t.auraClock >= 1;
+    if (chipNow) t.auraClock -= 1;
+    for (const mon of m.monsters) {
+      if (!isTargetable(m, mon, true)) continue;
+      if (gridDist(monsterCell(m, mon), t.cell) > aura.radius) continue;
+      if (aura.slowPct > 0) applySlow(mon, aura.slowPct, until);
+      if (!chipNow || !(aura.chip > 0) || mon.dead) continue;
+      const dealt = computeDamage({
+        atk: aura.chip, attackType: 'magic', armor: mon.armor, armorType: mon.armorType, rng: m.rng,
+      }).damage;
+      damageMonster(m, mon, dealt, t.towerId, t.owner ?? 0);
+    }
+  }
+}
+
 function towerFire(m, tower) {
   const target = pickTarget(m, tower);
   if (!target) return;
@@ -1585,6 +1663,7 @@ export function update(m, dtRaw) {
   }
 
   markReveal(m);
+  stepTowerAuras(m, dt);
   for (const t of m.towers) {
     t.cooldown = Math.max(0, t.cooldown - dt);
     if (t.cooldown <= 0) towerFire(m, t);

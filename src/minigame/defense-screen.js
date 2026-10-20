@@ -5,7 +5,7 @@
 //   ② 操作是**虚拟摇杆**（§1.9.1：固定左下 45%，可切浮动跟手）而不是点选建造；
 //   ③ HUD 换成轮次 / 城堡血 / 预警倒计时（TD 那套波次条在这里没有意义，§115 的口径）。
 // 这一层仍然是纯函数四件套（布局 / 绘制 / 命中 / 摇杆向量），所以能在 Node 里测、也能出样张。
-import { DEFENSE_RULES, FORTS } from '../data.js';
+import { DEFENSE_RULES, FORTS, FORT_WATCH } from '../data.js';
 import { skillKeys } from './battle.js';
 import { commandStrip, roleGlyph, zoneLabel } from '../hud-model.js';
 import { zoneAt } from '../defense.js';
@@ -365,6 +365,24 @@ function paintStealthChip(ctx, c) {
 /** 工事建造面板（防守只有两种工事，§12.5） */
 export function layoutFortSheet(m, model = {}) {
   const rows = [];
+  if (Number.isInteger(model.upgradeSlot)) {
+    const built = m.forts?.find((f) => f.slot === model.upgradeSlot);
+    const ready = built?.fortId === 'fort_arrow' && (built.tier ?? 0) < 1;
+    rows.push({
+      id: 'fort-upgrade', label: FORT_WATCH.name, sub: `${FORT_WATCH.cost} 金 · 望得更远`,
+      x: 20, y: 96, w: 614, h: 44,
+      disabled: !ready || m.gold < FORT_WATCH.cost,
+      action: { type: 'upgradeFort', slot: model.upgradeSlot },
+    });
+    rows.push({ id: 'cancel', label: '取消', x: 20, y: 146, w: 614, h: 44, action: { type: 'close' } });
+    return {
+      kind: 'fort',
+      title: `升工事 · ${FORT_WATCH.name} · 金币 ${Math.round(m.gold)}`,
+      hint: FORT_WATCH.hint,
+      box: { x: 12, y: 62, w: 643, h: 140 },
+      rows, byId: Object.fromEntries(rows.map((r) => [r.id, r])),
+    };
+  }
   Object.values(FORTS).forEach((f, i) => {
     rows.push({
       id: `fort-${f.id}`, label: f.name,
@@ -383,7 +401,7 @@ export function layoutFortSheet(m, model = {}) {
   return {
     kind: 'fort',
     title: `建工事 · 金币 ${Math.round(m.gold)} · 空位 ${model.freeSlots ?? 0}`,
-    hint: '点战场上的工事位（“修”字）即可放',
+    hint: '点战场上的工事位（“修”字）即可放。箭塔建好后再点它，可升哨楼',
     box: { x: 12, y: 62, w: 643, h: 96 + Object.keys(FORTS).length * 50 + 44 - 62 + 12 },
     rows, byId: Object.fromEntries(rows.map((r) => [r.id, r])),
   };

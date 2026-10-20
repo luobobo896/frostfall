@@ -259,6 +259,7 @@ export function connect({
     move: (x, y) => send({ t: 'move', x, y }),
     hold: (x, y) => send({ t: 'hold', x, y }),
     fort: (slot, fortId) => send({ t: 'fort', slot, fortId }),
+    fortUp: (slot) => send({ t: 'fortUp', slot }),
     repair: () => send({ t: 'repair' }),
     teleport: () => send({ t: 'teleport' }),
     repairTower: (slot) => send({ t: 'repairTower', slot }),

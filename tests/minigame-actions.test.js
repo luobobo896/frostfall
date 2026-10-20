@@ -13,7 +13,7 @@ import { layoutDefense, layoutFortSheet } from '../src/minigame/defense-screen.j
 import { applyLobbyAction, layoutLobby } from '../src/minigame/lobby.js';
 import { defModel, describeBattleModel } from '../src/minigame/game.js';
 import { buildTower, createMatch, makeEquipment } from '../src/match.js';
-import { createDefenseMatch } from '../src/defense.js';
+import { buildFort, createDefenseMatch } from '../src/defense.js';
 import { emptyProfile } from '../src/profile.js';
 
 /** 界面里所有 `action={ type: ... }` 的出处（每个面板的各行 / 大厅的每张卡） */
@@ -63,6 +63,8 @@ const collectActions = () => {
     push(where, layoutSheet(td, ui));
   }
   push('工事', layoutFortSheet(dm, { freeSlots: 2 }));
+  buildFort(dm, 0, 'fort_arrow');
+  push('工事升级', layoutFortSheet(dm, { upgradeSlot: 0 }));
   // 防守那套暂停面板：`stick` / `autoPickup` 这两格只在防守模式出现
   push('暂停（防守）', layoutPause(dm, { sheetKind: 'pause', rate: 1, settings: { stick: 'floating', autoPickup: true, sfx: true, effects: 'high' } }));
 
@@ -92,7 +94,7 @@ test('小游戏接线：界面里每一个动作，`applyAction` 里都有对应
   // 反向也扫一遍：applyAction 里没有「只在注释里出现」的分支名
   const types = new Set(seen.map((x) => x.type));
   for (const t of ['early', 'skill', 'potion', 'shop', 'bag', 'pause', 'speed', 'lobby', 'restart', 'teleport', 'repairCastle', 'build', 'upgrade', 'sell', 'priority', 'repair', 'buy', 'item', 'equip', 'enhance', 'craft', 'resume', 'camera', 'stick', 'sfx', 'effects', 'fps', 'selectHero', 'wavePreview', 'autoPickup', 'replayTutorial', 'resetProgress', 'tutorialSkip', 'fort', 'buildFort', 'endless', 'revive',
-    'mode', 'difficulty', 'length', 'hero', 'map', 'start', 'continue', 'closeDetail']) {
+    'mode', 'difficulty', 'length', 'hero', 'map', 'start', 'continue', 'closeDetail', 'upgradeFort']) {
     assert.ok(types.has(t), `内核/界面里有的动作「${t}」在布局里没出现（是不是删了入口却留着分支？）`);
   }
 });
@@ -111,6 +113,7 @@ test('小游戏接线：每个弹层都有出口（别把玩家困在面板里�
     ['暂停（TD）', layoutPause(td, { settings: {} })],
     ['暂停（防守）', layoutPause(dm, { settings: {} })],
     ['工事', layoutFortSheet(dm, { freeSlots: 2 })],
+    ['工事升级', layoutFortSheet(dm, { upgradeSlot: 0 })],
     ['大厅英雄详情', layoutLobby(667, 375, {
       mode: 'td', map: 'map_01', difficulty: 'normal', length: 'short', hero: 'hero_warrior',
       profile: emptyProfile(), unlocked: ['map_01'], locked: {}, lockedReason: {}, unlockedCount: 1,

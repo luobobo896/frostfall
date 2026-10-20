@@ -139,6 +139,22 @@ export const TOWER_LEVEL_GAIN = { damage: 0.35, range: 0.05, atkSpeed: 0.10 };
 export const TOWER_UPGRADE_COST = [1.2, 2.2]; // 1→2、2→3 的造价倍数
 export const TOWER_SELL_REFUND = 0.6;
 export const TOWER_ATK_SPEED_CAP = 4.0;
+/**
+ * 满级之后的专精，不是第 4 级伤害。攻击曲线不动，只加建筑身份。
+ * 冰塔 → 寒霜祭坛：附近敌人被寒霜光环减速并轻轻刮一下。光环自己不侦测。
+ */
+export const TOWER_SPEC = {
+  tw_frost: {
+    id: 'frost_shrine',
+    name: '寒霜祭坛',
+    costMul: 2.4,
+    role: '支援',
+    hint: '支援 · 寒霜光环减速附近敌人（克制冲刺）',
+    counter: '寒霜祭坛可减速冲刺',
+    counters: ['sprint'],
+    aura: { radius: 3.2, slowPct: 0.22, chip: 4 },
+  },
+};
 
 // §8.3 攻击优先级
 export const TARGET_PRIORITIES = ['front', 'strongest', 'weakest', 'air_first'];
@@ -392,11 +408,34 @@ export const DEFENSE_RULES = {
   castleDamageMul: 0.1,       // 进攻怪打城堡：取 TD「漏怪伤害」的 1/10
 };
 
-// 基地工事（§12.5：比 TD 的 6 种少，只有 2 种）
+// 基地工事（§12.5：箭塔 / 围墙）。箭塔建好后可再升一阶哨楼，不另开一种攻击。
 export const FORTS = {
   fort_arrow: { id: 'fort_arrow', name: '箭塔', cost: 60, damage: 20, atkSpeed: 1.4, range: 5.0, hitsAir: true, attackType: 'normal', hp: 400, detectRadius: 6.5 },
   fort_wall: { id: 'fort_wall', name: '围墙', cost: 40, hp: 800, blocks: true },
 };
+/** 箭塔工事的下一阶。伤害与侦测不动，射程多出一格，剪影加高。 */
+export const FORT_WATCH = {
+  tier: 1,
+  name: '哨楼',
+  cost: 80,
+  range: 6,
+  hp: 560,
+  hint: '哨楼 · 望得更远',
+};
+
+/** 工事的战斗读数。围墙没有攻击。`tier` 只改箭塔的射程与血量。 */
+export function fortStatsOf(fortId, tier = 0) {
+  const fort = FORTS[fortId];
+  if (!fort || fort.blocks) return null;
+  const watch = fortId === 'fort_arrow' && (tier | 0) >= 1;
+  return {
+    ...fort,
+    name: watch ? FORT_WATCH.name : fort.name,
+    range: watch ? FORT_WATCH.range : fort.range,
+    hp: watch ? FORT_WATCH.hp : fort.hp,
+    tier: watch ? 1 : 0,
+  };
+}
 
 export const DEFENSE_MAPS = {
   def_01: {

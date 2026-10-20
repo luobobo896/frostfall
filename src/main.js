@@ -16,8 +16,8 @@ import { damageFloaters, recordLabel } from './hud-model.js';
 import { pendingBuild, reconcilePending, rejectLastPending } from './predict.js';
 import { createTutorial, tutorialPasses } from './tutorial.js';
 import {
-  buildFort, createDefenseMatch, defenseHeroStats, describeDefense, orderMove, repairCastle,
-  steerGoal, teleportHome, updateDefense,
+  buildFort, createDefenseMatch, defenseHeroStats, describeDefense, fortTapTarget, orderMove, repairCastle,
+  steerGoal, teleportHome, updateDefense, upgradeFort,
 } from './defense.js';
 import { FORTS } from './data.js';
 import { autoPlayDefense } from './ai-defense.js';
@@ -240,6 +240,7 @@ const handlers = {
     return sent;
   },
   buildFort: (slot, id) => (net ? net.fort(slot, id) : buildFort(match, slot, id)),
+  upgradeFort: (slot) => (net ? net.fortUp(slot) : upgradeFort(match, slot)),
   repair: () => (net ? net.repair() : repairCastle(match)),
   teleport: () => (net ? net.teleport() : teleportHome(match)),
   repairTower: (slot) => (net ? net.repairTower(slot) : repairTower(match, slot)),
@@ -706,12 +707,16 @@ function renderNetBadge(state) {
 function defenseTap(clientX, clientY) {
   const rect = canvas.getBoundingClientRect();
   const cell = renderer.toGrid(clientX - rect.left, clientY - rect.top);
-  const slot = match.def.fortSlots.findIndex((s, i) => gridDist(s, cell) <= 1
-    && !match.forts.some((f) => f.slot === i));
-  if (slot >= 0) {
-    const s = match.def.fortSlots[slot];
+  const hit = fortTapTarget(match, cell);
+  if (hit?.kind === 'upgrade') {
+    const s = match.def.fortSlots[hit.slot];
+    ui.openFortUpgrade(match, hit.slot, renderer.toScreen(s.x, s.y));
+    return;
+  }
+  if (hit?.kind === 'build') {
+    const s = match.def.fortSlots[hit.slot];
     // 高亮由 `ui.openSlotIndex()` 提供（轮盘开着才亮）：这里不再另存一份
-    ui.openFortWheel(match, slot, renderer.toScreen(s.x, s.y), FORTS);
+    ui.openFortWheel(match, hit.slot, renderer.toScreen(s.x, s.y), FORTS);
     return;
   }
   ui.closeWheel();
