@@ -66,10 +66,14 @@
 
     <!-- 底部左：英雄状态（§14.3 稿 4：状态在左，技能与操作在右） -->
     <div class="hud hud-bottom-left">
-      <div class="panel hero-panel">
-        <div class="row"><span id="heroName">霜刃武者</span><span id="heroLevel">Lv1</span></div>
-        <div class="bar hero"><i id="heroHpBar"></i></div>
-        <div class="row small muted"><span id="heroExpLabel">EXP 0 / 40</span><span id="heroState">驻守</span></div>
+      <div class="panel hero-panel" id="heroCommand">
+        <button type="button" class="hero-mark" id="heroMark" aria-label="选择英雄">驻</button>
+        <div class="hero-readout">
+          <div class="row"><span id="heroName">霜刃武者</span><span id="heroLevel">Lv1</span></div>
+          <div class="bar hero"><i id="heroHpBar"></i></div>
+          <div class="row small muted"><span id="heroRole">驻守英雄</span><span id="heroState">驻守英雄</span></div>
+          <div class="row small muted"><span id="heroExpLabel">EXP 0</span><span id="invDots" class="inv-dots"></span></div>
+        </div>
       </div>
       <!-- 防守模式的虚拟摇杆（§1.9.1 左下固定；§1.9.3 可切浮动；§10.1 与点地移动共用一条移动指令） -->
       <div class="stick-base hidden" id="stickBase"><i class="stick-knob" id="stickKnob"></i></div>
@@ -145,9 +149,10 @@
       <div class="modal-head"><b>设置</b><button class="btn ghost small" data-close>关闭</button></div>
       <div class="start-row"><span class="label">镜头</span><div class="opts" id="setZoom"></div></div>
       <div class="start-row"><span class="label">特效</span><div class="opts" id="setEffects"></div></div>
+      <div class="start-row"><span class="label">帧率</span><div class="opts" id="setFps"></div></div>
       <div class="start-row"><span class="label">摇杆</span><div class="opts" id="setStick"></div></div>
       <div class="start-row"><span class="label">其它</span><div class="opts" id="setToggles"></div></div>
-      <div class="muted small">低特效档会关掉伤害飘字与塔位脉冲，用于低端机保帧（§10.1）。</div>
+      <div class="muted small">低特效档会关掉伤害飘字与塔位脉冲，用于低端机保帧（§10.1）。帧率目标稳定 60；高刷可选 120。小游戏会调用微信的首选帧率，浏览器跟随屏幕刷新，不在循环里丢帧。</div>
       <div class="row"><button class="btn small" id="btnReplayTutorial">重看新手引导</button><button class="btn ghost small" id="btnResetSettings">恢复默认</button></div>
       <!-- §3.1 #31：联机局中途的出口（单人局里这行整块收起——单人的「回大厅」在暂停面板上） -->
       <div class="row hidden" id="rowLeaveRoom"><button class="btn ghost small" id="btnLeaveRoom">离开房间（回大厅）</button></div>

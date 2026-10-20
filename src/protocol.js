@@ -5,7 +5,7 @@ export const PROTOCOL_VERSION = 1;
 import { HEROES, MONSTERS, TARGET_PRIORITIES, TIMING, TOWERS } from './data.js';
 import { FORTS, EQUIP_SLOTS, QUALITY_ORDER } from './data.js';
 import { project } from './core.js';
-import { towerStatsAt } from './match.js';
+import { isHoldCell, towerStatsAt } from './match.js';
 export const TICK_RATE = TIMING.tickRate;   // 逻辑帧（§119：只从 data.js 取，别再写一份 20）
 export const SNAPSHOT_RATE = 10;    // 广播频率：10Hz（§10.2 的增量方案先简化为结构化全量）
 export const MAX_COMMANDS_PER_SEC = 20; // 指令频率限制（防作弊，§12.7 的同款约束）
@@ -31,6 +31,7 @@ export const COMMANDS = [
    * 把**自己**那个座位立刻释放，别人马上能补进来。
    */
   'leave',
+  'hold',   // TD 驻守点：路径旁、核心 N 格内。防守局在服务端直接拒
 ];
 
 
@@ -245,7 +246,12 @@ export function createSnapshotter() {
       core: [Math.round(m.core.hp), m.core.maxHp],
       hero: [HERO_IDS.indexOf(m.hero.def.id), m.hero.level, Math.round(m.hero.exp), Math.round(m.hero.hp),
         m.hero.dead ? 1 : 0, +m.hero.reviveTimer.toFixed(1),
-        m.hero.skillCd.map((x) => +x.toFixed(1)), m.hero.skillUnlocked.map((b) => (b ? 1 : 0))],
+        m.hero.skillCd.map((x) => +x.toFixed(1)), m.hero.skillUnlocked.map((b) => (b ? 1 : 0)),
+        // 8 起是可选的驻守同步（老镜像只有前 8 项，applyShared 见长度才读）
+        m.hero.cell?.x ?? 0, m.hero.cell?.y ?? 0,
+        (m.hero.path ?? []).slice(0, 12).map((c) => [c.x, c.y]),
+        m.hero.facing === 1 ? 1 : -1,
+        m.hero.hold?.x ?? m.hero.cell?.x ?? 0, m.hero.hold?.y ?? m.hero.cell?.y ?? 0],
       gold: Math.round(m.gold),
       st: [m.stats.kills, m.stats.leaks],
       result: m.result ?? 0,
@@ -305,6 +311,18 @@ export function applyShared(m, s) {
   m.hero.reviveTimer = s.hero[5];
   m.hero.skillCd = s.hero[6].slice();
   m.hero.skillUnlocked = s.hero[7].map((x) => !!x);
+  // 驻守点是后加的可选尾段：老快照（长度 8）照旧，只同步血量等级
+  if (s.hero.length > 8 && Number.isFinite(s.hero[8]) && Number.isFinite(s.hero[9])) {
+    m.hero.cell = { x: s.hero[8] | 0, y: s.hero[9] | 0 };
+    const rawPath = Array.isArray(s.hero[10]) ? s.hero[10] : [];
+    m.hero.path = rawPath
+      .map((c) => ({ x: c[0] | 0, y: c[1] | 0 }))
+      .filter((c) => isHoldCell(m, c));
+    m.hero.facing = s.hero[11] === 1 ? 1 : -1;
+    if (Number.isFinite(s.hero[12]) && Number.isFinite(s.hero[13])) {
+      m.hero.hold = { x: s.hero[12] | 0, y: s.hero[13] | 0 };
+    }
+  }
 
   if (s.tw) {
     m.towers = s.tw.map((row) => {

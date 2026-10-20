@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 
 import { createMatch, buildTower } from '../src/match.js';
 import { createRenderer } from '../src/render.js';
-import { MONSTERS, TOWERS } from '../src/data.js';
+import { HEROES, MONSTERS, TOWERS } from '../src/data.js';
 import { project } from '../src/core.js';
 import {
   FX_LIMITS, attackPulse, chargePulse, fxBudget, heroMotion, impactGlyphs, mobMotion,
@@ -73,6 +73,7 @@ function fakeContext() {
     beginPath: rec('beginPath'), moveTo: rec('moveTo'), lineTo: rec('lineTo'),
     closePath: rec('closePath'), fill: rec('fill'), stroke: rec('stroke'),
     ellipse: rec('ellipse'), save: rec('save'), restore: rec('restore'),
+    setLineDash: rec('setLineDash'),
     drawImage: rec('drawImage'),
   };
 }
@@ -206,8 +207,12 @@ test('一整帧的动作开销有上限', () => {
     progress: 0.4 + i * 0.1,
     life: 1,
   }));
+  // 选中圣徒：多画一圈技能虚线和驻守标记，仍要落在同一帧预算里
+  s.m.hero.def = HEROES.hero_paladin;
+  s.m.hero.level = 5;
+  s.m.hero.skillUnlocked = [true, false, false];
   const t0 = performance.now();
-  for (let i = 0; i < 30; i++) s.r.draw({ m: s.m, now: i / 10, fx: 'high' });
+  for (let i = 0; i < 30; i++) s.r.draw({ m: s.m, now: i / 10, fx: 'high', heroSelected: true });
   const ms = performance.now() - t0;
   assert.ok(ms < 800, `30 帧画完应低于 800ms（实际 ${ms.toFixed(1)}ms）`);
   console.log(`motion frame budget: ${(ms / 30).toFixed(2)} ms/frame`);

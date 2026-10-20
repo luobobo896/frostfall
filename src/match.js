@@ -11,7 +11,7 @@ import {
   SKILL_MAX_LEVEL, TOWER_UPGRADE_COST, WAVES, expToNext, ilvlForWave, skillLevelOf,
 } from './data.js';
 import { LONG_RUN, LONG_RUN_BOSS_HP, WAVES_LONG } from './data.js';
-import { buildMap, cellAt, computeDamage, gridDist, makeRng, pathTotalUnits, project, splashScale } from './core.js';
+import { buildMap, cellAt, computeDamage, findPath, gridDist, makeRng, pathTotalUnits, project, splashScale } from './core.js';
 
 /* ---------- 静态计算（UI 与测试共用同一份来源） ---------- */
 
@@ -141,6 +141,225 @@ export function heroStats(hero) {
 
 export const TD_HERO_RANGE_FLOOR = 4.0;
 
+/**
+ * TD 驻守点半径（曼哈顿）。射程下限是 4，站在核心外 3 格仍够得着走到核心的怪。
+ * 命令和迈步都钳在这圈里；外部直接改 `hero.cell`（测试、技能落点）不会被每帧吸回核心。
+ */
+export const TD_HOLD_RADIUS = 3;
+
+/** 本家核心。map_06 有两个核心，驻守只认开局那个（`cores[0]` / `m.core`）。 */
+export const homeCore = (m) => m?.core?.cell ?? m?.map?.core ?? { x: 0, y: 0 };
+
+/** 沿曼哈顿把格子走回核心，直到距离 ≤ radius。 */
+export function clampHoldPoint(cell, core, radius = TD_HOLD_RADIUS) {
+  let x = cell?.x ?? 0, y = cell?.y ?? 0;
+  x |= 0; y |= 0;
+  const cx = core?.x ?? 0, cy = core?.y ?? 0;
+  let guard = Math.abs(x - cx) + Math.abs(y - cy) + radius + 2;
+  while (Math.abs(x - cx) + Math.abs(y - cy) > radius && guard-- > 0) {
+    const dx = Math.abs(x - cx), dy = Math.abs(y - cy);
+    if (dx >= dy && x !== cx) x += x < cx ? 1 : -1;
+    else if (y !== cy) y += y < cy ? 1 : -1;
+    else break;
+  }
+  return { x, y };
+}
+
+/**
+ * 能站住的格子：核心本身（哪怕它压在路径上）+ 地面路径的切比雪夫邻居。
+ * 不站在路径上、不站岩浆上、曼哈顿不超过驻守半径。空中路径不算。
+ * 结果挂在对局上，换图才重算——热路径不要每帧新分配这一圈。
+ */
+export function holdCells(m) {
+  if (m?._holdCells && m._holdFor === m.map) return m._holdCells;
+  const map = m?.map;
+  const core = homeCore(m);
+  const cells = [];
+  const set = new Set();
+  if (!map?.grid) {
+    m._holdCells = cells; m._holdSet = set; m._holdFor = map; return cells;
+  }
+  const g = map.grid;
+  const path = new Set();
+  for (const p of map.paths ?? []) {
+    if (p.air) continue;
+    for (const c of p.cells) path.add(`${c.x},${c.y}`);
+  }
+  const push = (x, y, allowPath) => {
+    if (x < 0 || y < 0 || x >= g.w || y >= g.h) return;
+    const k = `${x},${y}`;
+    if (set.has(k)) return;
+    if (gridDist({ x, y }, core) > TD_HOLD_RADIUS) return;
+    if (map.lava?.has(k)) return;
+    if (!allowPath && path.has(k)) return;
+    if (!allowPath) {
+      let adj = false;
+      for (let dx = -1; dx <= 1 && !adj; dx++) for (let dy = -1; dy <= 1 && !adj; dy++) {
+        if (!dx && !dy) continue;
+        if (path.has(`${x + dx},${y + dy}`)) adj = true;
+      }
+      if (!adj) return;
+    }
+    set.add(k);
+    cells.push({ x, y });
+  };
+  push(core.x | 0, core.y | 0, true);
+  for (const p of map.paths ?? []) {
+    if (p.air) continue;
+    for (const c of p.cells) {
+      for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) {
+        if (!dx && !dy) continue;
+        push(c.x + dx, c.y + dy, false);
+      }
+    }
+  }
+  m._holdCells = cells;
+  m._holdSet = set;
+  m._holdFor = map;
+  return cells;
+}
+
+export function isHoldCell(m, cell) {
+  if (!cell || !m?.map) return false;
+  holdCells(m);
+  return m._holdSet.has(`${cell.x | 0},${cell.y | 0}`);
+}
+
+/** 纯查询：这一下能不能落成驻守点。不改英雄。精确格优先，否则只原谅 1 格的点偏。 */
+export function resolveHoldOrder(m, raw) {
+  if (!m?.map || !m.hero) return null;
+  const tap = { x: raw?.x ?? 0, y: raw?.y ?? 0 };
+  tap.x |= 0; tap.y |= 0;
+  const core = homeCore(m);
+  const exact = isHoldCell(m, tap);
+  let goal = exact ? { x: tap.x, y: tap.y } : null;
+  if (!goal) {
+    const clamped = clampHoldPoint(tap, core);
+    let best = null, bestD = Infinity;
+    for (const c of holdCells(m)) {
+      const d = gridDist(c, clamped);
+      if (d < bestD) { bestD = d; best = c; }
+    }
+    goal = best ? { x: best.x, y: best.y } : null;
+  }
+  if (!goal || !isHoldCell(m, goal)) return null;
+  if (gridDist(goal, core) > TD_HOLD_RADIUS) return null;
+  if (!exact && gridDist(tap, goal) > 1) return null;
+  return goal;
+}
+
+/** 只在驻守格上走的贪心兜底（A* 失败时，命令当帧算一次，不进热路径）。 */
+function greedyHoldPath(m, from, goal) {
+  const path = [];
+  let x = from.x | 0, y = from.y | 0;
+  const seen = new Set([`${x},${y}`]);
+  for (let i = 0; i < 24; i++) {
+    if (x === goal.x && y === goal.y) return path;
+    let best = null, bestD = Infinity;
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+      const nx = x + dx, ny = y + dy;
+      if (!isHoldCell(m, { x: nx, y: ny })) continue;
+      const k = `${nx},${ny}`;
+      if (seen.has(k)) continue;
+      const d = gridDist({ x: nx, y: ny }, goal);
+      if (d < bestD) { bestD = d; best = { x: nx, y: ny }; }
+    }
+    if (!best) return null;
+    path.push(best);
+    seen.add(`${best.x},${best.y}`);
+    x = best.x; y = best.y;
+  }
+  return (x === goal.x && y === goal.y) ? path : null;
+}
+
+/**
+ * 设驻守点。防守局直接拒。死了、出圈、偏得超过 1 格，都不改状态。
+ * 路径只在下命令时算一次。
+ */
+export function orderHold(m, raw) {
+  if (m?.hero?.dead) return false;
+  const goal = resolveHoldOrder(m, raw);
+  if (!goal) return false;
+  const h = m.hero;
+  if ((h.cell?.x | 0) === goal.x && (h.cell?.y | 0) === goal.y) {
+    h.hold = { x: goal.x, y: goal.y };
+    h.goal = { x: goal.x, y: goal.y };
+    h.path = [];
+    h.moving = false;
+    return true;
+  }
+  const g = m.map.grid;
+  const blocked = (x, y) => !isHoldCell(m, { x, y });
+  let path = findPath(g.w, g.h, h.cell, goal, blocked);
+  if (!path) path = greedyHoldPath(m, h.cell, goal);
+  if (!path) return false;
+  h.hold = { x: goal.x, y: goal.y };
+  h.goal = { x: goal.x, y: goal.y };
+  h.path = path;
+  if (h.carry == null) h.carry = 0;
+  return true;
+}
+
+/**
+ * 英雄技能圈的半径（只给预览，不改伤害）。
+ * 已解锁且带 radius 的技能取最大，再叠 `auraRange` 天赋。
+ * 圣徒在结界解锁前没有半径技能，但有虔诚：预览用 3 格底 + 天赋，告诉玩家「这是光环」，不是治疗量。
+ */
+export function heroAbilityRange(hero) {
+  if (!hero?.def) return 0;
+  let best = 0;
+  const skills = hero.def.skills ?? [];
+  const unlocked = hero.skillUnlocked;
+  for (let i = 0; i < skills.length; i++) {
+    const s = skills[i];
+    const on = Array.isArray(unlocked) ? !!unlocked[i] : (hero.level ?? 1) >= (s.unlockLevel ?? 1);
+    if (on && (s.radius ?? 0) > best) best = s.radius;
+  }
+  const third = hero.def.thirdSkill;
+  if (third && (third.radius ?? 0) > 0) {
+    const on = Array.isArray(unlocked) ? !!unlocked[2] : (hero.level ?? 1) >= (third.unlockLevel ?? 99);
+    if (on && third.radius > best) best = third.radius;
+  }
+  const aura = talentValue(hero, 'auraRange');
+  if (best > 0) return best + aura;
+  if (hero.def.talents?.some((t) => t.type === 'auraRange')) return 3 + aura;
+  return 0;
+}
+
+/** 沿驻守路径走一截。路径空着就不动（测试把人传到远处时不能被吸回去）。走出圈的下一步直接丢掉。 */
+function stepTdHold(m, dt) {
+  const h = m.hero;
+  if (!h.path?.length) { h.moving = false; return; }
+  // 非法的下一步立刻丢掉。一帧的位移往往还凑不满 1 格，不能等 carry 满了才看。
+  if (!isHoldCell(m, h.path[0])) { h.path = []; h.carry = 0; h.moving = false; return; }
+  const speed = ((h.def?.moveSpeed ?? 0) / GRID.unitPerTile) * dt;
+  h.carry = (h.carry ?? 0) + speed;
+  while (h.carry >= 1 && h.path.length) {
+    const next = h.path[0];
+    if (!isHoldCell(m, next)) { h.path = []; h.carry = 0; break; }
+    h.carry -= 1;
+    h.cell = { x: next.x, y: next.y };
+    h.path.shift();
+  }
+  h.moving = h.path.length > 0;
+}
+
+/** 面向最近的怪；没有怪就朝路径下一格。不分配数组。 */
+function faceTdHero(m) {
+  const h = m.hero;
+  let bestX = null, bestD = Infinity;
+  const list = m.monsters;
+  for (let i = 0; i < list.length; i++) {
+    const mo = list[i];
+    if (mo.dead || !mo.cell) continue;
+    const d = Math.abs(mo.cell.x - h.cell.x) + Math.abs(mo.cell.y - h.cell.y);
+    if (d < bestD) { bestD = d; bestX = mo.cell.x; }
+  }
+  if (bestX != null) h.facing = bestX >= h.cell.x ? 1 : -1;
+  else if (h.path?.length) h.facing = h.path[0].x >= h.cell.x ? 1 : -1;
+  else if (h.facing == null) h.facing = -1;
+}
+
 /** §7.7：「脱离范围 1 秒后继续前进」——离开仇恨范围后还会被追打这么久，防止「进退风筝」。 */
 export const AGGRO_HOLD_SEC = 1;
 
@@ -197,6 +416,13 @@ export function createMatch({
       exp: 0,
       hp: heroDef.hp,
       cell: { ...map.core },
+      path: [],
+      carry: 0,
+      facing: -1,
+      hold: null,
+      goal: null,
+      moving: false,
+      attacking: false,
       cooldown: 0,
       skillCd: [0, 0, 0],
       skillUnlocked: [true, false, false],
@@ -995,6 +1221,9 @@ function projectileHit(m, p) {
 function heroStep(m, dt) {
   const h = m.hero;
   const stats = heroStats(h);
+  // 驻守迈步在攻击冷却之前：冷却中也要能走到驻守点。本函数只从 TD 的 update() 进来。
+  if (h.dead) { h.path = []; h.moving = false; h.attacking = false; }
+  else { stepTdHold(m, dt); faceTdHero(m); }
   if (h.dead) {
     h.reviveTimer -= dt;
     if (h.reviveTimer <= 0) {
@@ -1024,6 +1253,7 @@ function heroStep(m, dt) {
   const target = m.monsters
     .filter((mo) => !mo.dead && gridDist(monsterCell(m, mo), h.cell) <= stats.range)
     .sort((a, b) => b.dist - a.dist)[0];
+  h.attacking = !!target;
   if (!target) return;
   // §144：药剂攻速已经并进 heroStats（`elixirSpeed`），这里别再单独读一次 buff
   h.cooldown = 1 / stats.atkSpeed;

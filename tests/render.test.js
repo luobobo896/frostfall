@@ -18,6 +18,7 @@ function fakeContext() {
     beginPath: rec('beginPath'), moveTo: rec('moveTo'), lineTo: rec('lineTo'),
     closePath: rec('closePath'), fill: rec('fill'), stroke: rec('stroke'),
     ellipse: rec('ellipse'), save: rec('save'), restore: rec('restore'),
+    setLineDash: rec('setLineDash'),
   };
   return ctx;
 }
@@ -568,6 +569,7 @@ function inkContext() {
     beginPath: rec('beginPath'), moveTo: rec('moveTo'), lineTo: rec('lineTo'),
     closePath: rec('closePath'), fill: rec('fill'), stroke: rec('stroke'),
     ellipse: rec('ellipse'), save: rec('save'), restore: rec('restore'),
+    setLineDash: rec('setLineDash'),
   };
   Object.defineProperty(ctx, 'strokeStyle', {
     set(v) { state.strokeStyle = v; },
@@ -648,6 +650,30 @@ test('英雄比原来大一档，活着时有暖色轮廓，倒下后轮廓变�
   const dead = draw(true);
   assert.ok(dead.ctx.calls.some((c) => c.name === 'stroke' && c.strokeStyle === '#8b95a3'));
   assert.ok(!dead.ctx.calls.some((c) => c.name === 'stroke' && c.strokeStyle === '#ffd68a'));
+  assert.ok(alive.ctx.calls.some((c) => c.name === 'stroke' && c.strokeStyle === 'rgba(255, 214, 138, .35)' && c.lineWidth === 7),
+    '活着的英雄要有一圈更大的光晕');
+  assert.ok(!dead.ctx.calls.some((c) => c.name === 'stroke' && c.strokeStyle === 'rgba(255, 214, 138, .35)'),
+    '倒下之后光晕收掉');
+});
+
+test('选中英雄时技能圈是虚线冷色，不走塔的奶油射程圈', () => {
+  const ctx = inkContext();
+  const canvas = { clientWidth: 1334, clientHeight: 750, width: 0, height: 0, getContext: () => ctx };
+  const r = createRenderer(canvas);
+  const m = createMatch({ mapId: 'map_01', heroId: 'hero_paladin', seed: 1 });
+  m.towers = [];
+  m.monsters = [];
+  r.draw({ m, heroSelected: true, now: 0 });
+  const dashes = ctx.calls.filter((c) => c.name === 'setLineDash' && c.args[0]?.length === 2);
+  assert.ok(dashes.length >= 1, '技能圈要虚线');
+  assert.ok(ctx.calls.some((c) => c.name === 'stroke' && c.strokeStyle === '#7ec8ff' && c.lineWidth === 1.5));
+  assert.ok(!ctx.calls.some((c) => c.name === 'stroke' && c.strokeStyle === '#fff4d2'), '没选塔时不画塔的射程圈');
+  const towers = ctx.calls.filter((c) => c.name === 'stroke' && c.strokeStyle === '#fff4d2');
+  assert.equal(towers.length, 0);
+  const quiet = inkContext();
+  const r2 = createRenderer({ clientWidth: 1334, clientHeight: 750, width: 0, height: 0, getContext: () => quiet });
+  r2.draw({ m, heroSelected: false, now: 0 });
+  assert.ok(!quiet.calls.some((c) => c.name === 'stroke' && c.strokeStyle === '#7ec8ff'), '没选中英雄不画技能圈');
 });
 
 test('英雄光不描到怪和塔上', () => {

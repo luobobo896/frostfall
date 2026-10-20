@@ -243,7 +243,7 @@ export function drawDefenseHud(ctx, m, L, { message = null, stick = null } = {})
    */
   const dead = !!m.hero?.dead;
   const state = dead ? `阵亡 ${Math.ceil(m.hero.reviveTimer ?? 0)}s`
-    : (zoneLabel(zoneAt(m.def, m.hero?.cell)) || (m.hero?.moving ? '移动中' : '待命'));
+    : (zoneLabel(zoneAt(m.def, m.hero?.cell)) || (m.hero?.moving ? '移动中' : '出征英雄'));
   /**
    * 这两行**垫一层小面板**再写：它们是 HUD 里唯一的「裸字」——别的地方都在面板里，
    * 而防守的战场会跟着相机跑过明亮的地形与工事（底板、墙、白光），那样字会读不清。
@@ -257,7 +257,7 @@ export function drawDefenseHud(ctx, m, L, { message = null, stick = null } = {})
   ctx.stroke();
   // 宽度按「到击杀那行左边、再留 12 空隙」算（两行都不许压到右上角那两个键上）
   const heroMaxW = L.statsLine.right - 140 - 12 - L.heroLine.x;
-  text(ctx, fitText(ctx, `英雄 Lv${m.hero?.level ?? 1} · ${state}`, heroMaxW), L.heroLine.x, L.heroLine.y,
+  text(ctx, fitText(ctx, `出征英雄 Lv${m.hero?.level ?? 1} · ${state}`, heroMaxW), L.heroLine.x, L.heroLine.y,
     { size: 11, color: dead ? COLORS.danger : COLORS.dim });
   /**
    * 这一行**右端**给两个读数（浏览器版在防守面板里也写着）：野外击杀数（§12.5：野区是主要装备来源，

@@ -9,11 +9,11 @@ import {
 } from '../data.js';
 import {
   buildTower, buyItem, castSkill, craftEquipment, createMatch, describe as describeMatch, equipItem,
-  enhanceItem, potionCount, repairTower, reviveNow, sellItem, sellTower, setPriority, skillLevel,
+  enhanceItem, orderHold, potionCount, repairTower, resolveHoldOrder, reviveNow, sellItem, sellTower, setPriority, skillLevel,
   startWaveEarly, towerAtSlot, update, upgradeTower, usePotion,
 } from '../match.js';
 import {
-  isMiniGame, keepScreenOn, onHide, onMemoryWarning, onShow, onTouch, storage, viewport,
+  isMiniGame, keepScreenOn, onHide, onMemoryWarning, onShow, onTouch, preferFrameRate, storage, viewport,
 } from '../platform.js';
 import { clearSave, hasSave, loadFromStorage, saveToStorage } from '../save.js';
 import {
@@ -23,11 +23,11 @@ import {
 import { resultSummary } from '../result.js';
 // 新手引导：**状态机与浏览器版是同一份**（`src/tutorial.js` 里没有 DOM），只有那条提示条是 Canvas 重画的
 import { createTutorial, tutorialPasses } from '../tutorial.js';
-import { gridDist } from '../core.js';
+import { gridDist, heroPos } from '../core.js';
 import { loadSettings, saveSettings } from '../settings.js';
 import { createHaptics } from '../feedback.js';
 import { createCue } from '../audio.js';
-import { createMinimap, createRenderer } from '../render.js';
+import { createMinimap, createRenderer, pointHitsHero } from '../render.js';
 import { bootSprites } from '../assets.js';
 import { damageFloaters, wavePreview } from '../hud-model.js';
 import {
@@ -128,8 +128,10 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
    * 系统按默认超时锁屏比任何 bug 都劝退（小游戏里是 `wx.setKeepScreenOn`）。
    */
   keepScreenOn(true);
-  // 官方文档：`setKeepScreenOn` 只在当前小程序生效、离开就失效——切出去接个电话回来要再申请一次
-  onShow(() => keepScreenOn(true));
+  preferFrameRate(settings.fps);
+  // 官方文档：`setKeepScreenOn` 只在当前小程序生效、离开就失效——切出去接个电话回来要再申请一次。
+  // 首选帧率同样只对当前小程序生效，回到前台再设一次。
+  onShow(() => { keepScreenOn(true); preferFrameRate(settings.fps); });
   /**
    * §10.7 的内存告警：微信在内存吃紧时抛 `wx.onMemoryWarning`，接了才有机会主动降级——
    * 与浏览器版**同一套设置**（`settings.effects = 'low'`：关掉脉冲那类装饰，保住帧率），
@@ -137,7 +139,8 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
    */
   onMemoryWarning(() => {
     const before = settings.effects;
-    settings = { ...settings, effects: 'low' };
+    settings = { ...settings, effects: 'low', fps: 60 };
+    preferFrameRate(60);
     try { saveSettings(settings); } catch { /* 存不了就只在这一次生效 */ }
     if (before !== 'low' && battle) note(battle, '内存告警：已切到低特效（可在暂停面板里改回）', 3);
   });
@@ -161,7 +164,7 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
     if (canvas.width !== pw || canvas.height !== ph) { canvas.width = pw; canvas.height = ph; }
     ctx.setTransform(size.dpr, 0, 0, size.dpr, 0, 0);   // 之后一律按逻辑像素画
     lobby.layout = layoutLobby(size.width, size.height, lobby.model);
-    if (battle) battle.layout = layoutBattle(battle.model());
+    if (battle) { battle.layout = layoutBattle(battle.model()); battle.layoutSig = null; }
     lastSize = `${size.width}x${size.height}`;
   };
   resize();
@@ -371,9 +374,30 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
       tap('light');   // §1.9.2：按下就震一下（开关在暂停面板里，关掉就静默）
       return applyAction(b, action);
     }
-    // 战场：屏幕点 → 最近格 → 最近的塔位（§2.5「不要求点得准」）
-    const g = b.renderer.toGrid(x, y);
+    // 战场：设计坐标先加回 HUD 偏移，再交给渲染器（大屏上 HUD 居中，格子在画布像素里）
+    const g = gridAt(b, x, y);
+    if (heroHit(b, x, y)) {
+      b.ui = { selectedSlot: null, panelSlot: null, sellArmed: false, heroSelected: true };
+      note(b, '已选驻守英雄 · 点路径旁设驻守点', 1.6);
+      return { type: 'selectHero' };
+    }
     const slots = b.m.map.slots;
+    // 精确落在塔位上：建造优先，并取消英雄选择（别和驻守抢这一格）
+    const exact = slots.findIndex((s) => s.x === g.x && s.y === g.y);
+    if (exact >= 0) {
+      const existing = towerAtSlot(b.m, exact);
+      if (existing) {
+        b.ui = { selectedSlot: null, panelSlot: exact, sellArmed: false };
+        return { type: 'openTower', slot: exact };
+      }
+      b.ui = { selectedSlot: exact, panelSlot: null, sellArmed: false };
+      return { type: 'openBuild', slot: exact };
+    }
+    if (b.ui.heroSelected && orderHold(b.m, g)) {
+      note(b, '驻守点已设', 1.2);
+      return { type: 'hold' };
+    }
+    // 没选英雄时仍按距离取最近塔位（§2.5「不要求点得准」）
     let best = -1, bestD = Infinity;
     slots.forEach((s, i) => {
       const d = (s.x - g.x) ** 2 + (s.y - g.y) ** 2;
@@ -430,6 +454,12 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
         const ok = castSkill(b.m, action.index);
         if (ok) b.tutorial?.onSkillCast();   // 引导第三步靠「真的放了技能」推进
         note(b, ok ? '技能已放' : '技能冷却中或还没解锁');
+        return action;
+      }
+      case 'selectHero': {
+        const on = !b.ui.heroSelected;
+        b.ui = { selectedSlot: null, panelSlot: null, sellArmed: false, heroSelected: on };
+        note(b, on ? '已选驻守英雄 · 点路径旁设驻守点' : '取消选择', 1.4);
         return action;
       }
       case 'tutorialSkip': {
@@ -620,6 +650,13 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
         note(b, settings.effects === 'low' ? '特效：低（关脉冲）' : '特效：高', 1.4);
         return action;
       }
+      case 'fps': {
+        settings = { ...settings, fps: settings.fps === 120 ? 60 : 120 };
+        saveSettings(settings);
+        preferFrameRate(settings.fps);
+        note(b, settings.fps === 120 ? '帧率：120（高刷）' : '帧率：60', 1.4);
+        return action;
+      }
       case 'autoPickup': {
         // §12.5：防守走到掉落物上自动捡。内核读的是 `m.autoPickup`，所以改了要**立刻**写进去
         settings = { ...settings, autoPickup: settings.autoPickup === false };
@@ -664,9 +701,36 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
   let lastEmptyTap = null;      // 上一次「点空白处」的落点与时间（双击回核心用）
 
   /** 这一下是不是「点空白处」（不在任何塔位的判定半径里）——双击回核心只认这种落点 */
+  /** 设计坐标 → 画布像素（HUD 在大屏上居中，战场点击要加回同一段偏移） */
+  const worldOf = (x, y) => {
+    const o = hudOffset();
+    return { x: x + o.x, y: y + o.y };
+  };
+  const gridAt = (b, x, y) => {
+    const w = worldOf(x, y);
+    return b.renderer.toGrid(w.x, w.y);
+  };
+  const heroHit = (b, x, y) => {
+    if (!b.m.hero || b.m.hero.dead) return false;
+    const p = heroPos(b.m.hero);
+    const screen = b.renderer.toScreen(p.x, p.y, 1);
+    const w = worldOf(x, y);
+    return pointHitsHero(screen, b.renderer.scale, w.x, w.y);
+  };
+  /** 这一下会吃掉「拖地图」：点中英雄，或选中后点在能驻守的格子上（精确塔位仍留给建造）。 */
+  const consumesHold = (b, x, y) => {
+    if (b.m.mode === 'defense') return false;
+    if (heroHit(b, x, y)) return true;
+    if (!b.ui.heroSelected) return false;
+    const g = gridAt(b, x, y);
+    const exact = (b.m.map?.slots ?? []).findIndex((s) => s.x === g.x && s.y === g.y);
+    if (exact >= 0) return false;
+    return !!resolveHoldOrder(b.m, g);
+  };
+
   const emptyTapAt = (b, x, y) => {
     if (b.m.mode === 'defense') return false;
-    const cell = b.renderer.toGrid(x, y);
+    const cell = gridAt(b, x, y);
     const g = b.m.map?.grid ?? { w: 32, h: 24 };
     if (cell.x < 0 || cell.y < 0 || cell.x >= g.w || cell.y >= g.h) return false;
     return !(b.m.map.slots ?? []).some((s) => gridDist(s, cell) <= 2);
@@ -809,7 +873,7 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
      */
     if (camBase && !sheetOpen) {
       // 放大档下的空白处：这一下先当「拖地图」，松手没动才算点（整图档本来就没有可拖的余地）
-      if (t.type === 'down' && settings.tdFitAll === false && emptyTapAt(b, t.x, t.y)) {
+      if (t.type === 'down' && settings.tdFitAll === false && emptyTapAt(b, t.x, t.y) && !consumesHold(b, t.x, t.y)) {
         drag = { x: t.x, y: t.y };
         dragMoved = false;
         drawFrame();
@@ -908,7 +972,12 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
       }
     } else {
       const model = b.model();
-      b.layout = layoutBattle(model);
+      // 肖像像素每帧都重画（画布清空了）。这里跳过的是布局对象：HUD 没变就不要再分配那一排按钮。
+      const sig = battleLayoutSig(model);
+      if (b.layoutSig !== sig) {
+        b.layout = layoutBattle(model);
+        b.layoutSig = sig;
+      }
       // `hintSlots`：引导第一步/第二步在战场上圈出「建这里」（render.js 本来就有这段，直接复用）
       b.renderer.draw({
         // §116：低特效档关掉脉冲（新手引导塔位高亮那层呼吸）；高档才让它随时间变化
@@ -918,6 +987,7 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
          * 小游戏以前写死 null，于是「点塔位 → 面板」这条路里画面上什么都没变。
          */
         m: b.m, selectedSlot: b.ui.selectedSlot, selectedTower: b.ui.panelSlot, localSlot: 0, now: nowSec,
+        heroSelected: !!b.ui.heroSelected,
         placingTowerId: b.ui.placingTowerId ?? null,
         fx: settings.effects === 'low' ? 'low' : 'high',
         floaters,
@@ -927,7 +997,9 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
       // renderer 可能重设过变换，这里再对齐一次（并按大屏把 HUD 居中）
       const o = hudOffset();
       ctx.setTransform(size.dpr, 0, 0, size.dpr, size.dpr * o.x, size.dpr * o.y);
-      drawBattleHud(ctx, b.m, b.layout, { selectedTower: b.selectedTower, message, preview: model.preview });
+      drawBattleHud(ctx, b.m, b.layout, {
+        selectedTower: b.selectedTower, message, preview: model.preview, heroSelected: !!b.ui.heroSelected,
+      });
     }
     // 结算面板：内核出结果之后盖上来（内容是浏览器版那个 resultPanelModel，一份模型两个渲染器）
     recordIfFinished(b);
@@ -1060,6 +1132,20 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
   globalThis.__frostfallMinigame = { ...(globalThis.__frostfallMinigame ?? {}), app: handle };
   return handle;
 }
+
+/**
+ * 布局签名：只含会改按钮几何或文案的字段。金币、倒计时、预告行由绘制层读活的对局，不进这里。
+ */
+const battleLayoutSig = (model) => {
+  const h = model.hero ?? {};
+  const skills = (model.skills ?? []).map((s) => `${s.name}:${s.locked ? 1 : 0}:${Math.ceil(s.cd || 0)}:${s.lv ?? ''}`).join(',');
+  return [
+    model.canEarly ? 1 : 0, model.bagCount ?? 0, model.potionCount ?? 0, model.potionReady ? 1 : 0,
+    h.level ?? 0, h.dead ? 1 : 0, Math.ceil(h.reviveIn || 0),
+    model.tutorial ?? '', model.rate ?? 1, model.paused ? 1 : 0, model.result ?? '',
+    model.wave ?? 0, model.phase ?? '', model.lumber ?? 0, skills,
+  ].join('|');
+};
 
 /** HUD 需要的那点战场状态（不给整局对象，免得 HUD 顺手读不该读的东西） */
 export const describeBattleModel = (m) => ({

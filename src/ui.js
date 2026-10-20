@@ -29,7 +29,8 @@ export function createUI(handlers) {
     coreLabel: $('coreLabel'), coreBar: $('coreBar'),
     goldLabel: $('goldLabel'), lumberLabel: $('lumberLabel'), rateLabel: $('rateLabel'), leakLabel: $('leakLabel'),
     heroName: $('heroName'), heroLevel: $('heroLevel'), heroHpBar: $('heroHpBar'),
-    heroExpLabel: $('heroExpLabel'), heroState: $('heroState'),
+    heroExpLabel: $('heroExpLabel'), heroState: $('heroState'), heroRole: $('heroRole'),
+    heroCommand: $('heroCommand'), heroMark: $('heroMark'), invDots: $('invDots'),
     skillRow: $('skillRow'), toast: $('toast'), log: $('log'),
     wheel: $('wheel'),
     towerPanel: $('towerPanel'), twName: $('twName'), twLevel: $('twLevel'), twStats: $('twStats'),
@@ -46,7 +47,7 @@ export function createUI(handlers) {
     btnEarly: $('btnEarly'), btnShop: $('btnShop'), btnBag: $('btnBag'),
     btnSpeed: $('btnSpeed'), btnPause: $('btnPause'),
     btnSettings: $('btnSettings'), settingsPanel: $('settingsPanel'),
-    setZoom: $('setZoom'), setEffects: $('setEffects'), setStick: $('setStick'), setToggles: $('setToggles'),
+    setZoom: $('setZoom'), setEffects: $('setEffects'), setFps: $('setFps'), setStick: $('setStick'), setToggles: $('setToggles'),
     btnReplayTutorial: $('btnReplayTutorial'), btnResetSettings: $('btnResetSettings'),
     btnLeaveRoom: $('btnLeaveRoom'), rowLeaveRoom: $('rowLeaveRoom'),
     playerPanel: $('playerPanel'), nextWaveLabel: $('nextWaveLabel'),
@@ -85,13 +86,6 @@ export function createUI(handlers) {
     el.leakLabel.textContent = `漏怪 ${m.stats.leaks}`;
     el.rateLabel.textContent = `${view?.rate ?? 1}×`;
 
-    const h = m.hero;
-    el.heroName.textContent = h.def.name;
-    el.heroLevel.textContent = `Lv${h.level}`;
-    el.heroHpBar.style.width = `${Math.max(0, Math.min(1, h.hp / heroMaxHp(h))) * 100}%`;
-    el.heroHpBar.classList.toggle('low', isLowHp(h.hp, heroMaxHp(h)));   // §3.7 低血提示
-    el.heroExpLabel.textContent = `EXP ${Math.round(h.exp)}`;
-    el.heroState.textContent = h.dead ? `阵亡 ${Math.ceil(h.reviveTimer)}s` : h.attacking ? '交战中' : '驻守';
     el.btnEarly.disabled = !(w.phase === 'prep' && w.index < (m.waves?.length ?? WAVES.length));
     el.btnPause.textContent = view?.paused ? '继续' : '暂停';
     el.btnSpeed.textContent = `${view?.rate ?? 1}×`;
@@ -100,7 +94,7 @@ export function createUI(handlers) {
     el.bagBadge.textContent = bagCount;
     el.bagBadge.classList.toggle('hidden', bagCount === 0);
 
-    renderSkills(m);
+    renderHeroStrip(m, view);
     renderLog(m);
     renderNextWave(m);
     renderPlayers(m, view);
@@ -143,24 +137,56 @@ export function createUI(handlers) {
     el.goldLabel.textContent = Math.round(m.gold);
     el.lumberLabel.textContent = m.lumber[0] ?? 0;
     el.leakLabel.textContent = `野外击杀 ${m.stats.fieldKills}`;
-    const h = m.hero;
-    el.heroName.textContent = h.def.name;
-    el.heroLevel.textContent = `Lv${h.level}`;
-    el.heroHpBar.style.width = `${Math.max(0, Math.min(1, h.hp / Math.max(1, h.def.hp))) * 100}%`;
-    el.heroHpBar.classList.toggle('low', isLowHp(h.hp, Math.max(1, h.def.hp)));   // §3.7 低血提示
-    el.heroExpLabel.textContent = `EXP ${Math.round(h.exp)}`;
-    // §2.6 / §12.8：人在野外区里就报「区名 + 等级段 + 掉落加成」（这也是 lvMin/lvMax/dropBonus 的读取方），
-    // 没进区（基地 / 路上）才回落到移动状态
-    const zoneText = zoneLabel(zoneAt(m.def, h.cell));
-    el.heroState.textContent = h.dead ? `阵亡 ${Math.ceil(h.reviveTimer)}s`
-      : zoneText || (h.moving ? '移动中' : '待命');
     el.btnEarly.disabled = true;
     el.btnEarly.textContent = '点地面移动';
     el.btnPause.textContent = view?.paused ? '继续' : '暂停';
     el.btnSpeed.textContent = `${view?.rate ?? 1}×`;
-    renderSkills(m);
+    renderHeroStrip(m, view);
     renderLog(m);
     if (!el.bagPanel.classList.contains('hidden')) renderBag(m);
+  }
+
+  /**
+   * 英雄命令条（血、等级、技能、背包点）。签名没变就不改 DOM——
+   * 波次和金币仍由上面的 render 每帧写，这里只跳过没变的肖像。
+   */
+  let heroHudSig = '';
+  function renderHeroStrip(m, view) {
+    const h = m.hero;
+    const defense = m.mode === 'defense';
+    const max = Math.max(1, defense ? h.def.hp : heroMaxHp(h));
+    const hpPct = Math.round(Math.max(0, Math.min(1, h.hp / max)) * 100);
+    const role = defense ? '出征英雄' : '驻守英雄';
+    const zoneText = defense ? zoneLabel(zoneAt(m.def, h.cell)) : '';
+    const state = h.dead ? `阵亡 ${Math.ceil(h.reviveTimer)}s`
+      : defense ? (zoneText || (h.moving ? '移动中' : '出征英雄'))
+        : (h.moving ? '赶往驻守点' : (h.attacking ? '交战中' : '驻守英雄'));
+    const defs = [...h.def.skills, h.def.thirdSkill].filter(Boolean);
+    const skills = defs.map((def, i) => `${h.skillUnlocked[i] ? 1 : 0}:${Math.ceil(h.skillCd[i] ?? 0)}:${skillLevel(m, def)}`).join(',');
+    const dots = Math.min(6, m.inventory?.length ?? 0);
+    const bag = Object.values(m.bag ?? {}).reduce((a, b) => a + b, 0);
+    const potion = Object.entries(m.potionCd ?? {}).map(([k, v]) => `${k}:${Math.ceil(v)}`).sort().join(',');
+    const sig = [h.def.id, h.level, hpPct, h.dead ? 1 : 0, Math.ceil(h.reviveTimer || 0), state, role,
+      view?.heroSelected ? 1 : 0, dots, bag, skills, potion, Math.round(h.exp)].join('|');
+    if (sig === heroHudSig) return;
+    heroHudSig = sig;
+    el.heroCommand?.classList.toggle('selected', !!view?.heroSelected && !defense);
+    if (el.heroMark) el.heroMark.textContent = defense ? '征' : '驻';
+    if (el.heroRole) el.heroRole.textContent = role;
+    el.heroName.textContent = h.def.name;
+    el.heroLevel.textContent = `Lv${h.level}`;
+    el.heroHpBar.style.width = `${hpPct}%`;
+    el.heroHpBar.classList.toggle('low', isLowHp(h.hp, max));
+    el.heroExpLabel.textContent = `EXP ${Math.round(h.exp)}`;
+    el.heroState.textContent = state;
+    if (el.invDots) {
+      el.invDots.replaceChildren(...Array.from({ length: 6 }, (_, i) => {
+        const dot = document.createElement('i');
+        if (i < dots) dot.className = 'on';
+        return dot;
+      }));
+    }
+    renderSkills(m);
   }
 
   function renderSkills(m) {
@@ -626,6 +652,9 @@ export function createUI(handlers) {
     };
     opts(el.setZoom, [[1.2, '近'], [1.5, '中'], [1.8, '远']], s.zoom, (v) => handlers.updateSetting('zoom', v));
     opts(el.setEffects, [['high', '高'], ['low', '低（省电保帧）']], s.effects, (v) => handlers.updateSetting('effects', v));
+    if (el.setFps) {
+      opts(el.setFps, [[60, '60'], [120, '120']], s.fps ?? 60, (v) => handlers.updateSetting('fps', Number(v)));
+    }
     // §1.9.1 / §1.9.3：防守的摇杆固定左下，玩家可切浮动（浮动 = 手指按哪儿底座跟到哪儿）
     // §154：TD 没有摇杆（主操作是点选建造，§1.9.1），这一行在 TD 下要收起来——
     // 以前它照样摆着两个选项，玩家切了「浮动」什么也不会发生。
@@ -650,6 +679,11 @@ export function createUI(handlers) {
       el.setToggles.appendChild(b);
     }
   }
+
+  el.heroMark?.addEventListener('pointerdown', (e) => {
+    e.stopPropagation();
+    handlers.toggleHero?.();
+  });
 
   el.btnReplayTutorial.onclick = () => { handlers.replayTutorial(); toast('下次开局会重新显示引导'); };
   el.btnResetSettings.onclick = () => { handlers.resetSettings(); renderSettings(); toast('已恢复默认设置'); };

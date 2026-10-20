@@ -91,7 +91,7 @@ test('小游戏接线：界面里每一个动作，`applyAction` 里都有对应
   assert.deepEqual(missing, [], `这些动作在 applyAction 里没有分支（点了会没反应）：\n${missing.join('\n')}`);
   // 反向也扫一遍：applyAction 里没有「只在注释里出现」的分支名
   const types = new Set(seen.map((x) => x.type));
-  for (const t of ['early', 'skill', 'potion', 'shop', 'bag', 'pause', 'speed', 'lobby', 'restart', 'teleport', 'repairCastle', 'build', 'upgrade', 'sell', 'priority', 'repair', 'buy', 'item', 'equip', 'enhance', 'craft', 'resume', 'camera', 'stick', 'sfx', 'effects', 'wavePreview', 'autoPickup', 'replayTutorial', 'resetProgress', 'tutorialSkip', 'fort', 'buildFort', 'endless', 'revive',
+  for (const t of ['early', 'skill', 'potion', 'shop', 'bag', 'pause', 'speed', 'lobby', 'restart', 'teleport', 'repairCastle', 'build', 'upgrade', 'sell', 'priority', 'repair', 'buy', 'item', 'equip', 'enhance', 'craft', 'resume', 'camera', 'stick', 'sfx', 'effects', 'fps', 'selectHero', 'wavePreview', 'autoPickup', 'replayTutorial', 'resetProgress', 'tutorialSkip', 'fort', 'buildFort', 'endless', 'revive',
     'mode', 'difficulty', 'length', 'hero', 'map', 'start', 'continue', 'closeDetail']) {
     assert.ok(types.has(t), `内核/界面里有的动作「${t}」在布局里没出现（是不是删了入口却留着分支？）`);
   }

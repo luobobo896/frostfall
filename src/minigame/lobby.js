@@ -77,8 +77,8 @@ export function layoutLobby(w, h, model = {}) {
   const raw = [];   // 先按设计单位（667×375）摆，最后统一 scale+居中成画布坐标
 
   // 所有可点元素都给到 **≥44×44**（§1.9.2 的热区下限；浏览器版当初就是因为 `.btn.small` 36px 被收过一次）
-  raw.push(btn('mode-td', 24, 84, 78, 44, 'TD 塔防', { type: 'mode', value: 'td' }, { on: mode === 'td' }));
-  raw.push(btn('mode-def', 110, 84, 78, 44, '防守生存', { type: 'mode', value: 'defense' }, { on: mode === 'defense' }));
+  raw.push(btn('mode-td', 24, 84, 78, 44, '驻守英雄', { type: 'mode', value: 'td' }, { on: mode === 'td' }));
+  raw.push(btn('mode-def', 110, 84, 78, 44, '出征英雄', { type: 'mode', value: 'defense' }, { on: mode === 'defense' }));
   ['normal', 'hard', 'nightmare'].forEach((d, i) => {
     raw.push(btn(`diff-${d}`, 24 + i * 66, 134, 60, 44, DIFF_LABEL[d], { type: 'difficulty', value: d }, { on: model.difficulty === d }));
   });

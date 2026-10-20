@@ -219,6 +219,18 @@ export function keepScreenOn(on = true) {
   } catch { return false; }
 }
 
+/**
+ * 帧率目标。小游戏交给 `wx.setPreferredFramesPerSecond`（60 稳、120 给高刷）。
+ * 浏览器的 rAF 本来就跟着显示器，这里不丢帧、也不引新的循环。
+ */
+export function preferFrameRate(fps) {
+  const n = fps === 120 ? 120 : 60;
+  try {
+    if (isMiniGame() && wxApi()?.setPreferredFramesPerSecond) wxApi().setPreferredFramesPerSecond(n);
+  } catch { /* 老基础库没有这个 API：帧循环照旧 */ }
+  return n;
+}
+
 /* ---------- 触摸 ---------- */
 
 /**

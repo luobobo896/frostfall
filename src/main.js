@@ -3,13 +3,13 @@
 import { DEFENSE_MAPS, MAPS, TICK_STEP, TOWERS, choiceFrom } from './data.js';
 import { createMatch, buildTower, buyItem, castSkill, craftEquipment, describe,
   enhanceItem, enhanceCostOf, equipItem, heroStats, sellItem, sellTower, setPriority, shopPriceOf, startWaveEarly, towerAtSlot, update,
-  upgradeTower, usePotion, reviveNow, repairTower } from './match.js';
-import { createMinimap, createRenderer, drawMapThumb } from './render.js';
+  upgradeTower, usePotion, reviveNow, repairTower, orderHold } from './match.js';
+import { createMinimap, createRenderer, drawMapThumb, pointHitsHero } from './render.js';
 import { createUI } from './ui.js';
-import { gridDist } from './core.js';
+import { gridDist, heroPos } from './core.js';
 import { autoPlay } from './ai.js';
 import { applyRemoteMessage, connect, identity } from './net.js';
-import { onHide, requestJson } from './platform.js';   // §平台适配（小游戏移植）：HTTP 与生命周期
+import { onHide, preferFrameRate, requestJson } from './platform.js';   // §平台适配（小游戏移植）：HTTP 与生命周期
 import { clearSave, hasSave, loadFromStorage, saveToStorage as saveMatch } from './save.js';
 import { UNLOCK_SOURCE_LABEL, clearProfile, isFirstRun, loadProfile, mapLocked, markTutorialDone, recordResult, reviveMulOf, saveProfile as saveProfileRaw, startGoldOf, unlockedFallback, unlockedMaps } from './profile.js';
 import { damageFloaters, recordLabel } from './hud-model.js';
@@ -169,6 +169,8 @@ function applyCamera() {
 function applySettings() {
   view.render = renderOptions(settings);
   if (match?.mode === 'defense') match.autoPickup = settings.autoPickup;
+  // 小游戏才有首选帧率 API；浏览器 rAF 跟着显示器，这里不丢帧
+  preferFrameRate(settings.fps);
   applyCamera();
 }
 applySettings();
@@ -182,7 +184,7 @@ applySettings();
  */
 function degradeOnMemoryWarning(source = 'wx') {
   const before = settings.effects;
-  settings = { ...settings, effects: 'low' };
+  settings = { ...settings, effects: 'low', fps: 60 };
   saveSettings(settings);
   applySettings();
   if (before !== 'low') ui.toast('内存告警：已自动切到低特效（可在设置里改回）');
@@ -253,6 +255,13 @@ const handlers = {
     applySettings();
   },
   resetSettings: () => { settings = resetSettings(); applySettings(); },
+  toggleHero: () => {
+    view.heroSelected = !view.heroSelected;
+    if (view.heroSelected) {
+      ui.closeWheel(); ui.closeTower();
+      view.selectedSlot = null; view.selectedTower = null;
+    }
+  },
   replayTutorial: () => {
     // §153：清掉「已看过」这一个标记就够了（门槛现在只看它）。以前这里也是这么写的，
     // 但门槛里还有一条 `playCount === 0`，于是对打完过一局的玩家**什么都不会发生**——
@@ -505,7 +514,7 @@ function setupStartScreen() {
   const mapTable = choice.mode === 'defense' ? DEFENSE_MAPS : MAPS;
   const mapOptions = Object.fromEntries(Object.values(mapTable).map((d) => [d.id, `${d.name} ${'★'.repeat(d.stars ?? 1)}`]));
   const groups = [
-    ['optMode', 'mode', { td: 'TD 塔防', defense: '防守生存' }],
+    ['optMode', 'mode', { td: 'TD · 驻守英雄', defense: '防守 · 出征英雄' }],
     ['optMap', 'map', mapOptions],
     ['optDiff', 'difficulty', { normal: '普通', hard: '困难', nightmare: '噩梦' }],
     // 长局是给「2-4 人 / 大图」的内容：单人 18 塔位在数值上打不过最终 Boss（见验证记录 §23.2）
@@ -544,6 +553,7 @@ function setupStartScreen() {
       } else {
         b.textContent = lock ? `${label} 🔒` : label;
         b.className = choice[key] === value ? 'on' : '';
+        if (key === 'mode') b.title = value === 'defense' ? 'Champion' : 'Guardian';
       }
       if (lock) {
         // §1.7.3：解锁来源（免费 / 成就 / 付费）要读给玩家看——不写出来，这个字段就是没人读的死数据
@@ -766,6 +776,28 @@ canvas.addEventListener('pointerdown', (e) => {
   const g = match.map?.grid ?? { w: 32, h: 24 };
   if (cell.x < 0 || cell.y < 0 || cell.x >= g.w || cell.y >= g.h) return;
 
+  // 点英雄：选中驻守。这一下在按下时就定，松手不再补一次（松手只负责双击回核心）。
+  const hp = heroPos(match.hero);
+  const hs = renderer.toScreen(hp.x, hp.y, 1);
+  if (!match.hero.dead && pointHitsHero(hs, renderer.scale, p.x, p.y)) {
+    view.heroSelected = true;
+    ui.closeWheel(); ui.closeTower();
+    view.selectedSlot = null; view.selectedTower = null;
+    return;
+  }
+
+  const exactSlot = match.map.slots.findIndex((s) => s.x === cell.x && s.y === cell.y);
+  // 选中英雄时：精确塔位仍归建造；其余格子先试驻守（含 1 格点偏）。成功就不拖地图。
+  if (view.heroSelected && exactSlot < 0) {
+    const ok = net ? net.hold(cell.x, cell.y) : orderHold(match, cell);
+    if (ok) {
+      ui.closeWheel(); ui.closeTower();
+      view.selectedSlot = null; view.selectedTower = null;
+      ui.toast('驻守点已设');
+      return;
+    }
+  }
+
   // 取最近的塔位（§2.5：热区重叠时按距离判定，而不是「点在哪个格就是哪个格」）
   let best = -1, bestD = Infinity;
   match.map.slots.forEach((s, i) => {
@@ -791,6 +823,7 @@ canvas.addEventListener('pointerdown', (e) => {
 
   const slotCell = match.map.slots[best];
   const screen = renderer.toScreen(slotCell.x, slotCell.y);
+  view.heroSelected = false;
   view.selectedSlot = best;
   ui.closeTower();
   if (towerAtSlot(match, best)) {
@@ -986,6 +1019,7 @@ function frameBody(now) {
   if (net && pendingTowers.length) pendingTowers = reconcilePending(pendingTowers, match.towers, now);
   renderer.draw({
     m: match, selectedSlot: view.selectedSlot, selectedTower: view.selectedTower,
+    heroSelected: !!view.heroSelected && match.mode !== 'defense',
     placingTowerId: ui.placingTowerId?.() ?? null,
     fx: view.render?.showFloaters === false ? 'low' : 'high',
     floaters: view.render?.showFloaters === false ? [] : view.floaters,

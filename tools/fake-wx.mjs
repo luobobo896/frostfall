@@ -15,7 +15,7 @@ export function installFakeWx({ windowWidth = 667, windowHeight = 375, pixelRati
    */
   const audio = { contexts: 0, oscillators: 0, gains: 0, resumes: 0 };
   /** 平台杂项：屏幕常亮调了几次、内存告警有没有人接（用例据此验这两条接线） */
-  const platform = { keepScreenOn: [], memoryWarning: 0 };
+  const platform = { keepScreenOn: [], memoryWarning: 0, frameRate: [] };
   /**
    * 假 canvas + 记录型 2D 上下文：Node 里没有 canvas，但大厅那一屏要真的画一帧才算验过。
    * 用 Proxy 兜住所有 `ctx.*` 调用（未实现的也记一笔），`fillText` 把文字留下来 ——
@@ -104,6 +104,7 @@ export function installFakeWx({ windowWidth = 667, windowHeight = 375, pixelRati
     onShow: (fn) => { lifeHandlers.show = fn; },
     onMemoryWarning: (fn) => { platform.memoryWarning += 1; lifeHandlers.memoryWarning = fn; },
     setKeepScreenOn: ({ keepScreenOn }) => { platform.keepScreenOn.push(!!keepScreenOn); },
+    setPreferredFramesPerSecond: (fps) => { platform.frameRate.push(fps); },
   };
   globalThis.wx = wx;
   /**

@@ -4,7 +4,7 @@
 import {
   buildTower, buyItem, castSkill, craftEquipment, reviveNow, sellTower, setPriority,
   startWaveEarly, update, upgradeTower, usePotion, towerAtSlot, repairTower,
-  enhanceItem, equipItem, sellItem, applyPlayerScale,
+  enhanceItem, equipItem, sellItem, applyPlayerScale, orderHold,
 } from '../match.js';
 import { createMatch } from '../match.js';
 import { MAX_COMMANDS_PER_SEC, makeRoomCode, SNAPSHOT_RATE, TICK_RATE, snapshot, msg } from '../protocol.js';
@@ -37,7 +37,7 @@ const roomConfig = (m) => ({
  * 反过来的那些（`cast` / `buy` / `potion` / `craft` / `equip` / `enhance` / `sellitem` / `revive`）
  * 两个模式都成立，**不要**加进这张表。
  */
-const TD_ONLY_COMMANDS = new Set(['build', 'upgrade', 'sell', 'priority', 'early', 'repairTower']);
+const TD_ONLY_COMMANDS = new Set(['build', 'upgrade', 'sell', 'priority', 'early', 'repairTower', 'hold']);
 
 export class Room {
   constructor({ mapId, difficulty, heroId, seed, mode = 'td', length = 'short', maxPlayers = 4, onEmpty, profiles = null } = {}) {
@@ -303,6 +303,7 @@ export class Room {
       case 'resync': return true;
       // 防守模式专用指令（TD 局里这些会被对应的函数直接拒掉）
       case 'move': return m.mode === 'defense' ? orderMove(m, { x: cmd.x, y: cmd.y }) : false;
+      case 'hold': return orderHold(m, { x: cmd.x | 0, y: cmd.y | 0 });
       case 'fort': return m.mode === 'defense' ? buildFort(m, cmd.slot, cmd.fortId) : false;
       case 'repair': return m.mode === 'defense' ? repairCastle(m) : false;
       case 'teleport': return m.mode === 'defense' ? teleportHome(m) : false;
