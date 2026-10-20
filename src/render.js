@@ -49,6 +49,175 @@ export function terrainPaint(kind) {
   }
 }
 
+/**
+ * 路径层的明度带：出生暗、终点亮。关掉装饰贴图之后车道仍能读出走向。
+ * 两端是固定色，中间才插值，测试可以对准端点。
+ */
+const PATH_BAND = {
+  ground: ['#2a3442', '#d5dee8'],
+  air: ['#1c3344', '#c5e4f2'],
+};
+
+const hexToRgb = (hex) => {
+  const n = parseInt(hex.slice(1), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+};
+
+export function colorLuma(hex) {
+  const [r, g, b] = hexToRgb(hex);
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+export function pathBandColor(t, kind = 'ground') {
+  const pair = PATH_BAND[kind] ?? PATH_BAND.ground;
+  const u = Math.max(0, Math.min(1, Number(t) || 0));
+  if (u <= 0) return pair[0];
+  if (u >= 1) return pair[1];
+  const a = hexToRgb(pair[0]);
+  const b = hexToRgb(pair[1]);
+  const rgb = a.map((v, i) => Math.round(v + (b[i] - v) * u));
+  return `#${rgb.map((v) => v.toString(16).padStart(2, '0')).join('')}`;
+}
+
+/** 每格走到终点的比例。地面路径盖过空中（同一格两条线时车道以地面为准）。 */
+export function pathProgressOf(map) {
+  const prog = new Map();
+  const ground = new Set();
+  const air = new Set();
+  for (const p of map?.paths ?? []) {
+    const cells = p.cells ?? [];
+    const n = Math.max(1, cells.length - 1);
+    cells.forEach((c, i) => {
+      const k = `${c.x},${c.y}`;
+      const t = cells.length <= 1 ? 1 : i / n;
+      const prev = prog.get(k);
+      if (prev == null || t > prev) prog.set(k, t);
+      if (p.air) air.add(k);
+      else ground.add(k);
+    });
+  }
+  return { prog, ground, air };
+}
+
+const bandCache = new WeakMap();
+function cachedBands(map) {
+  if (!map) return pathProgressOf(null);
+  let hit = bandCache.get(map);
+  if (!hit) {
+    hit = pathProgressOf(map);
+    bandCache.set(map, hit);
+  }
+  return hit;
+}
+
+/**
+ * 入口是门洞（两根柱 + 门楣 + 中间空着），出口是实心石台。
+ * 空中入口是一根杆加一个环。三者轮廓不同，不靠换色。
+ */
+export function lanePropSilhouette(kind = 'entrance') {
+  if (kind === 'exit') {
+    return {
+      id: 'exit',
+      parts: [
+        { role: 'step', points: [[-1.05, 0.55], [1.05, 0.55], [1.05, 0.28], [-1.05, 0.28]], closed: true },
+        { role: 'step', points: [[-0.72, 0.28], [0.72, 0.28], [0.72, 0.02], [-0.72, 0.02]], closed: true },
+        { role: 'stone', points: [[-0.34, 0.02], [0.34, 0.02], [0.2, -1.45], [-0.2, -1.45]], closed: true },
+        { role: 'cap', points: [[-0.48, -1.45], [0.48, -1.45], [0.48, -1.68], [-0.48, -1.68]], closed: true },
+      ],
+    };
+  }
+  if (kind === 'air') {
+    return {
+      id: 'air',
+      parts: [
+        { role: 'post', points: [[-0.1, 0.5], [0.1, 0.5], [0.1, -0.7], [-0.1, -0.7]], closed: true },
+        { role: 'ring', ellipse: [0, -1.15, 0.55, 0.38], strokeOnly: true },
+      ],
+    };
+  }
+  return {
+    id: 'entrance',
+    parts: [
+      { role: 'pier', points: [[-0.95, 0.5], [-0.52, 0.5], [-0.52, -0.85], [-0.95, -0.85]], closed: true },
+      { role: 'pier', points: [[0.52, 0.5], [0.95, 0.5], [0.95, -0.85], [0.52, -0.85]], closed: true },
+      { role: 'lintel', points: [[-1.08, -0.85], [1.08, -0.85], [1.08, -1.18], [-1.08, -1.18]], closed: true },
+      { role: 'banner', points: [[-0.16, -0.85], [0.16, -0.85], [0.12, -0.35], [0, -0.22], [-0.12, -0.35]], closed: true },
+    ],
+  };
+}
+
+/**
+ * 等距里，前排身体盖住后一格单位的比例（0..1）。
+ * 脚在屏幕上隔半格（tileH/2）。只给 Lv3 塔和 Boss 用：超过约四成才把身体画透、塔再压低一档。
+ */
+export const OCCLUSION_LIMIT = 0.4;
+export const OCCLUSION_ALPHA = 0.58;
+
+export function isoOcclusionRatio(frontPx, backPx, tileH = GRID.tileH) {
+  const gap = tileH / 2;
+  const overlap = Math.max(0, Math.min(0, -gap) - Math.max(-frontPx, -gap - backPx));
+  return backPx > 0 ? overlap / backPx : 0;
+}
+
+export function shouldEaseOcclusion(frontKind, frontLevel = 1, backKind = 'creep') {
+  const tall = frontKind === 'boss' || (frontKind === 'tower' && frontLevel >= 3);
+  if (!tall) return false;
+  const frontPx = frontKind === 'tower'
+    ? BODY_PX.tower[Math.min(3, Math.max(1, Math.round(frontLevel))) - 1]
+    : BODY_PX.boss;
+  const backPx = BODY_PX[backKind] ?? BODY_PX.creep;
+  return isoOcclusionRatio(frontPx, backPx) > OCCLUSION_LIMIT;
+}
+
+/** 小地图上要画的英雄点。多人在线不在这批里；有 `heroes` 就多画几个点。 */
+export function laneHeroes(m) {
+  const list = [];
+  if (m?.hero) list.push(m.hero);
+  for (const h of m?.heroes ?? []) {
+    if (h && h !== m.hero) list.push(h);
+  }
+  return list;
+}
+
+/**
+ * 下一波从哪个入口进来。清场、打完、没有地面路时不画箭头。
+ * 出怪中指向「下一只」要用的那条路，而不是永远指第一条。
+ */
+export function nextInvasion(m) {
+  if (!m?.map || m.result) return null;
+  const phase = m.wave?.phase;
+  const index = m.wave?.index ?? 0;
+  const totalWaves = m.waves?.length ?? 0;
+  if (phase === 'clearing' || phase == null) return null;
+  if (phase === 'prep' && index >= totalWaves) return null;
+  if (phase === 'spawning' && (m.wave.spawned ?? 0) >= (m.wave.total ?? 0)) return null;
+  const paths = (m.map.paths ?? []).filter((p) => !p.air && p.spawn && p.cells?.length);
+  if (!paths.length) return null;
+  const spawned = phase === 'spawning' ? (m.wave.spawned ?? 0) : 0;
+  const path = paths[spawned % paths.length];
+  const spawn = path.spawn;
+  const next = path.cells[Math.min(path.cells.length - 1, 1)];
+  return { spawn, next, pathIndex: path.index };
+}
+
+/** 折线抽点。小地图不逐格填矩形。 */
+export const LANE_MINI_BUDGET = Object.freeze({
+  maxPaths: 8,
+  maxPoints: 40,
+  stroke: 5,
+  heroR: 6,
+  arrow: 16,
+});
+
+export function decimateCells(cells, maxPoints = LANE_MINI_BUDGET.maxPoints) {
+  if (!cells?.length) return [];
+  if (cells.length <= maxPoints) return cells;
+  const out = [];
+  const step = (cells.length - 1) / (maxPoints - 1);
+  for (let i = 0; i < maxPoints; i++) out.push(cells[Math.round(i * step)]);
+  return out;
+}
+
 const r3 = (n) => Math.round(n * 1000) / 1000;
 
 /** 暖色轮廓只画在英雄身上。塔用队伍色底座环，怪的光环是另一色。 */
@@ -668,64 +837,88 @@ export function createRenderer(canvas, { size = null } = {}) {
     paintSilhouette(ctx, cx, cy, size, towerSilhouette(towerId, level), style);
   }
 
-  function drawTiles(m) {
+  function drawTiles(m, decor) {
     const g = m.map?.grid ?? GRID;
+    const bands = cachedBands(m.map);
     for (let y = 0; y < g.h; y++) {
       for (let x = 0; x < g.w; x++) {
-        const onPath = m.map.blocked.has(`${x},${y}`);
-        const swamp = m.map.swamp.has(`${x},${y}`);
-        const lava = m.map.lava?.has(`${x},${y}`);
+        const key = `${x},${y}`;
+        const onPath = m.map.blocked.has(key);
+        const swamp = m.map.swamp.has(key);
+        const lava = m.map.lava?.has(key);
         const c = toScreen(x, y);
-        const kind = lava ? 'lava' : onPath ? 'path' : swamp ? 'swamp' : ((x + y) % 2 ? 'tileA' : 'tileB');
+        if (onPath) {
+          // 路径层永远是出生→终点的明度带。装饰贴图只能淡淡盖一层，关装饰时这层还在。
+          const lane = bands.ground.has(key) ? 'ground' : 'air';
+          const edge = terrainPaint('path');
+          tilePath(x, y);
+          ctx.fillStyle = pathBandColor(bands.prog.get(key) ?? 0, lane);
+          ctx.fill();
+          if (decor) {
+            const frame = resolveSprite(tileSpriteKey('path'), 'idle', 0);
+            if (frame?.image) {
+              ctx.globalAlpha = 0.18;
+              const tw = GRID.tileW * view.scale;
+              const th = GRID.tileH * view.scale;
+              ctx.drawImage(frame.image, c.x - tw / 2, c.y - th / 2, tw, th);
+              ctx.globalAlpha = 1;
+            }
+          }
+          tilePath(x, y);
+          ctx.strokeStyle = edge.stroke;
+          ctx.lineWidth = edge.lineWidth;
+          ctx.stroke();
+          ctx.lineWidth = 1;
+          if (decor && (x + y) % 3 === 0) label('·', c.x, c.y, 'rgba(12,18,28,.45)', 14);
+          continue;
+        }
+        const kind = lava ? 'lava' : swamp ? 'swamp' : ((x + y) % 2 ? 'tileA' : 'tileB');
         const paint = terrainPaint(kind);
-        if (!paintCell(x, y, kind)) {
+        if (!(decor && paintCell(x, y, kind))) {
           tilePath(x, y);
           ctx.fillStyle = paint.fill;
           ctx.fill();
-          // 沼泽加两粒固定位置的噪点（别用随机，否则每帧都在闪）。图里已经有噪点，就不重复画。
-          if (swamp && !onPath && !lava && (x * 3 + y) % 2 === 0) {
+          // 沼泽噪点是装饰。低档不画，免得和车道抢明度。
+          if (decor && swamp && !lava && (x * 3 + y) % 2 === 0) {
             ctx.fillStyle = 'rgba(168,214,176,.55)';
             const s = Math.max(1, 1.6 * view.scale);
             ctx.fillRect(c.x - 3 * view.scale, c.y - s, s, s);
             ctx.fillRect(c.x + 4 * view.scale, c.y + 2 * view.scale, s, s);
           }
         }
-        // 边是程序描的，不交给贴图。路径是硬边；可建地和装饰块用自己的软边，不能画成能走的路。
         tilePath(x, y);
         ctx.strokeStyle = paint.stroke;
         ctx.lineWidth = paint.lineWidth;
         ctx.stroke();
         ctx.lineWidth = 1;
-        if (onPath && (x + y) % 3 === 0) label('·', c.x, c.y, 'rgba(12,18,28,.45)', 14);
       }
     }
   }
 
-  /** 出生格一根小旗：进场方向不用靠记忆。空中航线用天蓝色旗。 */
-  function drawSpawns(m) {
+  /** 入口门洞、出口石台。关装饰也画：这是路标，不是地块花纹。 */
+  function drawLaneProps(m) {
     const seen = new Set();
+    const size = Math.max(16, 22 * view.scale);
     for (const p of m.map?.paths ?? []) {
       const s = p.spawn;
       if (!s) continue;
       const key = `${s.x},${s.y}`;
       if (seen.has(key)) continue;
       seen.add(key);
-      const c = toScreen(s.x, s.y, 0);
-      const h = 16 * view.scale + 6;
-      ctx.strokeStyle = '#e6d7b4';
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      ctx.moveTo(c.x, c.y + 2);
-      ctx.lineTo(c.x, c.y - h);
-      ctx.stroke();
-      ctx.fillStyle = p.air ? COLORS.air : '#e06a5c';
-      ctx.beginPath();
-      ctx.moveTo(c.x, c.y - h);
-      ctx.lineTo(c.x + 10 * view.scale + 4, c.y - h + 4 * view.scale);
-      ctx.lineTo(c.x, c.y - h + 8 * view.scale);
-      ctx.closePath();
-      ctx.fill();
-      ctx.lineWidth = 1;
+      const c = toScreen(s.x, s.y, 0.15);
+      const air = !!p.air;
+      paintSilhouette(ctx, c.x, c.y, size, lanePropSilhouette(air ? 'air' : 'entrance'), air
+        ? { fill: '#3c4a5a', accent: '#9ad8ff', stroke: '#141c28', lineWidth: 1.5 }
+        : { fill: '#6b5340', accent: '#c4b49a', stroke: '#1c140e', lineWidth: 1.5 });
+    }
+    const cores = m.cores?.length ? m.cores : (m.core ? [m.core] : []);
+    for (const core of cores) {
+      const cell = core.cell ?? core;
+      if (cell?.x == null) continue;
+      const c = toScreen(cell.x, cell.y, 0);
+      paintSilhouette(ctx, c.x, c.y, size * 1.08, lanePropSilhouette('exit'), {
+        fill: '#c5ced6', accent: '#24303c', stroke: '#24303c', lineWidth: 1.5,
+      });
     }
   }
 
@@ -799,8 +992,19 @@ export function createRenderer(canvas, { size = null } = {}) {
     });
   }
 
+  /** 这一帧站在格子上的单位。后一格有人，高塔/Boss 才变透。 */
+  const stood = new Set();
+  const coversBehind = (cell) => {
+    if (!cell) return false;
+    const x = Math.round(cell.x);
+    const y = Math.round(cell.y);
+    return stood.has(`${x - 1},${y}`) || stood.has(`${x},${y - 1}`);
+  };
+
   function drawTower(m, t, selected, localSlot) {
-    const c = toScreen(t.cell.x, t.cell.y, 0.9);
+    const ghost = t.level >= 3 && coversBehind(t.cell) && shouldEaseOcclusion('tower', t.level, 'creep');
+    // 挡住后一格时把塔压低（少抬一截），身体再透一点。血条和队伍环保持不透。
+    const c = toScreen(t.cell.x, t.cell.y, ghost ? 0.15 : 0.9);
     const color = COLORS.tower[t.towerId] ?? '#dbe6f2';
     const size = bodyRadius('tower', view.scale, t.level);
     const pulse = attackPulse(t.cooldown, t.stats?.atkSpeed);
@@ -813,6 +1017,7 @@ export function createRenderer(canvas, { size = null } = {}) {
     const nudge = posed ? { dx: 0, dy: 0 } : towerNudge(t.towerId, pulse);
     const bx = c.x + nudge.dx * view.scale;
     const by = c.y + nudge.dy * view.scale;
+    if (ghost) ctx.globalAlpha = OCCLUSION_ALPHA;
     ctx.fillStyle = 'rgba(0,0,0,.35)';
     ctx.beginPath(); ctx.ellipse(c.x, c.y + size * 0.5, size * 0.9, size * 0.4, 0, 0, Math.PI * 2); ctx.fill();
     drawTowerBody(t.towerId, t.level, bx, by, size, {
@@ -823,6 +1028,7 @@ export function createRenderer(canvas, { size = null } = {}) {
     }, frame);
     const marks = posed ? [] : towerMarks(t.towerId, pulse, charge);
     if (marks.length) drawGlyphs(placeGlyphs(marks, bx, by - size * 0.2, view.scale), color, 1.5);
+    if (ghost) ctx.globalAlpha = 1;
     label(`${t.level}`, c.x, c.y - size * 0.15, '#0b1420', 12);
     // 5★/6★ 图会被攻城怪拆：塔血不满时显示血条
     if (t.maxHp && t.hp < t.maxHp) {
@@ -937,6 +1143,8 @@ export function createRenderer(canvas, { size = null } = {}) {
     }
     const fill = mo.isAir ? COLORS.air : COLORS.mob[tier] ?? '#c9d6e6';
     const spec = mobSilhouette({ ...mo.def, isAir: mo.isAir || mo.def.isAir });
+    const ghost = tier === 'boss' && !mo.isAir && coversBehind(p) && shouldEaseOcclusion('boss', 1, 'creep');
+    if (ghost) ctx.globalAlpha = OCCLUSION_ALPHA;
     // 冲刺：前倾。有 transform 就剪整个身体（含静帧）；假画布没有 transform 时改剪影点。
     // 攻击中不倾，受击斜线那一笔才对得上。速度线在还原之后画，保持水平。
     const sprinting = sprintState(mo.def, m.time).on && !mo.attacking;
@@ -965,6 +1173,7 @@ export function createRenderer(canvas, { size = null } = {}) {
       });
     }
     if (canShear) ctx.restore();
+    if (ghost) ctx.globalAlpha = 1;
     if (sprinting && sprintLeft > 0) {
       const n = Math.min(3, sprintLeft);
       sprintLeft -= n;
@@ -993,6 +1202,20 @@ export function createRenderer(canvas, { size = null } = {}) {
   /** 怪物的小数格位置：有 `pathIndex` + `dist`（TD 与防守的怪都有）就用亚格位置，否则退回整数格。 */
   const monPos = (m, mo) => (mo.pathIndex != null && Number.isFinite(mo.dist) && m.map.paths[mo.pathIndex])
     ? posAt(m.map.paths[mo.pathIndex], mo.dist) : mo.cell;
+
+  function noteUnits(m) {
+    stood.clear();
+    for (const mo of m.monsters ?? []) {
+      if (mo.dead) continue;
+      const p = monPos(m, mo);
+      stood.add(`${Math.round(p.x)},${Math.round(p.y)}`);
+    }
+    for (const h of laneHeroes(m)) {
+      if (!h || h.dead || !h.cell) continue;
+      const p = heroPos(h);
+      stood.add(`${Math.round(p.x)},${Math.round(p.y)}`);
+    }
+  }
 
   /**
    * 地面上的复活点：石色菱形 + 秒数。不描金、不走技能虚线、不走塔的奶油圈。
@@ -1162,8 +1385,9 @@ export function createRenderer(canvas, { size = null } = {}) {
     if (grid.w !== GRID.w || grid.h !== GRID.h) resize(grid);   // 4★ 起的大图按自己的尺寸适配镜头
     ctx.fillStyle = COLORS.bg;
     ctx.fillRect(0, 0, view.w, view.h);
-    drawTiles(m);
-    drawSpawns(m);
+    const decor = isoView.decor !== false && isoView.fx !== 'low';
+    drawTiles(m, decor);
+    drawLaneProps(m);
     drawSlots(m, selectedSlot);
     drawHintSlots(m, hintSlots, now, pulses);
     // 预测中的塔：半透明鬼影 + 省略号，等服务端快照确认后由真实塔替换（§10.3）
@@ -1185,6 +1409,7 @@ export function createRenderer(canvas, { size = null } = {}) {
     drawCore(m);
     trackMonsters(m.monsters, m);
     drawCorpses();
+    noteUnits(m);
 
     // 深度排序：tiles 之后，单位按 gx+gy（§14.1）
     const drawables = [
@@ -1242,7 +1467,8 @@ export function createRenderer(canvas, { size = null } = {}) {
     for (let y = bounds.y0; y <= bounds.y1; y++) {
       for (let x = bounds.x0; x <= bounds.x1; x++) {
         const kind = (x + y) % 2 ? 'tileA' : 'tileB';
-        if (!paintCell(x, y, kind)) {
+        const decor = v.decor !== false && v.fx !== 'low';
+        if (!(decor && paintCell(x, y, kind))) {
           tilePath(x, y);
           ctx.fillStyle = (x + y) % 2 ? COLORS.tileA : COLORS.tileB;
           ctx.fill();
@@ -1350,6 +1576,7 @@ export function createRenderer(canvas, { size = null } = {}) {
 
     trackMonsters(m.monsters, m);
     drawCorpses();
+    noteUnits(m);
 
     // 深度排序画单位
     const drawables = [
@@ -1474,6 +1701,129 @@ export function createMinimap(canvas, { size = null } = {}) {
   }
 
   return { draw, toMinimap, get size() { return { w: view.w, h: view.h, scale: view.s }; } };
+}
+
+/**
+ * TD 小地图：路径折线、英雄点、下一波入口箭头。
+ * 不扫整张格子。折线按地图缓存，每帧只描这几条线和几个圆。60 与 120 同一条函数。
+ */
+export function createLaneMinimap(canvas, { size = null } = {}) {
+  const ctx = canvas.getContext('2d');
+  const PAD = 8;
+  const view = { s: 1, ox: PAD, oy: PAD, w: 0, h: 0 };
+  let cacheKey = '';
+  let cached = [];
+
+  function layoutFor(m) {
+    const dpr = Math.min(2, viewport().dpr || 1);
+    const measured = size ? size() : null;
+    const grid = m.map?.grid ?? GRID;
+    const w = measured ? measured.w : (canvas.clientWidth || canvas.width || 168);
+    const h = measured ? measured.h : (canvas.clientHeight || canvas.height || 122);
+    const pw = Math.floor(w * dpr);
+    const ph = Math.floor(h * dpr);
+    if (canvas.width !== pw || canvas.height !== ph) { canvas.width = pw; canvas.height = ph; }
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    view.w = w;
+    view.h = h;
+    view.s = Math.min((w - PAD * 2) / grid.w, (h - PAD * 2) / grid.h);
+    view.ox = (w - grid.w * view.s) / 2;
+    view.oy = (h - grid.h * view.s) / 2;
+  }
+
+  const toMini = (x, y) => ({ x: view.ox + (x + 0.5) * view.s, y: view.oy + (y + 0.5) * view.s });
+
+  function linesFor(m) {
+    const paths = m.map?.paths ?? [];
+    const key = paths.map((p) => `${p.index}:${p.cells?.length ?? 0}:${p.air ? 1 : 0}`).join(',');
+    if (key === cacheKey) return cached;
+    cacheKey = key;
+    cached = [];
+    for (let i = 0; i < paths.length && cached.length < LANE_MINI_BUDGET.maxPaths; i++) {
+      const p = paths[i];
+      if (!p.cells?.length) continue;
+      cached.push({ air: !!p.air, pts: decimateCells(p.cells) });
+    }
+    return cached;
+  }
+
+  function cellAt(sx, sy, m) {
+    if (m) layoutFor(m);
+    const grid = m?.map?.grid ?? GRID;
+    const x = Math.round((sx - view.ox) / view.s - 0.5);
+    const y = Math.round((sy - view.oy) / view.s - 0.5);
+    return {
+      x: Math.max(0, Math.min(grid.w - 1, x)),
+      y: Math.max(0, Math.min(grid.h - 1, y)),
+    };
+  }
+
+  function draw(m) {
+    layoutFor(m);
+    ctx.fillStyle = 'rgba(9,15,24,.92)';
+    ctx.fillRect(0, 0, view.w, view.h);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    for (const line of linesFor(m)) {
+      const pts = line.pts;
+      if (pts.length < 2) continue;
+      ctx.beginPath();
+      const p0 = toMini(pts[0].x, pts[0].y);
+      ctx.moveTo(p0.x, p0.y);
+      for (let i = 1; i < pts.length; i++) {
+        const p = toMini(pts[i].x, pts[i].y);
+        ctx.lineTo(p.x, p.y);
+      }
+      ctx.strokeStyle = line.air ? '#9ad8ff' : '#d5dee8';
+      ctx.lineWidth = line.air ? 2.5 : LANE_MINI_BUDGET.stroke;
+      if (line.air) ctx.setLineDash([3, 3]);
+      ctx.stroke();
+      if (line.air) ctx.setLineDash([]);
+    }
+    ctx.lineWidth = 1;
+    const invasion = nextInvasion(m);
+    if (invasion) {
+      const head = toMini(invasion.spawn.x, invasion.spawn.y);
+      const nxt = toMini(invasion.next.x, invasion.next.y);
+      let dx = nxt.x - head.x;
+      let dy = nxt.y - head.y;
+      const len = Math.hypot(dx, dy) || 1;
+      dx /= len;
+      dy /= len;
+      const size = LANE_MINI_BUDGET.arrow;
+      const tailX = head.x - dx * size;
+      const tailY = head.y - dy * size;
+      const wing = size * 0.42;
+      ctx.fillStyle = '#e7edf4';
+      ctx.beginPath();
+      ctx.moveTo(head.x, head.y);
+      ctx.lineTo(tailX + -dy * wing, tailY + dx * wing);
+      ctx.lineTo(tailX - -dy * wing, tailY - dx * wing);
+      ctx.closePath();
+      ctx.fill();
+    }
+    const heroes = laneHeroes(m);
+    heroes.forEach((h, i) => {
+      if (!h?.cell) return;
+      const p = heroPos(h);
+      const at = toMini(p.x, p.y);
+      ctx.fillStyle = h.dead ? '#8b95a3' : (TEAM_COLORS[i % TEAM_COLORS.length] ?? '#8ee08a');
+      ctx.beginPath();
+      ctx.arc(at.x, at.y, h.dead ? 4 : LANE_MINI_BUDGET.heroR, 0, Math.PI * 2);
+      ctx.fill();
+    });
+    const grid = m.map?.grid ?? GRID;
+    ctx.strokeStyle = 'rgba(120,140,170,.35)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(view.ox, view.oy, grid.w * view.s, grid.h * view.s);
+  }
+
+  return {
+    draw,
+    cellAt,
+    toMini,
+    get size() { return { w: view.w, h: view.h, scale: view.s }; },
+  };
 }
 
 export function qualityColor(q) {

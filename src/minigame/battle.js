@@ -20,6 +20,11 @@ import {
 export const DESIGN = { w: 667, h: 375 };
 /** 右上角胶囊按钮的禁区（和 lobby 同一条要求） */
 export const CAPSULE = { w: 96, h: 32 };
+/**
+ * TD 小地图：倍速下面、结算面板右边。整块 ≥44，给手指；图本身由 render 贴上去。
+ * 左缘停在 x=520，空地点选那一片（屏幕 x<520）还能点到地。
+ */
+export const TD_MINIMAP = { x: 520, y: 60, w: 135, h: 188 };
 export const TOWER_ORDER = ['tw_arrow', 'tw_cannon', 'tw_frost', 'tw_static'];
 export const PRIORITY_LABEL = { front: '最靠前', strongest: '最强', weakest: '最弱', air_first: '空中优先' };
 export const POTION_BAG_SLOTS = 3;   // §5.5.3：药品共 3 格（与内核同一个数）
@@ -139,6 +144,8 @@ export function layoutBattle(model = {}) {
    */
   items.push(item('speed', 380, 8, 84, 44, model.rate === 2 ? '倍速 2×' : '倍速 1×', { type: 'speed' }, { on: model.rate === 2 }));
   items.push(item('pause', 470, 8, 84, 44, model.paused ? '继续' : '暂停', { type: 'pause' }, { on: !!model.paused }));
+  // 点小地图 = 把镜头移到那一格。键不画字，图由绘制层盖上来。
+  items.push(item('minimap', TD_MINIMAP.x, TD_MINIMAP.y, TD_MINIMAP.w, TD_MINIMAP.h, '', { type: 'focus' }));
   /**
    * 新手引导条（§14.3 稿 11）：压在底排上方，**条本身不吃触摸**——浏览器版那边靠 `.hud` 的
    * `pointer-events: none` 做到同一件事，所以它盖在战场上也不挡点塔位，只有「跳过」那颗键接触摸。
@@ -165,6 +172,7 @@ export function layoutBattle(model = {}) {
     // 英雄读数（等级 / 阵亡倒计时）：写在 y=48 那一行的右端，右对齐（x 是右边界）
     heroLine: { x: DESIGN.w - 12, y: 48 },
     tutorial: tutorial ? { x: 12, y: 261, w: 643, h: 44, text: tutorial } : null,
+    minimap: TD_MINIMAP,
     items,
     byId: Object.fromEntries(items.map((it) => [it.id, it])),
   };

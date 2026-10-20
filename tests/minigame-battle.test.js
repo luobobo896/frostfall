@@ -71,8 +71,11 @@ test('小游戏战场 HUD：可点元素 ≥44×44、画布内、互不重叠、
   }
   assert.equal(L.capsule.w, CAPSULE.w);
   assert.ok(L.w === DESIGN.w && L.h === DESIGN.h);
-  // 小地图是防守专属（跟随相机下才需要那张全局视图）——TD 这边不该有那一格
-  assert.ok(!L.items.some((it) => it.id === 'minimap'), 'TD 的 HUD 上不该有小地图');
+  const mini = L.byId.minimap;
+  assert.ok(mini, 'TD 要有一块能点的小地图');
+  assert.equal(mini.action.type, 'focus');
+  assert.ok(mini.w >= 120 && mini.h >= 96, '小地图要够胖，手机上瞥一眼认得出路');
+  assert.equal(L.minimap.x, mini.x);
 });
 
 test('小游戏战场 HUD：命中测试与画出来的位置同源（每个按钮点中心都拿到自己的动作）', () => {
