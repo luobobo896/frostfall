@@ -244,6 +244,8 @@ export const HERO_SKILL_RING = { stroke: '#7ec8ff', lineWidth: 1.5, dash: [5, 4]
 export const DETECT_RING = { stroke: '#d5dde8', lineWidth: 1.75, dash: [2, 6] };
 /** 寒霜光环：实线冷蓝，不虚线、不填奶油。低特效只停呼吸，圈本身还在。 */
 export const AURA_RING = { stroke: '#9fd4ff', lineWidth: 2.5, fill: 'rgba(159, 212, 255, .14)' };
+/** 燎野焦土：实线暖褐，内圈收成地面一块。低特效只停呼吸，圈本身还在。 */
+export const SCORCH_RING = { stroke: '#e7a15a', lineWidth: 2.5, fill: 'rgba(231, 161, 90, .16)' };
 /** 点英雄的半径下限（直径约 44px）。视觉半径更大时跟视觉走。 */
 export const HERO_HIT_PX = 44;
 
@@ -285,6 +287,15 @@ export function towerSilhouette(towerId, level = 1, spec = null) {
       parts.push({ role: 'barrel', points: [[0.1, -0.42], [reach - 0.18, -0.42], [reach - 0.18, -0.68], [0.1, -0.68]], closed: true });
       // 炮尾在炮管后方，不把炮口再往前伸（barrelReach 仍看第一根炮管）
       parts.push({ role: 'breech', points: [[-0.92, 0.22], [-0.18, 0.16], [-0.18, -0.62], [-0.92, -0.5]], closed: true });
+    }
+    // 燎野炮台：石炉比炮墩更宽，炮管加粗，两侧排烟口。不是把炮口再伸长一截。
+    if (spec === 'scorch_hearth') {
+      parts.push(
+        { role: 'hearth', points: [[-1.62, 0.82], [1.22, 0.82], [1.05, 0.48], [-1.45, 0.48]], closed: true },
+        { role: 'vent', points: [[-1.48, 0.48], [-1.16, 0.48], [-1.2, -0.38], [-1.52, -0.24]], closed: true },
+        { role: 'vent', points: [[0.82, 0.48], [1.16, 0.48], [1.1, -0.16], [0.76, -0.02]], closed: true },
+        { role: 'barrel', points: [[0.04, 0.14], [1.26, 0.14], [1.26, -0.52], [0.04, -0.52]], closed: true },
+      );
     }
   } else if (towerId === 'tw_frost') {
     const tip = [-1.15, -1.31, -1.47][lv - 1];
@@ -877,7 +888,7 @@ export function createRenderer(canvas, { size = null } = {}) {
   }
 
   function drawTowerBody(towerId, level, cx, cy, size, style, frame, spec = null) {
-    // 专精阶没有自己的静帧。用 Lv3 那张图会把加宽的石环盖掉，所以这一阶只画剪影。
+    // 专精阶没有自己的静帧。用 Lv3 那张图会把加宽的石环、石炉盖掉，所以这一阶只画剪影。
     if (!spec) {
       const sprite = frame === undefined
         ? resolveSprite(towerSpriteKey(towerId, level), 'idle', 0)
@@ -1168,6 +1179,31 @@ export function createRenderer(canvas, { size = null } = {}) {
     ctx.setLineDash([]);
     ctx.strokeStyle = AURA_RING.stroke;
     ctx.lineWidth = selected ? AURA_RING.lineWidth + 1 : AURA_RING.lineWidth;
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+    ctx.lineWidth = 1;
+  }
+
+  /** 焦土：实线暖褐，里面再收一圈，读成地面一块。选中时加淡填充。低特效不呼吸。 */
+  function drawScorchRing(cell, range, { selected = false, alpha = 0.92 } = {}) {
+    if (!cell || !(Number(range) > 0)) return;
+    const c = toScreen(cell.x, cell.y, 0);
+    const rx = range * (GRID.tileW / 2) * view.scale;
+    const ry = range * (GRID.tileH / 2) * view.scale;
+    ctx.beginPath();
+    ctx.ellipse(c.x, c.y, rx, ry, 0, 0, Math.PI * 2);
+    if (selected) {
+      ctx.fillStyle = SCORCH_RING.fill;
+      ctx.fill();
+    }
+    ctx.globalAlpha = selected ? 1 : alpha;
+    ctx.setLineDash([]);
+    ctx.strokeStyle = SCORCH_RING.stroke;
+    ctx.lineWidth = selected ? SCORCH_RING.lineWidth + 1 : SCORCH_RING.lineWidth;
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.ellipse(c.x, c.y, rx * 0.58, ry * 0.58, 0, 0, Math.PI * 2);
+    ctx.lineWidth = SCORCH_RING.lineWidth;
     ctx.stroke();
     ctx.globalAlpha = 1;
     ctx.lineWidth = 1;
@@ -1586,12 +1622,18 @@ export function createRenderer(canvas, { size = null } = {}) {
     }
     const heroDetect = heroDetectRadius(m);
     if (heroDetect > 0) drawDetectRing(heroPos(m.hero), heroDetect);
-    const auraStill = isoView.fx === 'low' || pulses === false;
+    const ringStill = isoView.fx === 'low' || pulses === false;
     for (const t of m.towers) {
       const aura = t.stats?.special?.aura;
       if (!(aura?.radius > 0)) continue;
-      const alpha = auraStill ? 0.92 : (0.78 + 0.18 * Math.sin((now || 0) * 3));
+      const alpha = ringStill ? 0.92 : (0.78 + 0.18 * Math.sin((now || 0) * 3));
       drawAuraRing(t.cell, aura.radius, { selected: selectedTower === t.slot, alpha });
+    }
+    for (const t of m.towers) {
+      const scorch = t.stats?.special?.scorch;
+      if (!(scorch?.radius > 0)) continue;
+      const alpha = ringStill ? 0.92 : (0.78 + 0.18 * Math.sin((now || 0) * 3));
+      drawScorchRing(t.cell, scorch.radius, { selected: selectedTower === t.slot, alpha });
     }
     drawReviveMark(m);
     drawFloaters(floaters, now);

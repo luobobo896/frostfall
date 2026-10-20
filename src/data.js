@@ -144,6 +144,9 @@ export const TOWER_ATK_SPEED_CAP = 4.0;
 /**
  * 满级之后的专精，不是第 4 级伤害。攻击曲线不动，只加建筑身份。
  * 冰塔 → 寒霜祭坛：附近敌人被寒霜光环减速并轻轻刮一下。光环自己不侦测。
+ * 炮塔 → 燎野炮台：炮座下一块焦土，每秒按攻城灼烧站在里面的人。
+ * 克制表里攻城打加强甲已经是 ×1.5，所以这里不加炮弹伤害和射程；
+ * 成团的怪一起吃焦土，会拆塔的攻城单位再乘一截。霜壳仍削攻城。
  */
 export const TOWER_SPEC = {
   tw_frost: {
@@ -155,6 +158,17 @@ export const TOWER_SPEC = {
     counter: '寒霜祭坛可减速冲刺',
     counters: ['sprint'],
     aura: { radius: 3.2, slowPct: 0.22, chip: 4 },
+  },
+  tw_cannon: {
+    id: 'scorch_hearth',
+    name: '燎野炮台',
+    costMul: 1.92,
+    role: '焦土',
+    hint: '焦土 · 灼烧附近成团与攻城单位',
+    counter: '燎野炮台可灼烧攻城',
+    counters: ['siege'],
+    counterMin: 2,
+    scorch: { radius: 2.8, dps: 8, vsSiege: 0.5 },
   },
 };
 

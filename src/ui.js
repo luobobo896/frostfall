@@ -348,7 +348,7 @@ export function createUI(handlers) {
       btn.title = attackHint(t.attackType);   // 轮盘只有 60pt，克制说明走标题，不挤版面
       btn.style.left = `${Math.cos(a) * radius}px`;
       btn.style.top = `${Math.sin(a) * radius}px`;
-      const support = id === 'tw_frost' ? ' · 支援' : '';
+      const support = TOWER_SPEC[id] ? ` · ${TOWER_SPEC[id].role}` : '';
       btn.innerHTML = `<span>${t.name}</span><span class="cost">${t.cost}${support}</span>`;
       btn.onclick = () => {
         const ok = handlers.build(slotIndex, id);
