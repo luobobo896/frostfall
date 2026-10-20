@@ -25,6 +25,7 @@ function fakeContext() {
 
 const {
   createRenderer, hintPulseAlpha, terrainPaint, towerSilhouette, mobSilhouette, heroSilhouette, bodyRadius,
+  fortSilhouette, fortDrawSize, wallSilhouette, wallKindAt, wallDrawSize,
 } = await import('../src/render.js');
 
 test('等距投影：格坐标 → 屏幕往返可逆（点击判定依赖它）', () => {
@@ -377,6 +378,51 @@ test('P0 塔剪影：箭柱 / 炮管 / 冰晶 / 电弧各不相同，升级会�
   }
   const barrelReach = (lv) => Math.max(...towerSilhouette('tw_cannon', lv).parts.find((p) => p.role === 'barrel').points.map((p) => p[0]));
   assert.ok(barrelReach(2) > barrelReach(1) && barrelReach(3) > barrelReach(2), '炮管随等级变长');
+
+  const span = (part) => {
+    const xs = part.points.map((p) => p[0]);
+    return Math.max(...xs) - Math.min(...xs);
+  };
+  const battlements = towerSilhouette('tw_arrow', 3).parts.filter((p) => p.role === 'battlement');
+  assert.ok(battlements.length >= 3, 'Lv3 箭塔要有女墙');
+  assert.ok(Math.max(...battlements.map(span)) > 1.28, '女墙要比 Lv1 屋顶（±0.64）更宽');
+  const spike = towerSilhouette('tw_frost', 3).parts.find((p) => p.role === 'spike');
+  const lv1Tip = Math.min(...towerSilhouette('tw_frost', 1).parts.filter((p) => p.role === 'crystal').flatMap((p) => p.points.map((pt) => pt[1])));
+  assert.ok(spike && Math.min(...spike.points.map((p) => p[1])) < lv1Tip, '冰晶尖要比 Lv1 那簇更高');
+  const coils = towerSilhouette('tw_static', 3).parts.filter((p) => p.role === 'coil');
+  assert.ok(coils.length >= 2 && coils.every((p) => p.closed), '电塔 Lv3 是闭合线圈，不是再加几道开口电弧');
+  const breech = towerSilhouette('tw_cannon', 3).parts.find((p) => p.role === 'breech');
+  assert.ok(breech && Math.max(...breech.points.map((p) => p[0])) < barrelReach(3), '炮尾在炮管后面');
+  for (const id of ids) {
+    const roles = new Set(towerSilhouette(id, 3).parts.map((p) => p.role));
+    assert.ok(!roles.has('head') && !roles.has('weapon'), `${id} Lv3 不能长成英雄`);
+  }
+});
+
+test('工事比 TD 塔矮，门洞和转角读得出来', () => {
+  const height = (spec) => {
+    const ys = spec.parts.flatMap((p) => (p.points ?? []).map((pt) => pt[1]));
+    return Math.max(...ys) - Math.min(...ys);
+  };
+  const fort = fortSilhouette('fort_arrow');
+  assert.ok(height(fort) < height(towerSilhouette('tw_arrow', 1)), '门楼要比箭塔矮');
+  assert.ok(fortDrawSize(1) < bodyRadius('tower', 1, 1));
+  assert.ok(fortDrawSize(1.5) < bodyRadius('tower', 1.5, 3));
+  assert.ok(wallDrawSize(1) < fortDrawSize(1));
+  const piers = fort.parts.filter((p) => p.role === 'pier');
+  assert.equal(piers.length, 2);
+  assert.ok(Math.max(...piers[0].points.map((p) => p[0])) < 0);
+  assert.ok(Math.min(...piers[1].points.map((p) => p[0])) > 0, '门楼中间要留出空隙');
+  const gate = wallSilhouette('gate');
+  const jambs = gate.parts.filter((p) => p.role === 'jamb');
+  assert.equal(jambs.length, 2);
+  assert.ok(Math.max(...jambs[0].points.map((p) => p[0])) < 0);
+  assert.ok(Math.min(...jambs[1].points.map((p) => p[0])) > 0, '门洞两侧门垛不能连成一堵实墙');
+  assert.ok(wallSilhouette('corner').parts.some((p) => p.role === 'buttress'));
+  assert.equal(wallSilhouette().kind, 'run');
+  const walls = new Set(['2,2', '3,2', '2,3']);
+  assert.equal(wallKindAt(walls, 2, 2), 'corner');
+  assert.equal(wallKindAt(walls, 3, 2), 'run');
 });
 
 test('P0 怪剪影：空中有翼、重甲方块、分裂双圆、光环外圈、Boss 尖刺星', () => {

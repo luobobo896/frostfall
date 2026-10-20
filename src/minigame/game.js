@@ -213,11 +213,11 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
    * 只在设置里关掉时说「已在设置里关闭」——不是把这一行悄悄藏起来，
    * 玩家得能分清「我关了」和「这波没有预告」。
    */
-  const nextWaveHint = (m) => {
-    if (settings.showWavePreview === false) return '下一波：（已在设置里关闭）';
+  const nextWavePack = (m) => {
+    if (settings.showWavePreview === false) return { text: '下一波：（已在设置里关闭）', chips: [] };
     const p = wavePreview(m.wave.index + 1, 3, m.waves);
-    if (!p) return '下一波：—';
-    return `下一波：${p.tag ? `【${p.tag}】` : ''}${p.text}`;
+    if (!p) return { text: '下一波：—', chips: [] };
+    return { text: `下一波：${p.tag ? `【${p.tag}】` : ''}${p.text}`, chips: p.chips ?? [] };
   };
 
   /** 进局：按大厅里选的那套配置开一局（联机/多人缩放先按单人；多人是后面的事） */
@@ -328,7 +328,8 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
          * 设置里关掉时照浏览器版写一句「已在设置里关闭」（不是把这一行悄悄藏起来，
          * 玩家得知道是「我关了」而不是「这波没有预告」）。
          */
-        preview: m.result ? null : nextWaveHint(m),
+        preview: m.result ? null : nextWavePack(m).text,
+        roster: m.result ? [] : nextWavePack(m).chips,
         ui: b.ui, sheet: b.sheetOf(),
       });
     b.layout = m.mode === 'defense' ? layoutDefense(m, defModel(b)) : layoutBattle(b.model());
@@ -998,7 +999,7 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
       const o = hudOffset();
       ctx.setTransform(size.dpr, 0, 0, size.dpr, size.dpr * o.x, size.dpr * o.y);
       drawBattleHud(ctx, b.m, b.layout, {
-        selectedTower: b.selectedTower, message, preview: model.preview, heroSelected: !!b.ui.heroSelected,
+        selectedTower: b.selectedTower, message, preview: model.preview, roster: model.roster, heroSelected: !!b.ui.heroSelected,
       });
     }
     // 结算面板：内核出结果之后盖上来（内容是浏览器版那个 resultPanelModel，一份模型两个渲染器）

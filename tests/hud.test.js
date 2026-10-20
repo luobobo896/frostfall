@@ -2,8 +2,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { DAMAGE_MATRIX, TEAM_COLORS, WAVES } from '../src/data.js';
-import { armorHint, attackHint, counterTable, damageFloaters, playerPanel, recordLabel, resultPanelModel, teamColor, wavePreview, zoneLabel } from '../src/hud-model.js';
+import { DAMAGE_MATRIX, MONSTERS, TEAM_COLORS, WAVES, WAVES_LONG } from '../src/data.js';
+import { armorHint, attackHint, counterTable, creepRoles, damageFloaters, playerPanel, recordLabel, resultPanelModel, roleGlyph, teamColor, wavePreview, zoneLabel } from '../src/hud-model.js';
 import { createDefenseMatch } from '../src/defense.js';
 
 // §190：结局面板别给「假出口」。城堡陷落之后那一局就结束了（内核 `updateDefense` 在 `m.over` 时直接
@@ -105,6 +105,17 @@ test('下一波预告：把波次表翻成人话，Boss 波要标出来', () => 
   const air = wavePreview(2);
   assert.match(air.text, /空中/, '空中单位要提示（只有对空塔打得到）');
   assert.ok(air.groups.some((g) => g.armorType), '要带上护甲类型，供 UI 提示克制');
+
+  const sprint = wavePreview(3);
+  assert.ok(sprint.chips.some((c) => c.id === 'sprint' && c.label === '冲刺' && c.count === 11));
+  assert.ok(sprint.chips.some((c) => c.id === 'siege'));
+  assert.match(sprint.text, /冲刺/);
+  assert.ok(wavePreview(9).chips.some((c) => c.id === 'split'));
+  assert.ok(wavePreview(13, 3, WAVES_LONG).chips.some((c) => c.id === 'heal' && c.label === '治疗'));
+  assert.deepEqual(creepRoles(MONSTERS.mob_02), ['sprint']);
+  assert.deepEqual(creepRoles(MONSTERS.mob_01), []);
+  assert.ok(roleGlyph('sprint').some((p) => p.stroke), '冲刺图标要有速度线，不能只靠填色');
+  assert.ok(roleGlyph('air').length >= 3);
 });
 
 test('伤害飘字：按两帧血量差生成，大伤害单独标记，数量有上限', () => {

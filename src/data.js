@@ -31,7 +31,7 @@ export const DIFFICULTY = {
 export const MONSTERS = {
   mob_01: { id: 'mob_01', name: '冰霜食尸鬼', tier: 'normal', level: 1, hp: 90, armor: 1, armorType: 'medium', attack: 8, atkSpeed: 1.0, speed: 300, bounty: 12, lumber: 0, coreDamage: 60, attackType: 'normal' },
   // 对核心伤害 60（v0.7 修正：原 55 比第 1 波的 mob_01 还低，且让容错率掉出附录 B 的 30-50）
-  mob_02: { id: 'mob_02', name: '霜狼', tier: 'normal', level: 2, hp: 70, armor: 0, armorType: 'light', attack: 6, atkSpeed: 1.3, speed: 380, bounty: 14, lumber: 0, coreDamage: 60, attackType: 'normal' },
+  mob_02: { id: 'mob_02', name: '霜狼', tier: 'normal', level: 2, hp: 70, armor: 0, armorType: 'light', attack: 6, atkSpeed: 1.3, speed: 380, bounty: 14, lumber: 0, coreDamage: 60, attackType: 'normal', sprint: { period: 4.8, burst: 1.2, mul: 1.45 } },
   mob_03: { id: 'mob_03', name: '石像鬼', tier: 'normal', level: 3, hp: 110, armor: 2, armorType: 'medium', attack: 10, atkSpeed: 1.1, speed: 330, bounty: 20, lumber: 0, coreDamage: 70, attackType: 'pierce', isAir: true },
   mob_04: { id: 'mob_04', name: '沼泽巨魔', tier: 'normal', level: 4, hp: 220, armor: 3, armorType: 'heavy', attack: 16, atkSpeed: 0.8, speed: 260, bounty: 26, lumber: 0, coreDamage: 90, attackType: 'normal' },
   mob_10: { id: 'mob_10', name: '冰甲卫士', tier: 'elite', level: 7, hp: 900, armor: 6, armorType: 'fortified', attack: 30, atkSpeed: 1.0, speed: 240, bounty: 120, lumber: 2, coreDamage: 220, attackType: 'normal', siege: true },

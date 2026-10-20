@@ -122,6 +122,19 @@ test('小游戏战场 HUD：下一波预告那一行（§8.3）画出来，太�
   assert.ok(line.endsWith('…'), `裁过的预告要以省略号收尾（实际「${line}」）`);
   assert.ok(line.length < 100 * 4, '裁过之后要明显短于原文');
   assert.equal(L.preview.y, 48, '预告那一行在顶栏（38）与提示行（60）之间');
+  assert.equal(L.roster.h, 44, '职责芯片要有 44px 的触摸高度');
+  assert.ok(L.roster.x + L.roster.w <= 368, '芯片要停在倍速键左边');
+
+  const chips = fakeCtx();
+  drawBattleHud(chips, {
+    wave: { index: 2, phase: 'prep', timer: 9 }, length: 'short',
+    gold: 200, lumber: [0], core: { hp: 2400, maxHp: 2400 }, result: null, stats: {}, time: 0,
+  }, L, {
+    preview: '下一波：【精英波】11×霜狼（轻甲·冲刺） + 1×冰甲卫士（加强甲·攻城）',
+    roster: [{ id: 'sprint', label: '冲刺', count: 11 }, { id: 'siege', label: '攻城', count: 1 }],
+  });
+  assert.ok(chips.texts.some((t) => t === '冲刺') && chips.texts.some((t) => t === '攻城'), '职责名要直接画在芯片上');
+  assert.ok(chips.texts.some((t) => t === '11'), '数量也要写在芯片上');
 });
 
 test('小游戏战场：在假 wx 里真的能打起来（点塔位建塔 → 开波 → 90 秒后有击杀、波次推进）', async () => {

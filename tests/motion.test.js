@@ -62,6 +62,7 @@ test('四种弹道和命中的形状互不相同，减速是菱形不是圆', ()
   assert.ok(FX_LIMITS.low.trail < FX_LIMITS.high.trail);
   assert.ok(FX_LIMITS.low.impacts < FX_LIMITS.high.impacts);
   assert.ok(FX_LIMITS.low.corpses <= 12);
+  assert.ok(FX_LIMITS.low.sprint < FX_LIMITS.high.sprint);
 });
 
 function fakeContext() {
@@ -140,6 +141,32 @@ test('减速、受击、死亡淡出、炮塔后坐会多出笔画，静止帧�
   kick.m.towers[0].cooldown = 1 / kick.m.towers[0].stats.atkSpeed;
   kick.r.draw({ m: kick.m, now: 0 });
   assert.ok(lines(kick.ctx) > lines(idle.ctx), '炮塔刚开火要多出后坐的笔画');
+
+  const quiet = scene();
+  quiet.m.time = 0;
+  const held = mob(MONSTERS.mob_02);
+  held.attacking = true;
+  quiet.m.monsters = [held];
+  quiet.r.draw({ m: quiet.m, now: 0, fx: 'high' });
+  const burst = scene();
+  burst.m.time = 0;
+  burst.m.monsters = [mob(MONSTERS.mob_02)];
+  burst.r.draw({ m: burst.m, now: 0, fx: 'high' });
+  assert.ok(lines(burst.ctx) > lines(quiet.ctx), '冲刺要多出灰白速度线');
+  const cruise = scene();
+  cruise.m.time = 2;
+  cruise.m.monsters = [mob(MONSTERS.mob_02)];
+  cruise.r.draw({ m: cruise.m, now: 0, fx: 'high' });
+  assert.equal(lines(cruise.ctx), lines(quiet.ctx), '爆发窗外不画速度线');
+
+  const pack = (fx) => {
+    const s = scene();
+    s.m.time = 0;
+    s.m.monsters = Array.from({ length: 8 }, (_, i) => mob(MONSTERS.mob_02, { uid: 40 + i }));
+    s.r.draw({ m: s.m, now: 0, fx });
+    return lines(s.ctx);
+  };
+  assert.ok(pack('high') >= pack('low') + 8, '低特效档的冲刺线更少');
 });
 
 test('弹道按塔种换形状，低档拖尾更短，命中残留有上限', () => {

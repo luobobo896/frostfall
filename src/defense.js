@@ -6,7 +6,7 @@ import {
   MONSTERS, QUALITY_ORDER, TICK_STEP,
 } from './data.js';
 import { computeDamage, findPath, gridDist, makeRng, project } from './core.js';
-import { damageMonster, grantExp, heroAttack, heroDamageReduce, heroDodge, heroMaxHp, heroStats, makeEquipment, stepMonsterEffects, updateHeroBuffs } from './match.js';
+import { damageMonster, grantExp, heroAttack, heroDamageReduce, heroDodge, heroMaxHp, heroStats, makeEquipment, sprintState, stepMonsterEffects, updateHeroBuffs } from './match.js';
 
 const key = (x, y) => `${x},${y}`;
 
@@ -493,7 +493,7 @@ function stepMonsters(m, dt) {
     if (!mon.path.length || m.time - (mon.pathAt ?? -9) > 1) repath(m, mon, goal);
     if (!mon.path.length) continue;
     if (stunned) continue;                      // 被眩晕：这一帧不动
-    const speed = TILE_SPEED(mon.speed) * (1 - slow) * dt;
+    const speed = TILE_SPEED(mon.speed) * (1 - slow) * sprintState(mon.def, m.time).mul * dt;
     mon.carry = (mon.carry ?? 0) + speed;
     while (mon.carry >= 1 && mon.path.length) {
       mon.carry -= 1;

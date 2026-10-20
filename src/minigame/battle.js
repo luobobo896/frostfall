@@ -10,7 +10,7 @@ import {
   EQUIP_SELL_BONUS_LUMBER, EQUIP_SELL_REFUND, EQUIP_SLOTS, QUALITY, QUALITY_ORDER,
   SHOP_ITEMS, TARGET_PRIORITIES, TOWERS, TOWER_SELL_REFUND,
 } from '../data.js';
-import { attackHint, resultPanelModel, shopRows, wavePreview } from '../hud-model.js';
+import { attackHint, resultPanelModel, roleGlyph, shopRows, wavePreview } from '../hud-model.js';
 import { fitText } from '../render.js';
 import {
   REVIVE_LUMBER, TOWER_REPAIR_GOLD, craftableSlots, enhanceCostOf, potionCount, shopPriceOf, skillLevel,
@@ -141,8 +141,10 @@ export function layoutBattle(model = {}) {
     // 顶栏只到 x=368：右边要留给倍速/暂停两个键（再往右是右上角胶囊区，官方要求避开）
     top: { x: 12, y: 8, w: 356, h: 30 },
     result: { x: 173, y: 120, w: 320, h: 130 },
-    // 下一波预告那一行（y=48：顶栏到 38 为止，再往下 60 是提示行；宽度在倍速键 380 之前收住）
+    // 下一波预告那一行（y=48：顶栏到 38 为止；宽度在倍速键 380 之前收住）
     preview: { x: 12, y: 48, w: 360 },
+    // 职责芯片永远占这一格（44 高，左缘停在倍速键之前）。没职责时不画，格子仍留着，免得波次一变整页跳动。
+    roster: { x: 12, y: 62, w: 356, h: 44 },
     // 英雄读数（等级 / 阵亡倒计时）：写在 y=48 那一行的右端，右对齐（x 是右边界）
     heroLine: { x: DESIGN.w - 12, y: 48 },
     tutorial: tutorial ? { x: 12, y: 261, w: 643, h: 44, text: tutorial } : null,
@@ -195,8 +197,52 @@ export function hitTestBattle(L, x, y) {
   return null;
 }
 
+function drawRoleGlyph(ctx, id, x, y, size) {
+  const s = size / 24;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(s, s);
+  ctx.fillStyle = '#e7edf4';
+  ctx.strokeStyle = '#e7edf4';
+  ctx.lineWidth = 1.6;
+  ctx.lineCap = 'round';
+  for (const part of roleGlyph(id)) {
+    ctx.beginPath();
+    if (part.ellipse) {
+      ctx.ellipse(part.ellipse[0], part.ellipse[1], part.ellipse[2], part.ellipse[3], 0, 0, Math.PI * 2);
+      if (part.stroke) ctx.stroke();
+      else ctx.fill();
+      continue;
+    }
+    part.d.forEach((p, i) => (i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1])));
+    if (part.stroke) ctx.stroke();
+    else { ctx.closePath(); ctx.fill(); }
+  }
+  ctx.restore();
+  ctx.lineWidth = 1;
+}
+
+/** 胖芯片：图标 + 职责名 + 数量都常显。高度 44，不靠悬停。 */
+function drawRoster(ctx, chips, box) {
+  const gap = 4;
+  const n = chips.length;
+  const w = (box.w - gap * (n - 1)) / n;
+  chips.forEach((c, i) => {
+    const x = box.x + i * (w + gap);
+    ctx.fillStyle = '#121a28';
+    roundRect(ctx, x, box.y, w, box.h, 8);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(180,200,220,.45)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    drawRoleGlyph(ctx, c.id, x + 6, box.y + (box.h - 28) / 2, 28);
+    text(ctx, c.label, x + 38, box.y + box.h / 2 - 8, { size: 13, weight: 'bold', color: '#e7edf4' });
+    text(ctx, String(c.count), x + 38, box.y + box.h / 2 + 10, { size: 12, color: COLORS.dim });
+  });
+}
+
 /** 画 HUD（战场本身由 render.js 画，这里只画压在上面的那一圈） */
-export function drawBattleHud(ctx, m, L, { selectedTower = 'tw_arrow', message = null, preview = null, heroSelected = false } = {}) {
+export function drawBattleHud(ctx, m, L, { selectedTower = 'tw_arrow', message = null, preview = null, roster = null, heroSelected = false } = {}) {
   const waveLabel = m.length === 'long' ? `${m.wave.index} / 30 波` : `${m.wave.index} / 12 波`;
   const core = `${Math.round(m.core.hp)}/${m.core.maxHp}`;
   const phase = m.wave.phase === 'prep' ? `备战 ${Math.ceil(m.wave.timer)}s` : '交战中';
@@ -221,6 +267,8 @@ export function drawBattleHud(ctx, m, L, { selectedTower = 'tw_arrow', message =
   if (preview) {
     text(ctx, fitText(ctx, preview, L.preview.w), L.preview.x, L.preview.y, { size: 11, color: COLORS.dim });
   }
+  const chips = Array.isArray(roster) ? roster : [];
+  if (chips.length && L.roster && !m.result) drawRoster(ctx, chips, L.roster);
   /**
    * 英雄那一格（§14.3 稿 6 压缩成一行，与防守那屏同一个写法）：平时写等级，**阵亡写倒计时**——
    * 不然人躺在地上，界面上一个字都不提还要等多久。写在预告那一行的右端（顶栏已满）。
@@ -263,7 +311,8 @@ export function drawBattleHud(ctx, m, L, { selectedTower = 'tw_arrow', message =
   }
 
   if (message) {
-    text(ctx, message, L.w / 2, 60, { size: 12, align: 'center', color: COLORS.gold });
+    const y = chips.length && L.roster && !m.result ? L.roster.y + L.roster.h + 16 : 60;
+    text(ctx, message, L.w / 2, y, { size: 12, align: 'center', color: COLORS.gold });
   }
 
   return L;

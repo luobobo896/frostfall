@@ -1298,6 +1298,19 @@ const NO_AURA = { atkSpeedPct: 0, healHps: 0 };
 /** 测试/调试入口：现挑携带者再结算。 */
 export const auraAt = (m, mon) => auraFrom(auraCarriers(m), mon, !!m.map?.def?.bossAura);
 
+/**
+ * 冲刺：按对局时间切爆发窗，不改表上的 `speed`（§170 锁着霜狼 380）。
+ * 窗内倍率，窗外 1。没有 `sprint` 的怪永远是 1。眩晕时移动本来就停，这里不再乘。
+ */
+export function sprintState(def, time = 0) {
+  const spec = def?.sprint;
+  if (!spec || !(spec.period > 0) || !(spec.mul > 1) || !(spec.burst > 0)) return { on: false, mul: 1 };
+  const t = Number(time) || 0;
+  const phase = t - Math.floor(t / spec.period) * spec.period;
+  const on = phase < spec.burst;
+  return { on, mul: on ? spec.mul : 1 };
+}
+
 function monsterStep(m, dt) {
   const carriers = auraCarriers(m);
   const bossAurasOn = !!m.map?.def?.bossAura;
@@ -1380,7 +1393,7 @@ function monsterStep(m, dt) {
           }
         }
       } else {
-        mon.dist += mon.speed * (1 - slow) * (swamp ? 0.9 : 1) * dt;
+        mon.dist += mon.speed * (1 - slow) * (swamp ? 0.9 : 1) * sprintState(mon.def, m.time).mul * dt;
       }
     }
 
