@@ -987,6 +987,7 @@ function frameBody(now) {
   renderer.draw({
     m: match, selectedSlot: view.selectedSlot, selectedTower: view.selectedTower,
     placingTowerId: ui.placingTowerId?.() ?? null,
+    fx: view.render?.showFloaters === false ? 'low' : 'high',
     floaters: view.render?.showFloaters === false ? [] : view.floaters,
     pending: pendingTowers, localSlot: view.localSlot, now: floatNow,
     hintSlots: tutorial?.hintSlotCount?.() ?? 0,

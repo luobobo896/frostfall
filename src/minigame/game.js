@@ -478,10 +478,17 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
         b.ui = { selectedSlot: null, panelSlot: null, sellArmed: false };
         return action;
       case 'build': {
+        // 第一下只预览射程（和浏览器轮盘悬停同一件事）。同一座再点一次才真的建。
+        const name = TOWERS[action.towerId]?.name ?? '这座塔';
+        if (b.ui.placingTowerId !== action.towerId || b.ui.selectedSlot !== action.slot) {
+          b.ui = { ...b.ui, selectedSlot: action.slot, panelSlot: null, sellArmed: false, placingTowerId: action.towerId };
+          note(b, `${name} · 再点一次确认`);
+          return { ...action, preview: true };
+        }
         const ok = buildTower(b.m, action.slot, action.towerId, 0);
         if (ok) b.tutorial?.onTowerBuilt(b.m.time);   // 引导第一步/第二步靠「真的建了塔」推进
         // 提示里写**玩家认得的名字**，不是 `tw_arrow` 这种内部 id（出门的版本里不该出现 id）
-        note(b, ok ? `建了 ${TOWERS[action.towerId]?.name ?? '塔'}` : '金币不足或这里不能建');
+        note(b, ok ? `建了 ${name}` : '金币不足或这里不能建');
         if (ok) b.ui = { selectedSlot: null, panelSlot: action.slot, sellArmed: false };
         return action;
       }
@@ -888,6 +895,7 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
       // 「你刚才点的这里」的记号（面板状态是唯一来源，用不着另外去清 `b.fortSlot`）
       b.renderer.draw({
         m: b.m, scale: settings.zoom ?? 1.5, now: nowSec, floaters,
+        fx: settings.effects === 'low' ? 'low' : 'high',
         selectedFortSlot: b.ui.sheetKind === 'fort' ? b.fortSlot : null,
       });
       const o = hudOffset();
@@ -910,6 +918,8 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
          * 小游戏以前写死 null，于是「点塔位 → 面板」这条路里画面上什么都没变。
          */
         m: b.m, selectedSlot: b.ui.selectedSlot, selectedTower: b.ui.panelSlot, localSlot: 0, now: nowSec,
+        placingTowerId: b.ui.placingTowerId ?? null,
+        fx: settings.effects === 'low' ? 'low' : 'high',
         floaters,
         pulses: settings.effects !== 'low',
         hintSlots: b.tutorial?.hintSlotCount() ?? 0,

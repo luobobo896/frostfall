@@ -343,10 +343,12 @@ export function layoutSheet(m, ui = {}) {
     // 建造：4 种塔两列排（比单列省一半高度）
     TOWER_ORDER.forEach((id, i) => {
       const col = i % 2, row = Math.floor(i / 2);
+      const preview = ui.placingTowerId === id;
       rows.push({
-        id: `build-${id}`, label: TOWERS[id].name, sub: `${TOWERS[id].cost} 金`,
+        id: `build-${id}`, label: TOWERS[id].name, sub: preview ? '再点确认' : `${TOWERS[id].cost} 金`,
         x: 20 + col * 314, y: 96 + row * 50, w: 300, h: 44,
         disabled: m.gold < TOWERS[id].cost,
+        on: preview,
         action: { type: 'build', slot, towerId: id },
       });
     });
@@ -356,7 +358,9 @@ export function layoutSheet(m, ui = {}) {
     return {
       kind: 'build',
       title: `在这里建塔（第 ${slot + 1} 号塔位 · 金币 ${Math.round(m.gold)}）`,
-      hint: cell ? `格 ${cell.x},${cell.y}` : '',
+      hint: ui.placingTowerId
+        ? `射程已标出 · 再点一次建造${TOWERS[ui.placingTowerId]?.name ?? ''}`
+        : (cell ? `格 ${cell.x},${cell.y}` : ''),
       box: { x: 12, y: 62, w: 643, h: 194 },
       rows, byId: Object.fromEntries(rows.map((r) => [r.id, r])),
     };
