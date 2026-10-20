@@ -993,7 +993,7 @@ export function castSkill(m, index) {
       const bonus = t.armorType === 'fortified' ? def.fortifiedBonus : 0;
       damageMonster(m, t, computeDamage({
         atk: hit(pick(def.dmg)), attackType: 'magic', armor: t.armor, armorType: t.armorType,
-        armorPierce: def.armorPierce, bonus, rng: m.rng,
+        armorPierce: def.armorPierce, bonus, resist: t.def?.resist, rng: m.rng,
       }).damage, 'hero');
       break;
     }
@@ -1202,7 +1202,7 @@ export function heroAttack(m, target) {
   const w = st.weapon;
   const dmgTo = (mo, atk) => damageMonster(m, mo, computeDamage({
     atk, attackType: st.attackType, armor: mo.armor, armorType: mo.armorType,
-    critRate: st.critRate, critDmg: st.critDmg, armorPierce: st.armorPierce,
+    critRate: st.critRate, critDmg: st.critDmg, armorPierce: st.armorPierce, resist: mo.def?.resist,
     // §3.5 猎人印记：「目标受到伤害 +20%/35%」是对**所有**来源生效的 debuff，
     // 塔的弹道在 projectileHit 里已经算过它了；英雄自己的普攻也得算，否则「印记只帮塔、不帮自己」。
     bonus: (w?.special?.vsAir && mo.isAir ? w.special.vsAir : 0)
@@ -1273,7 +1273,8 @@ function stepTowerAuras(m, dt) {
       if (aura.slowPct > 0) applySlow(mon, aura.slowPct, until);
       if (!chipNow || !(aura.chip > 0) || mon.dead) continue;
       const dealt = computeDamage({
-        atk: aura.chip, attackType: 'magic', armor: mon.armor, armorType: mon.armorType, rng: m.rng,
+        atk: aura.chip, attackType: 'magic', armor: mon.armor, armorType: mon.armorType,
+        resist: mon.def?.resist, rng: m.rng,
       }).damage;
       damageMonster(m, mon, dealt, t.towerId, t.owner ?? 0);
     }
@@ -1298,7 +1299,7 @@ function projectileHit(m, p) {
   const mark = target.effects.find((e) => e.type === 'mark');
   const dealt = computeDamage({
     atk: p.damage, attackType: s.attackType, armor: target.armor, armorType: target.armorType,
-    targetReduce: -(mark?.value ?? 0), rng: m.rng,
+    targetReduce: -(mark?.value ?? 0), resist: target.def?.resist, rng: m.rng,
   }).damage;
   const landing = monsterCell(m, target);
   damageMonster(m, target, dealt, p.towerId, p.owner ?? 0);
@@ -1308,7 +1309,8 @@ function projectileHit(m, p) {
       const d = gridDist(monsterCell(m, mo), landing);
       damageMonster(m, mo, computeDamage({
         atk: p.damage * splashScale(d, s.special.splashRadius),
-        attackType: s.attackType, armor: mo.armor, armorType: mo.armorType, rng: m.rng,
+        attackType: s.attackType, armor: mo.armor, armorType: mo.armorType,
+        resist: mo.def?.resist, rng: m.rng,
       }).damage, p.towerId, p.owner ?? 0);
     }
   }

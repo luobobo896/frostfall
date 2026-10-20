@@ -10,7 +10,7 @@ import {
 } from './match.js';
 import { qualityColor, towerName } from './render.js';
 import { attackHint, commandStrip, detectNote, heroCard, heroCards, isLowHp, resultPanelModel, roleGlyphSvg, scoreboard, shopRows, towerRoleNote, wavePreview, zoneLabel } from './hud-model.js';
-import { assaultStealthCount, zoneAt } from './defense.js';
+import { assaultResistCount, assaultStealthCount, zoneAt } from './defense.js';
 
 const $ = (id) => document.getElementById(id);
 const PRIORITY_LABEL = { front: '最靠前', strongest: '最强', weakest: '最弱', air_first: '空中优先' };
@@ -114,9 +114,10 @@ export function createUI(handlers) {
     el.defRound.textContent = String(m.assault.round);
     const t = Math.max(0, Math.round(m.assault.timer));
     const detectHint = assaultStealthCount(m) > 0 ? ' · 隐身，需要侦测' : '';
+    const resistHint = assaultResistCount(m) > 0 ? ' · 霜壳，需要魔法' : '';
     el.defTimer.textContent = (m.assault.warning
       ? `⚠ ${t}s 后进攻`
-      : `下一波 ${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`) + detectHint;
+      : `下一波 ${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`) + detectHint + resistHint;
     const warnPct = Math.min(100, (1 - m.assault.timer / 180) * 100);
     el.defWarnBar.style.width = `${warnPct}%`;
     el.defCastle.textContent = `${Math.round(m.castle.hp)} / ${m.castle.maxHp}`;

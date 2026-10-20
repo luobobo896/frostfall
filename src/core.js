@@ -43,6 +43,20 @@ export function typeMultiplier(attackType, armorType) {
 }
 
 /**
+ * 霜壳：克制系数之后再乘的一层。只削写明的攻击通道。
+ * 没写的通道（魔法、混乱）是 1，所以冰塔、静电塔和寒霜祭坛的刮伤仍走护甲表。
+ * 大于 1 的数夹回 1——这层只负责减伤，不另开增伤。没有 resist 的单位永远是 1。
+ */
+export function resistMultiplier(attackType, resist) {
+  if (!resist || typeof resist !== 'object') return 1;
+  const raw = resist[attackType];
+  if (raw == null || raw === '') return 1;
+  const n = Number(raw);
+  if (!(n > 0)) return 1;
+  return n > 1 ? 1 : n;
+}
+
+/**
  * §7.2 完整伤害公式。
  * base    = atk × 克制系数[攻击类型][护甲类型]
  * 暴击    = rng < critRate ? base × (1 + critDmg) : base
@@ -56,12 +70,12 @@ export function typeMultiplier(attackType, armorType) {
 export function computeDamage({
   atk, attackType, armor, armorType,
   critRate = 0, critDmg = 0.5, armorPierce = 0,
-  bonus = 0, targetReduce = 0, rng = Math.random,
+  bonus = 0, targetReduce = 0, resist = null, rng = Math.random,
 }) {
   // §7.3 的上限：所有伤害都从这里过，夹在这一个地方就够（暴击率 75%、护甲穿透 60%）
   critRate = Math.min(STAT_CAPS.critRate, critRate);
   armorPierce = Math.min(STAT_CAPS.armorPierce, armorPierce);
-  const mult = typeMultiplier(attackType, armorType);
+  const mult = typeMultiplier(attackType, armorType) * resistMultiplier(attackType, resist);
   const base = atk * mult;
   const crit = rng() < critRate;
   const afterCrit = crit ? base * (1 + critDmg) : base;

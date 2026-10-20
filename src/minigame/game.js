@@ -31,7 +31,7 @@ import { createLaneMinimap, createMinimap, createRenderer, pointHitsHero } from 
 import { bootSprites } from '../assets.js';
 import { damageFloaters, wavePreview } from '../hud-model.js';
 import {
-  assaultStealthCount, buildFort, createDefenseMatch, describeDefense, fortTapTarget, orderMove, repairCastle, steerGoal, teleportHome, updateDefense, upgradeFort,
+  assaultResistCount, assaultStealthCount, buildFort, createDefenseMatch, describeDefense, fortTapTarget, orderMove, repairCastle, steerGoal, teleportHome, updateDefense, upgradeFort,
 } from '../defense.js';
 import {
   MINIMAP, drawDefenseHud, hitTestDefense, inStickZone, layoutDefense, layoutFortSheet, stickBase, stickVector,
@@ -1255,6 +1255,10 @@ export const defModel = (b) => ({
   round: b.m.assault?.round ?? 0, warning: !!b.m.assault?.warning,
   stealthAlert: (() => {
     const n = assaultStealthCount(b.m);
+    return n > 0 ? { count: n } : null;
+  })(),
+  resistAlert: (() => {
+    const n = assaultResistCount(b.m);
     return n > 0 ? { count: n } : null;
   })(),
   // §131：守住 4 轮转无尽之后，玩家还得能接着玩——**结算面板还在时**才给那颗「继续（无尽）」
