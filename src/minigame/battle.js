@@ -14,7 +14,7 @@ import { attackHint, resultPanelModel, shopRows, wavePreview } from '../hud-mode
 import { fitText } from '../render.js';
 import {
   REVIVE_LUMBER, TOWER_REPAIR_GOLD, craftableSlots, enhanceCostOf, potionCount, shopPriceOf, skillLevel,
-  towerStatsAt, upgradeCost,
+  heroMaxHp, towerStatsAt, upgradeCost,
 } from '../match.js';
 
 export const DESIGN = { w: 667, h: 375 };
@@ -133,6 +133,8 @@ export function layoutBattle(model = {}) {
    */
   const tutorial = model.tutorial ?? null;
   if (tutorial) items.push(item('tutorialSkip', 574, 261, 81, 44, '跳过', { type: 'tutorialSkip' }));
+  // 左侧拇指区的驻守肖像。整块 ≥44 是选择热区；技能仍是底排那几颗胖按钮。
+  items.push(item('portrait', 12, 188, 160, 64, '驻守英雄', { type: 'selectHero' }, { on: !!model.hero?.selected }));
   return {
     w: DESIGN.w, h: DESIGN.h,
     capsule: { x: DESIGN.w - CAPSULE.w - 8, y: 6, w: CAPSULE.w, h: CAPSULE.h },
@@ -149,6 +151,41 @@ export function layoutBattle(model = {}) {
   };
 }
 
+/**
+ * 驻守肖像：暗底、选中描金、40px 标记、血条、最多 6 个背包点。
+ * 像素每帧都要重画（画布每帧清空），布局对象本身可以复用。
+ */
+function drawPortrait(ctx, m, it, selected) {
+  ctx.fillStyle = '#121a28';
+  roundRect(ctx, it.x, it.y, it.w, it.h, 2);
+  ctx.fill();
+  ctx.strokeStyle = selected ? '#e0c36a' : COLORS.panelLine;
+  ctx.lineWidth = selected ? 2 : 1;
+  ctx.stroke();
+  const mark = 40;
+  const mx = it.x + 8, my = it.y + (it.h - mark) / 2;
+  ctx.fillStyle = '#1a2433';
+  ctx.fillRect(mx, my, mark, mark);
+  ctx.strokeStyle = selected ? '#e0c36a' : '#8a93a3';
+  ctx.strokeRect(mx, my, mark, mark);
+  text(ctx, '驻', mx + mark / 2, my + mark / 2, { size: 16, align: 'center', color: '#e8d7a2', weight: 'bold' });
+  const name = m.hero?.def?.name ?? '英雄';
+  const lv = m.hero?.level ?? 1;
+  text(ctx, `${name}  Lv${lv}`, it.x + 56, it.y + 16, { size: 12, weight: 'bold' });
+  const max = Math.max(1, m.hero ? heroMaxHp(m.hero) : 1);
+  const pct = Math.max(0, Math.min(1, (m.hero?.hp ?? 0) / max));
+  ctx.fillStyle = 'rgba(255,255,255,.12)';
+  ctx.fillRect(it.x + 56, it.y + 28, 108, 6);
+  ctx.fillStyle = pct < 0.2 ? '#d1503f' : '#35a85a';
+  ctx.fillRect(it.x + 56, it.y + 28, 108 * pct, 6);
+  const dots = Math.min(6, m.inventory?.length ?? 0);
+  for (let i = 0; i < 6; i++) {
+    ctx.fillStyle = i < dots ? '#e0c36a' : 'rgba(255,255,255,.18)';
+    ctx.fillRect(it.x + 56 + i * 10, it.y + 44, 6, 6);
+  }
+  ctx.lineWidth = 1;
+}
+
 /** 触点 → HUD 动作（返回 null 表示点在战场空白处，交给调用方翻成「点塔位」） */
 export function hitTestBattle(L, x, y) {
   for (const it of L.items) {
@@ -159,7 +196,7 @@ export function hitTestBattle(L, x, y) {
 }
 
 /** 画 HUD（战场本身由 render.js 画，这里只画压在上面的那一圈） */
-export function drawBattleHud(ctx, m, L, { selectedTower = 'tw_arrow', message = null, preview = null } = {}) {
+export function drawBattleHud(ctx, m, L, { selectedTower = 'tw_arrow', message = null, preview = null, heroSelected = false } = {}) {
   const waveLabel = m.length === 'long' ? `${m.wave.index} / 30 波` : `${m.wave.index} / 12 波`;
   const core = `${Math.round(m.core.hp)}/${m.core.maxHp}`;
   const phase = m.wave.phase === 'prep' ? `备战 ${Math.ceil(m.wave.timer)}s` : '交战中';
@@ -190,7 +227,7 @@ export function drawBattleHud(ctx, m, L, { selectedTower = 'tw_arrow', message =
    */
   if (L.heroLine) {
     const dead = !!m.hero?.dead;
-    text(ctx, dead ? `阵亡 ${Math.ceil(m.hero.reviveTimer ?? 0)}s` : `英雄 Lv${m.hero?.level ?? 1}`,
+    text(ctx, dead ? `阵亡 ${Math.ceil(m.hero.reviveTimer ?? 0)}s` : `驻守英雄 Lv${m.hero?.level ?? 1}`,
       L.heroLine.x, L.heroLine.y, { size: 11, align: 'right', color: dead ? COLORS.danger : COLORS.dim });
   }
 
@@ -206,6 +243,7 @@ export function drawBattleHud(ctx, m, L, { selectedTower = 'tw_arrow', message =
   }
 
   for (const it of L.items) {
+    if (it.id === 'portrait') { drawPortrait(ctx, m, it, heroSelected || !!it.on); continue; }
     const on = !!it.on;
     ctx.fillStyle = on ? 'rgba(90,169,230,0.24)' : COLORS.panel;
     roundRect(ctx, it.x, it.y, it.w, it.h, 8);
@@ -548,7 +586,12 @@ export function layoutPause(m, ui = {}) {
    */
   rows.push({
     id: 'effects', label: '特效', sub: sv.effects === 'low' ? '低' : '高',
-    x: 334, y: 180, w: 300, h: 44, on: sv.effects === 'low', action: { type: 'effects' },
+    x: 334, y: 180, w: 146, h: 44, on: sv.effects === 'low', action: { type: 'effects' },
+  });
+  // 和特效并排：这一屏竖向已经满了，不再加一行。60 稳帧，120 交给高刷。
+  rows.push({
+    id: 'fps', label: '帧率', sub: sv.fps === 120 ? '120' : '60',
+    x: 488, y: 180, w: 146, h: 44, on: sv.fps === 120, action: { type: 'fps' },
   });
   /**
    * §154：这一格也按模式取舍——TD 摆「波次预告」（§8.3：开波前先看这一波是什么），

@@ -2,7 +2,7 @@
 
 import { DEFENSE_MAPS, GRID, HERO_REVIVE, MAPS, MONSTERS, QUALITY, TEAM_COLORS, TOWERS } from './data.js';
 import { buildMap, heroPos, posAt, project } from './core.js';
-import { heroMaxHp, towerStatsAt } from './match.js';
+import { heroAbilityRange, heroMaxHp, holdCells, towerStatsAt } from './match.js';
 import { isLowHp } from './hud-model.js';
 import { viewport } from './platform.js';   // §平台适配：像素比在两个环境里的取法不同
 import { heroSpriteKey, mobSpriteKey, resolveSprite, tileSpriteKey, towerSpriteKey } from './assets.js';
@@ -50,6 +50,20 @@ export function terrainPaint(kind) {
 }
 
 const r3 = (n) => Math.round(n * 1000) / 1000;
+
+/** 暖色轮廓只画在英雄身上。塔用队伍色底座环，怪的光环是另一色。 */
+export const HERO_GLOW = { stroke: '#ffd68a', lineWidth: 3, halo: 'rgba(255, 214, 138, .35)', haloWidth: 7, haloScale: 1.42 };
+/** 英雄技能圈：虚线、冷色、不填奶油底，和塔的射程圈分开。 */
+export const HERO_SKILL_RING = { stroke: '#7ec8ff', lineWidth: 1.5, dash: [5, 4] };
+/** 点英雄的半径下限（直径约 44px）。视觉半径更大时跟视觉走。 */
+export const HERO_HIT_PX = 44;
+
+export function pointHitsHero(screen, scale, sx, sy) {
+  const r = Math.max(HERO_HIT_PX / 2, 16 * (scale || 1) + 8);
+  const dx = sx - (screen?.x ?? 0);
+  const dy = sy - (screen?.y ?? 0);
+  return dx * dx + dy * dy <= r * r;
+}
 
 /** 尖刺星。外半径 1，调用方用自己的 `r` 去缩放（Boss 的 r 本来就比普通怪大约一倍）。 */
 function starPoints(spikes, outer, inner, squash = 0.78) {
@@ -776,6 +790,53 @@ export function createRenderer(canvas, { size = null } = {}) {
     ctx.lineWidth = 1;
   }
 
+  /** 英雄技能圈：虚线冷色，不铺塔那种奶油填充。四个刻度再和实线圈拉开。 */
+  function drawHeroSkillRing(cell, range) {
+    if (!cell || !(Number(range) > 0)) return;
+    const c = toScreen(cell.x, cell.y, 0);
+    const rx = range * (GRID.tileW / 2) * view.scale;
+    const ry = range * (GRID.tileH / 2) * view.scale;
+    ctx.beginPath();
+    ctx.ellipse(c.x, c.y, rx, ry, 0, 0, Math.PI * 2);
+    ctx.setLineDash(HERO_SKILL_RING.dash);
+    ctx.strokeStyle = HERO_SKILL_RING.stroke;
+    ctx.lineWidth = HERO_SKILL_RING.lineWidth;
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.lineWidth = 1;
+    const ticks = [[0, -1], [1, 0], [0, 1], [-1, 0]];
+    ctx.beginPath();
+    for (const [tx, ty] of ticks) {
+      ctx.moveTo(c.x + tx * rx * 0.92, c.y + ty * ry * 0.92);
+      ctx.lineTo(c.x + tx * rx * 1.08, c.y + ty * ry * 1.08);
+    }
+    ctx.strokeStyle = HERO_SKILL_RING.stroke;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    ctx.lineWidth = 1;
+  }
+
+  /** 选中英雄时标出能站住的格子。小菱形，不是塔位椭圆。低特效也画：这是操作信息，不是粒子。 */
+  function drawHoldMarks(m) {
+    const goal = m.hero?.hold;
+    const here = m.hero?.cell;
+    for (const c of holdCells(m)) {
+      const p = toScreen(c.x, c.y, 0);
+      const strong = !!(goal && goal.x === c.x && goal.y === c.y && !(here && here.x === c.x && here.y === c.y));
+      const s = (strong ? 6 : 3.5) * Math.max(0.65, view.scale);
+      ctx.beginPath();
+      ctx.moveTo(p.x, p.y - s);
+      ctx.lineTo(p.x + s * 0.72, p.y);
+      ctx.lineTo(p.x, p.y + s);
+      ctx.lineTo(p.x - s * 0.72, p.y);
+      ctx.closePath();
+      ctx.strokeStyle = strong ? '#f0d59a' : '#c9a36a';
+      ctx.lineWidth = strong ? 2 : 1;
+      ctx.stroke();
+    }
+    ctx.lineWidth = 1;
+  }
+
   function drawMonster(m, mo) {
     const z = mo.isAir ? 1.6 : 0;
     // §10.3：用亚格位置画（`dist` 是内核本来就有的连续量），逻辑判定仍走 mo.cell
@@ -864,7 +925,8 @@ export function createRenderer(canvas, { size = null } = {}) {
       : heroMotion({
         now: frameNow, dead, cooldown: h.cooldown, atkSpeed: h.def?.atkSpeed, uid: 1,
       });
-    const c = { x: c0.x + motion.dx * view.scale, y: c0.y + motion.dy * view.scale };
+    const face = h.facing === 1 ? 1 : -1;
+    const c = { x: c0.x + motion.dx * view.scale * face, y: c0.y + motion.dy * view.scale };
     // 英雄是冠军单位，高于精英。倒下时收一截。暖色轮廓只有活着的英雄有。
     const r = bodyRadius('hero', view.scale) * (dead ? 0.82 : 1);
     const fill = dead ? '#5a6474' : (TEAM_COLORS[localSlot % TEAM_COLORS.length] ?? COLORS.hero);
@@ -882,9 +944,16 @@ export function createRenderer(canvas, { size = null } = {}) {
         stroke: 'rgba(8,14,22,.7)',
       });
     }
-    // 暖色轮廓只有英雄有。塔的队伍色在底座环上，不走这一圈。
-    ctx.strokeStyle = dead ? '#8b95a3' : '#ffd68a';
-    ctx.lineWidth = 3;
+    // 暖色轮廓只有英雄有。塔的队伍色在底座环上，不走这一圈。倒下之后光晕也收掉。
+    if (!dead) {
+      ctx.strokeStyle = HERO_GLOW.halo;
+      ctx.lineWidth = HERO_GLOW.haloWidth;
+      ctx.beginPath();
+      ctx.ellipse(c.x, c.y - r * 0.05, r * HERO_GLOW.haloScale, r * HERO_GLOW.haloScale * 0.78, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.strokeStyle = dead ? '#8b95a3' : HERO_GLOW.stroke;
+    ctx.lineWidth = HERO_GLOW.lineWidth;
     ctx.beginPath();
     ctx.ellipse(c.x, c.y - r * 0.05, r * 1.05, r * 0.82, 0, 0, Math.PI * 2);
     ctx.stroke();
@@ -1016,6 +1085,12 @@ export function createRenderer(canvas, { size = null } = {}) {
     if (placingTowerId && TOWERS[placingTowerId] && selectedSlot != null && !m.towers.some((t) => t.slot === selectedSlot)) {
       const cell = m.map.slots[selectedSlot];
       if (cell) drawRangeRing(cell, towerStatsAt(m.map, cell, placingTowerId, 1).range);
+    }
+    // 点选英雄之后才给驻守预览和技能圈（和塔的悬停圈同一规矩：先点中，再看范围）。
+    if (isoView.heroSelected && !m.hero.dead) {
+      drawHoldMarks(m);
+      const ability = heroAbilityRange(m.hero);
+      if (ability > 0) drawHeroSkillRing(heroPos(m.hero), ability);
     }
     drawFloaters(floaters, now);
   }

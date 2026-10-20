@@ -221,7 +221,16 @@ body { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none
    以前是在 renderDefense 里 `classList.add('hidden')` 且从不 remove，于是打完一局防守之后
    回到 TD，日志面板**整页**都不会再出现（验证记录 §94）。 */
 #stage.defense .hud-right { display: none; }
-.hero-panel { min-width: 220px; }
+.hero-panel { min-width: 220px; display: flex; gap: 8px; align-items: center; }
+.hero-panel.selected { border-color: #e0c36a; }
+.hero-readout { flex: 1; min-width: 0; }
+.hero-mark { width: 56px; height: 56px; min-width: 56px; min-height: 56px; flex: none;
+  border-radius: 2px; border: 1px solid #8a93a3; background: #1a2433; color: #e8d7a2;
+  font-size: 18px; font-weight: 700; cursor: pointer; }
+.hero-panel.selected .hero-mark { border-color: #e0c36a; }
+.inv-dots { display: inline-flex; gap: 3px; align-items: center; }
+.inv-dots i { width: 6px; height: 6px; border-radius: 1px; background: rgba(255,255,255,.18); display: block; }
+.inv-dots i.on { background: #e0c36a; }
 
 .bar { height: 8px; border-radius: 4px; background: rgba(255,255,255,.12); overflow: hidden; margin: 6px 0; }
 .bar > i { display: block; height: 100%; width: 0%; background: var(--accent); transition: width .12s linear; }

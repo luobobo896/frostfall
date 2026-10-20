@@ -2,7 +2,7 @@
 // 只序列化「变化的状态」，定义表从 data.js 现取；半空中的弹道直接丢掉（重开后自然重发）。
 
 import { FORTS, MONSTERS } from './data.js';
-import { createMatch, towerStatsAt } from './match.js';
+import { createMatch, isHoldCell, towerStatsAt } from './match.js';
 import { createDefenseMatch, onMonsterKilled } from './defense.js';
 import { storage } from './platform.js';   // §平台适配：存档走适配层（小游戏 = wx storage）
 
@@ -40,6 +40,11 @@ export function serializeTd(m) {
       skillUnlocked: m.hero.skillUnlocked.slice(), dead: m.hero.dead, reviveTimer: m.hero.reviveTimer,
       buffs: m.hero.buffs.map((b) => ({ ...b })),
       attackBuff: m.hero.attackBuff, reduceBuff: m.hero.reduceBuff,
+      cell: m.hero.cell ? { x: m.hero.cell.x, y: m.hero.cell.y } : null,
+      path: (m.hero.path ?? []).map((c) => ({ x: c.x, y: c.y })),
+      hold: m.hero.hold ? { x: m.hero.hold.x, y: m.hero.hold.y } : null,
+      facing: m.hero.facing === 1 ? 1 : -1,
+      carry: m.hero.carry ?? 0,
     },
     towers: m.towers.map((t) => ({
       towerId: t.towerId, slot: t.slot, level: t.level, cooldown: t.cooldown,
@@ -90,6 +95,20 @@ export function deserializeTd(save) {
     buffs: save.hero.buffs.map((b) => ({ ...b })),
     attackBuff: save.hero.attackBuff, reduceBuff: save.hero.reduceBuff,
   });
+  // 老存档没有驻守字段：人留在核心。有格子就按存档恢复，不把人钳回圈内（读档不是下命令）。
+  if (save.hero.cell && Number.isFinite(save.hero.cell.x) && Number.isFinite(save.hero.cell.y)) {
+    m.hero.cell = { x: save.hero.cell.x, y: save.hero.cell.y };
+  }
+  if (Array.isArray(save.hero.path)) {
+    m.hero.path = save.hero.path
+      .map((c) => ({ x: c.x | 0, y: c.y | 0 }))
+      .filter((c) => isHoldCell(m, c));
+  }
+  if (save.hero.hold && Number.isFinite(save.hero.hold.x)) {
+    m.hero.hold = isHoldCell(m, save.hero.hold) ? { x: save.hero.hold.x | 0, y: save.hero.hold.y | 0 } : null;
+  }
+  if (save.hero.facing != null) m.hero.facing = save.hero.facing === 1 ? 1 : -1;
+  if (Number.isFinite(save.hero.carry)) m.hero.carry = save.hero.carry;
   m.towers = save.towers.map((t) => {
     const cell = m.map.slots[t.slot];
     return {

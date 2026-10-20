@@ -17,6 +17,7 @@ export const DEFAULT_SETTINGS = {
   showWavePreview: true,
   sfx: true,          // 提示音（§2.6 的回防预警）：默认开，玩家能关（没有静音开关的音效是坏体验）
   stick: 'fixed',     // 摇杆：fixed 固定左下 / floating 浮动（§1.9.1、§1.9.3）
+  fps: 60,            // 60 稳帧；120 只在高刷机上交给 wx.setPreferredFramesPerSecond。浏览器跟随屏幕，不在 rAF 里丢帧
 };
 
 export const ZOOM_STEPS = [1.2, 1.5, 1.8];
@@ -31,6 +32,7 @@ export function normalizeSettings(raw) {
   s.showWavePreview = !!s.showWavePreview;
   s.sfx = s.sfx !== false;
   if (!['fixed', 'floating'].includes(s.stick)) s.stick = DEFAULT_SETTINGS.stick;
+  s.fps = s.fps === 120 ? 120 : 60;
   return s;
 }
 

@@ -411,8 +411,8 @@ test('小游戏暂停面板：行都在画布内且 ≥44，倍速/镜头/震动
   const m = createMatch({ seed: 5 });
   const sheet = layoutPause(m, { rate: 2, settings: { tdFitAll: false, sfx: false } });
   assert.equal(sheet.kind, 'pause');
-  assert.equal(sheet.rows.length, 10,
-    '继续 / 倍速 / 镜头 / 音效震动 / 特效 / 波次预告 / 回大厅 / 重看引导 / 重置进度 / 收起面板');
+  assert.equal(sheet.rows.length, 11,
+    '继续 / 倍速 / 镜头 / 音效震动 / 特效 / 帧率 / 波次预告 / 回大厅 / 重看引导 / 重置进度 / 收起面板');
   for (const r of sheet.rows) {
     assert.ok(r.h >= 44 && r.y + r.h <= DESIGN.h, `${r.id} 行高或位置不达标`);
     assert.ok(!(r.x < 448 && r.y < 52 && r.x + r.w > 396), `${r.id} 压到顶栏那两个键上`);
@@ -420,7 +420,9 @@ test('小游戏暂停面板：行都在画布内且 ≥44，倍速/镜头/震动
   assert.equal(sheet.byId.speed.sub, '2×');
   assert.equal(sheet.byId.camera.sub, '放大', 'tdFitAll=false 时是放大');
   assert.equal(sheet.byId.sfx.sub, '关');
-  assert.equal(sheet.byId.effects.sub, '高', '特效那一格要显示当前档');
+    assert.equal(sheet.byId.effects.sub, '高', '特效那一格要显示当前档');
+    assert.equal(sheet.byId.fps.sub, '60', '帧率默认 60');
+    assert.equal(sheet.byId.fps.w >= 44 && sheet.byId.effects.w >= 44, true, '特效和帧率都要够得到拇指');
   assert.equal(sheet.byId.resume.label, '继续游戏');
   assert.ok(sheet.byId.replayTutorial, '§153 的「重看新手引导」要在这儿（浏览器版在设置面板里同一个动作）');
   assert.ok(sheet.byId.wavePreview, '§154：TD 这边摆「波次预告」');
@@ -632,11 +634,14 @@ test('小游戏平台杂项：玩的时候屏幕常亮；§10.7 的内存告警�
     const app = loadFreshApp(require, 12);
     // ① 屏幕常亮：启动时就调一次（一局十几分钟，盯塔时可能一直不碰屏幕）
     assert.ok(fake.platform.keepScreenOn.includes(true), `启动要申请屏幕常亮（实际 ${JSON.stringify(fake.platform.keepScreenOn)}）`);
+    assert.ok(fake.platform.frameRate.includes(60), `启动要申请 60 帧（实际 ${JSON.stringify(fake.platform.frameRate)}）`);
     // 官方文档：这个设置「离开小程序就失效」——切后台再回来要**再申请一次**，否则屏幕又开始自己熄
     const before = fake.platform.keepScreenOn.length;
     fake.fireHide();
+    const framesBefore = fake.platform.frameRate.length;
     fake.fireShow();
     assert.ok(fake.platform.keepScreenOn.length > before, '回到前台要重新申请屏幕常亮');
+    assert.ok(fake.platform.frameRate.length > framesBefore, '回到前台要重新申请首选帧率');
     assert.ok(fake.platform.memoryWarning >= 1, '要接上 wx.onMemoryWarning，否则系统只会直接杀进程');
 
     app.startMatch();

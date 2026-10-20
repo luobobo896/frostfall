@@ -108,7 +108,7 @@ test('联机：改对局的 handler 都有 net 分支（不是只改本地镜像
   // §154 起 `isDefense` 也在里面：它是**只读**查询（设置面板按模式决定摆哪几行），改不了对局——
   // 和 `getSettings` / `isOffline` 同一类。
   const LOCAL_ONLY = new Set(['getSettings', 'isOffline', 'isDefense', 'updateSetting', 'resetSettings',
-    'replayTutorial', 'resume', 'endless']);
+    'replayTutorial', 'resume', 'endless', 'toggleHero']);
   const keys = [...body.matchAll(/^ {2}([a-zA-Z_]+):/gm)].map((m) => m[1]);
   assert.ok(keys.length > 15, `应该解析出完整的 handlers（拿到 ${keys.length} 个）`);
   // 逐个 handler 的正文里必须出现 net（`net ? … : …` / `if (net)` / `net.xxx(...)`）
