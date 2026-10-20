@@ -517,7 +517,7 @@ function setupStartScreen() {
   const mapTable = choice.mode === 'defense' ? DEFENSE_MAPS : MAPS;
   const mapOptions = Object.fromEntries(Object.values(mapTable).map((d) => [d.id, `${d.name} ${'★'.repeat(d.stars ?? 1)}`]));
   const groups = [
-    ['optMode', 'mode', { td: 'TD · 驻守英雄', defense: '防守 · 出征英雄' }],
+    ['optMode', 'mode', { td: '驻守英雄 · Guardian', defense: '出征英雄 · Champion' }],
     ['optMap', 'map', mapOptions],
     ['optDiff', 'difficulty', { normal: '普通', hard: '困难', nightmare: '噩梦' }],
     // 长局是给「2-4 人 / 大图」的内容：单人 18 塔位在数值上打不过最终 Boss（见验证记录 §23.2）

@@ -65,6 +65,10 @@ test('小游戏大厅：可点元素都在画布内、≥44×44、互不重叠�
     }
   }
   assert.ok(L.capsule.x + L.capsule.w <= L.w && L.capsule.y >= 0);
+  assert.equal(L.byId['mode-td'].label, '驻守英雄');
+  assert.equal(L.byId['mode-td'].sub, 'Guardian');
+  assert.equal(L.byId['mode-def'].label, '出征英雄');
+  assert.equal(L.byId['mode-def'].sub, 'Champion');
 });
 
 test('小游戏大厅：缩放到别的屏幕也守得住（真机 812×375 / 低于最小支持视口的 667×320 / 平板）', () => {

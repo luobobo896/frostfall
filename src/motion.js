@@ -68,6 +68,19 @@ export function towerMarks(towerId, pulse, charge) {
   return marks;
 }
 
+/**
+ * 升级光环。`t` 从 1 收到 0。低特效停在一圈固定椭圆，不跟着时间胀开。
+ * 颜色由调用方画成灰白，这里只给尺度和透明度。
+ */
+export function levelFlourish(until, now, { low = false, sec = 0.7 } = {}) {
+  if (!(until > now)) return null;
+  const t = Math.min(1, Math.max(0, (until - now) / (sec > 0 ? sec : 0.7)));
+  return {
+    scale: low ? 1.2 : 1.05 + (1 - t) * 0.85,
+    alpha: low ? 0.8 : Math.max(0.2, t),
+  };
+}
+
 export function heroMotion({ now = 0, dead = false, cooldown = 0, atkSpeed = 1, uid = 0 } = {}) {
   if (dead) return { dx: 0, dy: 4, dissolve: true, pulse: 0 };
   const pulse = attackPulse(cooldown, atkSpeed);

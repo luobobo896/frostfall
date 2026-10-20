@@ -371,6 +371,45 @@ export function heroAbilityRange(hero) {
   return 0;
 }
 
+/**
+ * 辅助英雄的脚底光环（圣徒虔诚 / 结界）。没有 `auraRange` 天赋的职业是 0。
+ * 半径与 `heroAbilityRange` 同一套数，画面上走英雄技能虚线，不走塔的实线圈。
+ */
+export function supportAuraRange(hero) {
+  if (!hero?.def?.talents?.some((t) => t.type === 'auraRange')) return 0;
+  return heroAbilityRange(hero);
+}
+
+/** 出征普攻的收招窗口。短于一记冷却，够画出一帧前倾，不把走路姿势占满。 */
+export const ATTACK_COMMIT_SEC = 0.22;
+
+/**
+ * 出征英雄朝哪边、打谁。射程内的威胁优先于脚下的路；远处的营地不把人拧过去。
+ * 同列不翻转。镜像端没有 facing 字段时，渲染用同一份结果。
+ */
+export function defenseLook(m, range) {
+  const h = m?.hero;
+  const fallback = h?.facing === 1 ? 1 : -1;
+  if (!h?.cell || h.dead) return { facing: fallback, target: null };
+  let target = null;
+  let bestD = Infinity;
+  const reach = Number(range) > 0 ? Number(range) : 0;
+  const list = m.monsters ?? [];
+  for (let i = 0; i < list.length; i++) {
+    const mo = list[i];
+    if (!isTargetable(m, mo) || !mo.cell) continue;
+    const d = gridDist(mo.cell, h.cell);
+    if (d <= reach && d < bestD) { bestD = d; target = mo; }
+  }
+  let facing = fallback;
+  if (target && target.cell.x !== h.cell.x) facing = target.cell.x > h.cell.x ? 1 : -1;
+  else {
+    const step = h.path?.[0];
+    if (step && step.x !== h.cell.x) facing = step.x > h.cell.x ? 1 : -1;
+  }
+  return { facing, target };
+}
+
 /** 沿驻守路径走一截。路径空着就不动（测试把人传到远处时不能被吸回去）。走出圈的下一步直接丢掉。 */
 function stepTdHold(m, dt) {
   const h = m.hero;
@@ -766,12 +805,18 @@ export function damageMonster(m, mon, amount, source = 'tower', owner = null) {
   }
 }
 
+/** 升级那一下的光环时长。一圈椭圆，不放粒子。 */
+export const LEVEL_FLOURISH_SEC = 0.7;
+
 export function grantExp(m, amount) {
   const h = m.hero;
+  const before = h.level;
   h.exp += amount;
   while (h.level < HERO_MAX_LEVEL && h.exp >= cumulativeExp(h.level + 1)) h.level += 1;
   h.def.skills.forEach((s, i) => { if (h.level >= s.unlockLevel) h.skillUnlocked[i] = true; });
   h.hp = Math.min(h.hp, heroMaxHp(h));
+  // 升级的表现走模式自己的缝（防守写日志和光环）。内核不按模式分支。
+  if (h.level > before && typeof m.onHeroLevel === 'function') m.onHeroLevel(h.level, before);
 }
 
 /** 掉落判定（防守模式的野外怪也用同一套表与保底）。 */

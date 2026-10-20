@@ -66,6 +66,12 @@ export function zoneLabel(zone) {
  * 英雄选中（防守里英雄一直是被操作的那个）时才给技能和背包点。
  * 阵亡时命令条改成复活，技能关掉——除非塔面板正开着，那时塔面板优先。
  */
+/** 两个模式的英雄称呼。中文是界面主文案，英文写在大厅副标和肖像上。 */
+export function heroDuty(mode) {
+  if (mode === 'defense') return { zh: '出征英雄', en: 'Champion', mark: '征' };
+  return { zh: '驻守英雄', en: 'Guardian', mark: '驻' };
+}
+
 export function commandStrip({ towerOpen = false, heroSelected = false, dead = false, implicitHero = false } = {}) {
   if (towerOpen) return { open: false, skills: false, revive: false, tower: true };
   const open = !!(heroSelected || implicitHero || dead);

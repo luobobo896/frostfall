@@ -9,7 +9,7 @@ import { DEFENSE_RULES, FORTS, FORT_WATCH } from '../data.js';
 import { skillKeys } from './battle.js';
 import { commandStrip, roleGlyph, zoneLabel } from '../hud-model.js';
 import { zoneAt } from '../defense.js';
-import { REVIVE_LUMBER } from '../match.js';
+import { heroMaxHp, REVIVE_LUMBER } from '../match.js';
 import { fitText } from '../render.js';
 
 export const DESIGN = { w: 667, h: 375 };
@@ -19,6 +19,11 @@ export const CAPSULE = { w: 96, h: 32 };
  * 点它回城（与「回城」按钮共用 30 秒冷却）。位置挑在右侧那排按钮的左边、倍速/暂停下面那块空地。
  */
 export const MINIMAP = { x: 405, y: 60, w: 150, h: 112 };
+/**
+ * 出征肖像。小地图下面、技能排上面、摇杆区右边。
+ * 667×375 上左缘停在浮动摇杆区（半屏）之外，底边停在技能键和底栏提示上面。
+ */
+export const CHAMPION_CARD = { x: 340, y: 186, w: 168, h: 72 };
 /**
  * 技能/复活那一排（§1.9.1 的「右下技能」）：底部中间偏右，手指够得着、又不压摇杆。
  * 76×48、间距 24（§1.9.2 的热区与按钮间距下限），三个技能正好 260..536。
@@ -153,6 +158,9 @@ export function layoutDefense(m, model = {}) {
     { type: 'teleport' },
     // 与「回城」那颗键同一个判据：冷却中但有卷轴照样能点（§5.5.1）
     { disabled: !!m.hero?.dead || (teleportCd > 0 && scrolls === 0) }));
+  // 点肖像不走路、不回城。技能键仍是 ≥44 的施放热区，卡上的冷却格只是读数。
+  items.push(item('portrait', CHAMPION_CARD.x, CHAMPION_CARD.y, CHAMPION_CARD.w, CHAMPION_CARD.h,
+    '出征英雄', { type: 'noop' }));
   /**
    * §1.9.1 的「右下技能」：防守的主操作是摇杆，但英雄的主动技照样要能放（浏览器版底部右侧那一排）。
    * 小游戏这一屏以前**一颗技能键都没有**——于是防守局里技能是死的（买了技能书更看不出区别）。
@@ -294,6 +302,7 @@ export function drawDefenseHud(ctx, m, L, { message = null, stick = null } = {})
     { size: 11, align: 'right', color: castlePct < 0.35 ? COLORS.danger : COLORS.ink });
 
   for (const it of L.items) {
+    if (it.id === 'portrait') { drawChampionCard(ctx, m, it); continue; }
     const on = !!it.on;
     ctx.fillStyle = on ? 'rgba(90,169,230,0.24)' : COLORS.panel;
     roundRect(ctx, it.x, it.y, it.w, it.h, 8);
@@ -335,6 +344,60 @@ export function drawDefenseHud(ctx, m, L, { message = null, stick = null } = {})
   if (L.resistChip) paintResistChip(ctx, L.resistChip);
   if (message) text(ctx, message, L.w / 2, 300, { size: 12, align: 'center', color: COLORS.gold });
   return L;
+}
+
+/** 出征肖像：血、等级、三格技能冷却、最多 6 个背包点。整张卡是一个热区，冷却格不再各做一颗键。 */
+function drawChampionCard(ctx, m, it) {
+  ctx.fillStyle = '#121a28';
+  roundRect(ctx, it.x, it.y, it.w, it.h, 2);
+  ctx.fill();
+  ctx.strokeStyle = '#e0c36a';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  const mark = 40;
+  const mx = it.x + 6;
+  const my = it.y + (it.h - mark) / 2;
+  ctx.fillStyle = '#1a2433';
+  ctx.fillRect(mx, my, mark, mark);
+  ctx.strokeStyle = '#e0c36a';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(mx, my, mark, mark);
+  text(ctx, '征', mx + mark / 2, my + 14, { size: 15, align: 'center', color: '#e8d7a2', weight: 'bold' });
+  text(ctx, 'Champion', mx + mark / 2, my + 30, { size: 8, align: 'center', color: '#c9b27a' });
+  const dead = !!m.hero?.dead;
+  const name = m.hero?.def?.name ?? '英雄';
+  const lv = m.hero?.level ?? 1;
+  const tx = it.x + 52;
+  const barW = it.w - 60;
+  const title = dead ? `复活 ${Math.ceil(m.hero?.reviveTimer ?? 0)}s` : `${name} Lv${lv}`;
+  text(ctx, fitText(ctx, title, barW), tx, it.y + 12, {
+    size: 11, weight: 'bold', color: dead ? COLORS.danger : COLORS.ink,
+  });
+  const max = Math.max(1, m.hero ? heroMaxHp(m.hero) : 1);
+  const pct = Math.max(0, Math.min(1, (m.hero?.hp ?? 0) / max));
+  ctx.fillStyle = 'rgba(255,255,255,.12)';
+  ctx.fillRect(tx, it.y + 22, barW, 5);
+  ctx.fillStyle = pct < 0.2 ? '#d1503f' : '#d5dde8';
+  ctx.fillRect(tx, it.y + 22, barW * pct, 5);
+  skillKeys(m).slice(0, 3).forEach((sk, i) => {
+    const x = tx + i * 36;
+    const y = it.y + 32;
+    ctx.strokeStyle = sk.locked || sk.cd > 0 ? 'rgba(255,255,255,.28)' : '#e7edf4';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(x, y, 32, 14);
+    const label = sk.locked ? '锁' : (sk.cd > 0 ? String(Math.ceil(sk.cd)) : '备');
+    text(ctx, label, x + 16, y + 7, {
+      size: 10, align: 'center', color: sk.locked || sk.cd > 0 ? COLORS.dim : COLORS.ink,
+    });
+  });
+  if (!dead) {
+    const dots = Math.min(6, m.inventory?.length ?? 0);
+    for (let i = 0; i < 6; i++) {
+      ctx.fillStyle = i < dots ? '#e7edf4' : 'rgba(255,255,255,.18)';
+      ctx.fillRect(tx + i * 10, it.y + it.h - 12, 6, 6);
+    }
+  }
+  ctx.lineWidth = 1;
 }
 
 function paintStealthChip(ctx, c) {

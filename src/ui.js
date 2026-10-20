@@ -9,7 +9,7 @@ import {
   craftableSlots, enhanceCostOf, heroMaxHp, nextUpgrade, shopPriceOf, skillLevel, TOWER_REPAIR_GOLD, towerStats,
 } from './match.js';
 import { qualityColor, towerName } from './render.js';
-import { attackHint, commandStrip, detectNote, heroCard, heroCards, isLowHp, resultPanelModel, roleGlyphSvg, scoreboard, shopRows, towerRoleNote, wavePreview, zoneLabel } from './hud-model.js';
+import { attackHint, commandStrip, detectNote, heroCard, heroCards, heroDuty, isLowHp, resultPanelModel, roleGlyphSvg, scoreboard, shopRows, towerRoleNote, wavePreview, zoneLabel } from './hud-model.js';
 import { assaultResistCount, assaultStealthCount, zoneAt } from './defense.js';
 
 const $ = (id) => document.getElementById(id);
@@ -157,9 +157,10 @@ export function createUI(handlers) {
   function renderHeroStrip(m, view) {
     const h = m.hero;
     const defense = m.mode === 'defense';
-    const max = Math.max(1, defense ? h.def.hp : heroMaxHp(h));
+    const duty = heroDuty(defense ? 'defense' : 'td');
+    const max = Math.max(1, heroMaxHp(h));
     const hpPct = Math.round(Math.max(0, Math.min(1, h.hp / max)) * 100);
-    const role = defense ? '出征英雄' : '驻守英雄';
+    const role = duty.zh;
     const zoneText = defense ? zoneLabel(zoneAt(m.def, h.cell)) : '';
     const state = h.dead ? `阵亡 ${Math.ceil(h.reviveTimer)}s`
       : defense ? (zoneText || (h.moving ? '移动中' : '出征英雄'))
@@ -187,8 +188,11 @@ export function createUI(handlers) {
     el.heroCommand?.classList.toggle('open', strip.open);
     el.skillRow?.classList.toggle('closed', !strip.open);
     el.invDots?.classList.toggle('hidden', !strip.open);
-    if (el.heroMark) el.heroMark.textContent = defense ? '征' : '驻';
-    if (el.heroRole) el.heroRole.textContent = role;
+    if (el.heroMark) {
+      el.heroMark.textContent = duty.mark;
+      el.heroMark.setAttribute('aria-label', `${duty.zh} ${duty.en}`);
+    }
+    if (el.heroRole) el.heroRole.textContent = duty.zh;
     el.heroName.textContent = h.def.name;
     el.heroLevel.textContent = `Lv${h.level}`;
     el.heroHpBar.style.width = `${hpPct}%`;

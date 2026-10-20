@@ -8,7 +8,7 @@ import { HEROES, MONSTERS, TOWERS } from '../src/data.js';
 import { project } from '../src/core.js';
 import {
   FX_LIMITS, attackPulse, chargePulse, fxBudget, heroMotion, impactGlyphs, mobMotion,
-  poseClip, poseFrame, shotGlyphs, shotKind, slowShards, stealthGlyphs, towerMarks, towerNudge,
+  levelFlourish, poseClip, poseFrame, shotGlyphs, shotKind, slowShards, stealthGlyphs, towerMarks, towerNudge,
 } from '../src/motion.js';
 
 globalThis.window = globalThis.window ?? { devicePixelRatio: 1 };
@@ -40,6 +40,13 @@ test('静止姿势没有偏移，开火才有后坐和蓄力', () => {
   assert.equal(poseFrame('attack', { pulse: 0.9 }), 1);
   assert.equal(poseFrame('death', { deathT: 0 }), 1);
   assert.equal(poseFrame('death', { deathT: 0.8 }), 2);
+  assert.equal(levelFlourish(1, 1), null, '到期就收掉');
+  const fresh = levelFlourish(1.7, 1, { sec: 0.7 });
+  const late = levelFlourish(1.05, 1, { sec: 0.7 });
+  assert.ok(late.scale > fresh.scale, '高特效那一圈会胀开');
+  assert.ok(fresh.alpha > late.alpha, '胀开的同时变淡');
+  assert.equal(levelFlourish(1.7, 1, { low: true, sec: 0.7 }).scale, levelFlourish(1.05, 1, { low: true, sec: 0.7 }).scale,
+    '低特效停在同一圈，不跟着时间胀');
   for (const id of Object.keys(TOWERS)) assert.equal(towerMarks(id, 0, 0).length, 0);
 });
 
