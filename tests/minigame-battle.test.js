@@ -103,6 +103,8 @@ test('小游戏战场 HUD：画一帧有波次 / 金币 / 核心 / 塔造价（�
   assert.ok(ctx.texts.some((t) => t.includes('3 / 12 波')), '波次要画出来');
   assert.ok(ctx.texts.some((t) => t.includes('金 200')), '金币要画出来');
   assert.ok(ctx.texts.some((t) => t.includes('核心 1800/2400')), '核心血要画出来');
+  assert.ok(ctx.texts.some((t) => t.includes('击杀')), '记分条要写击杀');
+  assert.ok(ctx.texts.some((t) => t.includes('漏怪 2')), '记分条的漏怪跟内核统计走');
   assert.ok(ctx.texts.some((t) => t.includes('商店')) && ctx.texts.some((t) => t.includes('背包')), '商店/背包入口要画出来');
 });
 

@@ -4,7 +4,7 @@ import { DEFENSE_MAPS, MAPS, TICK_STEP, TOWERS, choiceFrom } from './data.js';
 import { createMatch, buildTower, buyItem, castSkill, craftEquipment, describe,
   enhanceItem, enhanceCostOf, equipItem, heroStats, sellItem, sellTower, setPriority, shopPriceOf, startWaveEarly, towerAtSlot, update,
   upgradeTower, usePotion, reviveNow, repairTower, orderHold } from './match.js';
-import { createMinimap, createRenderer, drawMapThumb, pointHitsHero } from './render.js';
+import { createLaneMinimap, createMinimap, createRenderer, drawMapThumb, pointHitsHero } from './render.js';
 import { createUI } from './ui.js';
 import { gridDist, heroPos } from './core.js';
 import { autoPlay } from './ai.js';
@@ -33,6 +33,7 @@ bootSprites();
 const canvas = document.getElementById('game');
 const renderer = createRenderer(canvas);
 const minimap = createMinimap(document.getElementById('minimap'));
+const laneMini = createLaneMinimap(document.getElementById('tdMinimap'));
 
 /**
  * §183：**本机写不进存储**（隐私模式 / 站点禁用了存储 / 配额满）时，至少要让玩家知道一声——
@@ -899,11 +900,29 @@ canvas.addEventListener('wheel', (e) => {
 
 window.addEventListener('resize', () => applyCamera());
 
-// 小地图点一下 = 回城（§2.6），与按钮共用同一套冷却与服务端权威校验
+// 防守小地图点一下 = 回城（§2.6），与按钮共用同一套冷却与服务端权威校验。塔防不走这条。
 document.getElementById('minimap').addEventListener('pointerdown', () => {
   if (match.mode !== 'defense' || view.paused || match.result) return;
   const ok = net ? net.teleport() : teleportHome(match);
   ui.toast(ok ? '已回城（小地图）' : '冷却中或阵亡中');
+});
+
+/** 塔防小地图：点到哪，镜头就移到哪一格。不回城。 */
+function focusTdCell(cell) {
+  if (!cell || match.mode === 'defense' || view.paused || match.result || view.inLobby) return;
+  const grid = match.map?.grid;
+  if (!grid) return;
+  settings = { ...settings, tdFitAll: false };
+  saveSettings(settings);
+  renderer.setCamera(cell.x, cell.y, settings.zoom ?? 1.5);
+}
+document.getElementById('tdMinimap').addEventListener('pointerdown', (e) => {
+  if (match.mode === 'defense' || view.paused || match.result || view.inLobby) return;
+  const rect = e.currentTarget.getBoundingClientRect();
+  if (rect.width < 1 || rect.height < 1) return;
+  const x = ((e.clientX - rect.left) / rect.width) * laneMini.size.w;
+  const y = ((e.clientY - rect.top) / rect.height) * laneMini.size.h;
+  focusTdCell(laneMini.cellAt(x, y, match));
 });
 
 /* ---------- HUD 按钮 ---------- */
@@ -1031,12 +1050,17 @@ function frameBody(now) {
     selectedFortSlot: ui.openSlotIndex?.() ?? null,
     scale: match.mode === 'defense' ? (view.render?.defenseScale ?? 1.5) : undefined,
   });
-  // 小地图只在防守模式出现（跟随相机下它是唯一的全局视图）
+  // 防守小地图点了回城；塔防小地图是全局雷达，点了只移镜头。
   // 注意 `!view.inLobby` 在联机入口下是 undefined（联机不走大厅那套），
   // classList.toggle 的 force 参数收到 undefined 会退化成「每帧翻转」——必须显式转成布尔
-  const showMini = match.mode === 'defense' && !view.inLobby;
+  const inFight = !view.inLobby;
+  const showMini = match.mode === 'defense' && inFight;
+  const showLane = match.mode !== 'defense' && inFight;
   document.getElementById('minimapBox').classList.toggle('hidden', !showMini);
+  document.getElementById('tdMinimapBox').classList.toggle('hidden', !showLane);
   if (showMini) minimap.draw(match);
+  if (showLane) laneMini.draw(match, { fx: view.render?.showFloaters === false ? 'low' : 'high' });
+  stage.classList.toggle('td', showLane);
   // §1.9.1：TD 没有摇杆，只有防守有（同一个条件，别写第二遍）
   document.getElementById('stickBase').classList.toggle('hidden', !showMini);
   // §14.3 稿 4：右侧日志面板在防守模式下要让位（样式表里 `#stage.defense .hud-right` 说了算）。

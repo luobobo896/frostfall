@@ -10,7 +10,7 @@ import {
   EQUIP_SELL_BONUS_LUMBER, EQUIP_SELL_REFUND, EQUIP_SLOTS, QUALITY, QUALITY_ORDER,
   SHOP_ITEMS, TARGET_PRIORITIES, TOWERS, TOWER_SELL_REFUND,
 } from '../data.js';
-import { attackHint, commandStrip, detectNote, resultPanelModel, roleGlyph, shopRows, wavePreview } from '../hud-model.js';
+import { attackHint, commandStrip, detectNote, resultPanelModel, roleGlyph, scoreboard, shopRows, wavePreview } from '../hud-model.js';
 import { fitText } from '../render.js';
 import {
   REVIVE_LUMBER, TOWER_REPAIR_GOLD, craftableSlots, enhanceCostOf, potionCount, shopPriceOf, skillLevel,
@@ -25,6 +25,8 @@ export const CAPSULE = { w: 96, h: 32 };
  * 左缘停在 x=520，空地点选那一片（屏幕 x<520）还能点到地。
  */
 export const TD_MINIMAP = { x: 520, y: 60, w: 135, h: 188 };
+/** 记分条：预告下面、肖像上面。整块 ≥44，点了不建塔。 */
+export const TD_BOARD = { x: 12, y: 112, w: 160, h: 44 };
 export const TOWER_ORDER = ['tw_arrow', 'tw_cannon', 'tw_frost', 'tw_static'];
 export const PRIORITY_LABEL = { front: '最靠前', strongest: '最强', weakest: '最弱', air_first: '空中优先' };
 export const POTION_BAG_SLOTS = 3;   // §5.5.3：药品共 3 格（与内核同一个数）
@@ -146,6 +148,8 @@ export function layoutBattle(model = {}) {
   items.push(item('pause', 470, 8, 84, 44, model.paused ? '继续' : '暂停', { type: 'pause' }, { on: !!model.paused }));
   // 点小地图 = 把镜头移到那一格。键不画字，图由绘制层盖上来。
   items.push(item('minimap', TD_MINIMAP.x, TD_MINIMAP.y, TD_MINIMAP.w, TD_MINIMAP.h, '', { type: 'focus' }));
+  // 记分条吃掉点击，免得点在数字上变成建塔。
+  items.push(item('board', TD_BOARD.x, TD_BOARD.y, TD_BOARD.w, TD_BOARD.h, '', { type: 'noop' }));
   /**
    * 新手引导条（§14.3 稿 11）：压在底排上方，**条本身不吃触摸**——浏览器版那边靠 `.hud` 的
    * `pointer-events: none` 做到同一件事，所以它盖在战场上也不挡点塔位，只有「跳过」那颗键接触摸。
@@ -173,6 +177,7 @@ export function layoutBattle(model = {}) {
     heroLine: { x: DESIGN.w - 12, y: 48 },
     tutorial: tutorial ? { x: 12, y: 261, w: 643, h: 44, text: tutorial } : null,
     minimap: TD_MINIMAP,
+    board: TD_BOARD,
     items,
     byId: Object.fromEntries(items.map((it) => [it.id, it])),
   };
@@ -215,6 +220,19 @@ function drawPortrait(ctx, m, it, selected) {
     }
   }
   ctx.lineWidth = 1;
+}
+
+/** 记分条：方框、击杀、漏怪。金币在顶栏，这里不写第二遍。 */
+function drawScoreboard(ctx, m, it) {
+  const board = scoreboard(m);
+  ctx.fillStyle = 'rgba(8,12,18,.9)';
+  ctx.fillRect(it.x, it.y, it.w, it.h);
+  ctx.strokeStyle = 'rgba(180,198,214,.7)';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(it.x + 0.5, it.y + 0.5, it.w - 1, it.h - 1);
+  const kills = board.rows[0]?.kills ?? board.kills;
+  text(ctx, `击杀 ${kills}`, it.x + 8, it.y + it.h / 2, { size: 12, weight: 'bold' });
+  text(ctx, `漏怪 ${board.leaks}`, it.x + it.w - 8, it.y + it.h / 2, { size: 12, align: 'right', color: COLORS.dim });
 }
 
 /** 触点 → HUD 动作（返回 null 表示点在战场空白处，交给调用方翻成「点塔位」） */
@@ -321,6 +339,7 @@ export function drawBattleHud(ctx, m, L, { selectedTower = 'tw_arrow', message =
 
   for (const it of L.items) {
     if (it.id === 'portrait') { drawPortrait(ctx, m, it, heroSelected || !!it.on); continue; }
+    if (it.id === 'board') { drawScoreboard(ctx, m, it); continue; }
     const on = !!it.on;
     ctx.fillStyle = on ? 'rgba(90,169,230,0.24)' : COLORS.panel;
     roundRect(ctx, it.x, it.y, it.w, it.h, 8);

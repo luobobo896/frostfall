@@ -122,16 +122,30 @@ body { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none
 .economy-panel { min-width: 150px; }
 .net-badge { min-width: 200px; font-size: 13px; color: var(--ink-dim); display: flex; align-items: center; }
 .player-panel { display: flex; flex-direction: column; gap: 4px; min-width: 150px; }
+.player-panel.mb { min-width: 0; border-radius: 2px; padding: 6px 8px; }
 .player-slot { display: flex; align-items: center; gap: 6px; font-size: 13px; }
 .player-slot .dot { width: 10px; height: 10px; border-radius: 50%; background: #445; flex: none; }
 .player-slot.offline { opacity: .45; }
 .player-slot .who { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mb-solo { display: flex; align-items: center; gap: 8px; font-size: 12px; white-space: nowrap; }
+.mb-table { display: grid; grid-template-columns: auto 1fr auto; gap: 2px 8px; align-items: center; font-size: 12px; }
+.mb-table .dot { width: 8px; height: 8px; border-radius: 50%; background: #445; }
+.mb-hd { color: var(--ink-dim); font-size: 11px; }
+.mb-num { font-variant-numeric: tabular-nums; text-align: right; }
+.mb-foot { grid-column: 1 / -1; display: flex; justify-content: space-between; color: var(--ink-dim); }
+.mb-table .offline { opacity: .45; }
 
 /* 防守模式小地图（§2.6）：右上、压在轮次面板下面（面板约 206px 高；改按钮热区时这个数会跟着变，
    smoke 里有一条「小地图顶 ≥ 面板底」的检查盯着它） */
 .hud-minimap { top: 218px; right: max(12px, var(--safe-r)); }
 .hud-minimap canvas { display: block; width: 224px; height: 168px; border-radius: 10px;
   border: 1px solid var(--panel-line); background: rgba(12, 20, 32, .75); cursor: pointer; }
+/* 塔防雷达：右上，整块都是点击区。点了移镜头，不回城。 */
+.hud-td-minimap { top: 140px; right: max(12px, var(--safe-r)); z-index: 3; }
+.hud-td-minimap canvas { display: block; width: 168px; height: 126px; min-width: 44px; min-height: 44px;
+  border-radius: 2px; border: 1px solid rgba(180, 198, 214, .55); background: rgba(8, 12, 18, .92);
+  cursor: pointer; touch-action: manipulation; }
+#stage.td .hud-right { top: 278px; width: 200px; }
 .next-wave { font-size: 13px; display: flex; flex-direction: column; align-items: stretch; gap: 6px; }
 .next-wave-line { display: flex; gap: 6px; align-items: baseline; }
 .role-row { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -170,6 +184,11 @@ body { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none
   .defense-panel .btn { padding: 0 8px; font-size: 12px; min-height: 32px; }
   .hud-minimap { top: max(12px, var(--safe-t)); right: auto; left: max(12px, var(--safe-l)); }
   .hud-minimap canvas { width: 150px; height: 80px; }
+  /* 矮屏右上：记分条在 y≈12–44，技能排顶边大约在 100vh-272。雷达卡在这两条之间。 */
+  .hud-td-minimap { top: 48px; }
+  .hud-td-minimap canvas { width: 120px; height: clamp(44px, calc(100vh - 328px), 84px); }
+  #stage.td #playerPanel.player-panel.mb { max-height: 36px; overflow: hidden; }
+  #stage.td .hud-right { display: none; }
   /* §162：引导条（`.hud-tutorial { bottom: 120px }` 是照 750 高的画布定的）在真机视口下落在
      y 189~255——正压在**英雄面板**（血条）与**操作行**（商店/背包/暂停）上，而第二步提示恰恰是
      「点右下『提前开波』马上开打」：让玩家去点被自己盖住的按钮。短屏上收到屏幕最底部
@@ -193,6 +212,8 @@ body { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none
   .defense-panel { width: 196px; font-size: 11px; padding: 3px 6px; }
   .defense-panel .btn { min-height: 28px; padding: 0 6px; font-size: 11px; }
   .hud-minimap canvas { width: 112px; height: 60px; }
+  .hud-td-minimap canvas { width: 104px; height: clamp(44px, calc(100vh - 328px), 64px); }
+  .mb-solo { gap: 4px; font-size: 11px; }
   .hero-panel { min-width: 140px; }
 }
 
@@ -226,7 +247,8 @@ body { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none
 #stage.lobby .economy-panel,
 #stage.lobby .hud-tutorial,
 #stage.lobby .hud-right,
-#stage.lobby .hud-minimap { display: none; }
+#stage.lobby .hud-minimap,
+#stage.lobby .hud-td-minimap { display: none; }
 /* 防守模式：右侧日志面板与防守面板抢位——**用 CSS 表达**，不要每帧去 add('hidden')。
    以前是在 renderDefense 里 `classList.add('hidden')` 且从不 remove，于是打完一局防守之后
    回到 TD，日志面板**整页**都不会再出现（验证记录 §94）。 */

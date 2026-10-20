@@ -200,6 +200,20 @@ export function nextInvasion(m) {
   return { spawn, next, pathIndex: path.index };
 }
 
+/** 同一支入侵箭头。备战期多路各画一支，出怪中只留「下一只」那条。 */
+export function invasionArrows(m) {
+  const one = nextInvasion(m);
+  if (!one) return [];
+  if (m.wave?.phase !== 'prep') return [one];
+  const paths = (m.map.paths ?? []).filter((p) => !p.air && p.spawn && p.cells?.length);
+  if (paths.length <= 1) return [one];
+  return paths.slice(0, LANE_MINI_BUDGET.maxPaths).map((path) => ({
+    spawn: path.spawn,
+    next: path.cells[Math.min(path.cells.length - 1, 1)],
+    pathIndex: path.index,
+  }));
+}
+
 /** 折线抽点。小地图不逐格填矩形。 */
 export const LANE_MINI_BUDGET = Object.freeze({
   maxPaths: 8,
@@ -207,6 +221,8 @@ export const LANE_MINI_BUDGET = Object.freeze({
   stroke: 5,
   heroR: 6,
   arrow: 16,
+  creeps: 24,
+  towers: 48,
 });
 
 export function decimateCells(cells, maxPoints = LANE_MINI_BUDGET.maxPoints) {
@@ -1860,7 +1876,46 @@ export function createLaneMinimap(canvas, { size = null } = {}) {
     };
   }
 
-  function draw(m) {
+  const dot = (x, y, r, fill) => {
+    const p = toMini(x, y);
+    ctx.fillStyle = fill;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+    ctx.fill();
+  };
+
+  const ring = (x, y, r, stroke) => {
+    const p = toMini(x, y);
+    ctx.beginPath();
+    ctx.strokeStyle = stroke;
+    ctx.lineWidth = 1.25;
+    ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+    ctx.stroke();
+  };
+
+  /** 和下一波箭头同一套三角，不另做一种标记。 */
+  const drawArrow = (cue) => {
+    const head = toMini(cue.spawn.x, cue.spawn.y);
+    const nxt = toMini(cue.next.x, cue.next.y);
+    let dx = nxt.x - head.x;
+    let dy = nxt.y - head.y;
+    const len = Math.hypot(dx, dy) || 1;
+    dx /= len;
+    dy /= len;
+    const size = LANE_MINI_BUDGET.arrow;
+    const tailX = head.x - dx * size;
+    const tailY = head.y - dy * size;
+    const wing = size * 0.42;
+    ctx.fillStyle = '#e7edf4';
+    ctx.beginPath();
+    ctx.moveTo(head.x, head.y);
+    ctx.lineTo(tailX + -dy * wing, tailY + dx * wing);
+    ctx.lineTo(tailX - -dy * wing, tailY - dx * wing);
+    ctx.closePath();
+    ctx.fill();
+  };
+
+  function draw(m, opts = {}) {
     layoutFor(m);
     ctx.fillStyle = 'rgba(9,15,24,.92)';
     ctx.fillRect(0, 0, view.w, view.h);
@@ -1883,37 +1938,32 @@ export function createLaneMinimap(canvas, { size = null } = {}) {
       if (line.air) ctx.setLineDash([]);
     }
     ctx.lineWidth = 1;
-    const invasion = nextInvasion(m);
-    if (invasion) {
-      const head = toMini(invasion.spawn.x, invasion.spawn.y);
-      const nxt = toMini(invasion.next.x, invasion.next.y);
-      let dx = nxt.x - head.x;
-      let dy = nxt.y - head.y;
-      const len = Math.hypot(dx, dy) || 1;
-      dx /= len;
-      dy /= len;
-      const size = LANE_MINI_BUDGET.arrow;
-      const tailX = head.x - dx * size;
-      const tailY = head.y - dy * size;
-      const wing = size * 0.42;
-      ctx.fillStyle = '#e7edf4';
-      ctx.beginPath();
-      ctx.moveTo(head.x, head.y);
-      ctx.lineTo(tailX + -dy * wing, tailY + dx * wing);
-      ctx.lineTo(tailX - -dy * wing, tailY - dx * wing);
-      ctx.closePath();
-      ctx.fill();
+    for (const path of (m.map?.paths ?? []).slice(0, LANE_MINI_BUDGET.maxPaths)) {
+      if (!path.spawn) continue;
+      ring(path.spawn.x, path.spawn.y, 4.5, path.air ? '#9ad8ff' : '#e7edf4');
     }
-    const heroes = laneHeroes(m);
-    heroes.forEach((h, i) => {
-      if (!h?.cell) return;
-      const p = heroPos(h);
-      const at = toMini(p.x, p.y);
-      ctx.fillStyle = h.dead ? '#8b95a3' : (TEAM_COLORS[i % TEAM_COLORS.length] ?? '#8ee08a');
-      ctx.beginPath();
-      ctx.arc(at.x, at.y, h.dead ? 4 : LANE_MINI_BUDGET.heroR, 0, Math.PI * 2);
-      ctx.fill();
-    });
+    const cores = m.cores?.length ? m.cores : (m.core ? [m.core] : []);
+    for (const core of cores) {
+      const cell = core.cell ?? core;
+      if (cell?.x == null) continue;
+      dot(cell.x, cell.y, 4.2, '#7fd4ff');
+    }
+    const towers = m.towers ?? [];
+    for (let i = 0; i < towers.length && i < LANE_MINI_BUDGET.towers; i++) {
+      const t = towers[i];
+      if (!t?.cell) continue;
+      dot(t.cell.x, t.cell.y, 2.2, TEAM_COLORS[(t.owner ?? 0) % TEAM_COLORS.length]);
+    }
+    const low = opts.fx === 'low';
+    const creeps = low ? [] : (m.monsters ?? []).filter((mo) => mo && !mo.dead && mo.cell);
+    const cap = LANE_MINI_BUDGET.creeps;
+    const step = Math.max(1, Math.ceil(creeps.length / cap));
+    for (let i = 0, drawn = 0; i < creeps.length && drawn < cap; i += step) {
+      const mo = creeps[i];
+      if (mo.def?.invis) continue;
+      dot(mo.cell.x, mo.cell.y, mo.def?.tier === 'boss' ? 2.4 : 1.3, mo.isAir ? '#9ad8ff' : '#e06a5c');
+      drawn += 1;
+    }
     let stealthMarks = 0;
     for (const mo of m.monsters ?? []) {
       if (stealthMarks >= 12 || mo.dead || !mo.cell) continue;
@@ -1929,6 +1979,32 @@ export function createLaneMinimap(canvas, { size = null } = {}) {
       ctx.setLineDash([]);
       stealthMarks += 1;
     }
+    for (const cue of invasionArrows(m)) drawArrow(cue);
+    const heroes = laneHeroes(m);
+    heroes.forEach((h, i) => {
+      if (!h) return;
+      const hold = h.hold;
+      const here = h.cell ? heroPos(h) : null;
+      if (hold && here && (hold.x !== here.x || hold.y !== here.y)) {
+        const at = toMini(hold.x, hold.y);
+        const s = 4;
+        ctx.beginPath();
+        ctx.moveTo(at.x, at.y - s);
+        ctx.lineTo(at.x + s, at.y);
+        ctx.lineTo(at.x, at.y + s);
+        ctx.lineTo(at.x - s, at.y);
+        ctx.closePath();
+        ctx.strokeStyle = '#f0d59a';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+      }
+      if (!here) return;
+      const at = toMini(here.x, here.y);
+      ctx.fillStyle = h.dead ? '#8b95a3' : (TEAM_COLORS[i % TEAM_COLORS.length] ?? '#8ee08a');
+      ctx.beginPath();
+      ctx.arc(at.x, at.y, h.dead ? 4 : LANE_MINI_BUDGET.heroR, 0, Math.PI * 2);
+      ctx.fill();
+    });
     const grid = m.map?.grid ?? GRID;
     ctx.strokeStyle = 'rgba(120,140,170,.35)';
     ctx.lineWidth = 1;
