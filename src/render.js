@@ -197,7 +197,7 @@ export function nextInvasion(m) {
   const path = paths[spawned % paths.length];
   const spawn = path.spawn;
   const next = path.cells[Math.min(path.cells.length - 1, 1)];
-  return { spawn, next, pathIndex: path.index };
+  return { spawn, next, pathIndex: path.index, urgent: !!path.urgent };
 }
 
 /** 同一支入侵箭头。备战期多路各画一支，出怪中只留「下一只」那条。 */
@@ -211,6 +211,7 @@ export function invasionArrows(m) {
     spawn: path.spawn,
     next: path.cells[Math.min(path.cells.length - 1, 1)],
     pathIndex: path.index,
+    urgent: !!path.urgent,
   }));
 }
 
@@ -248,6 +249,8 @@ export const AURA_RING = { stroke: '#9fd4ff', lineWidth: 2.5, fill: 'rgba(159, 2
 export const SCORCH_RING = { stroke: '#e7a15a', lineWidth: 2.5, fill: 'rgba(231, 161, 90, .16)' };
 /** 风暴电笼：实线浅紫，外圈加左右两道弧。低特效只停呼吸，圈本身还在。 */
 export const STORM_RING = { stroke: '#d7b3ff', lineWidth: 2.5, fill: 'rgba(215, 179, 255, .16)' };
+/** 急路：暖色折线、暖色箭头、一个「急」字。不是按钮。 */
+export const URGENT_LANE = '#e7a15a';
 /** 点英雄的半径下限（直径约 44px）。视觉半径更大时跟视觉走。 */
 export const HERO_HIT_PX = 44;
 
@@ -986,6 +989,7 @@ export function createRenderer(canvas, { size = null } = {}) {
       paintSilhouette(ctx, c.x, c.y, size, lanePropSilhouette(air ? 'air' : 'entrance'), air
         ? { fill: '#3c4a5a', accent: '#9ad8ff', stroke: '#141c28', lineWidth: 1.5 }
         : { fill: '#6b5340', accent: '#c4b49a', stroke: '#1c140e', lineWidth: 1.5 });
+      if (p.urgent && !air) label('急路', c.x, c.y - size * 1.15, URGENT_LANE, Math.max(11, Math.round(12 * view.scale)));
     }
     const cores = m.cores?.length ? m.cores : (m.core ? [m.core] : []);
     for (const core of cores) {
@@ -2014,14 +2018,14 @@ export function createLaneMinimap(canvas, { size = null } = {}) {
 
   function linesFor(m) {
     const paths = m.map?.paths ?? [];
-    const key = paths.map((p) => `${p.index}:${p.cells?.length ?? 0}:${p.air ? 1 : 0}`).join(',');
+    const key = paths.map((p) => `${p.index}:${p.cells?.length ?? 0}:${p.air ? 1 : 0}:${p.urgent ? 1 : 0}`).join(',');
     if (key === cacheKey) return cached;
     cacheKey = key;
     cached = [];
     for (let i = 0; i < paths.length && cached.length < LANE_MINI_BUDGET.maxPaths; i++) {
       const p = paths[i];
       if (!p.cells?.length) continue;
-      cached.push({ air: !!p.air, pts: decimateCells(p.cells) });
+      cached.push({ air: !!p.air, urgent: !!p.urgent, pts: decimateCells(p.cells) });
     }
     return cached;
   }
@@ -2067,7 +2071,7 @@ export function createLaneMinimap(canvas, { size = null } = {}) {
     const tailX = head.x - dx * size;
     const tailY = head.y - dy * size;
     const wing = size * 0.42;
-    ctx.fillStyle = '#e7edf4';
+    ctx.fillStyle = cue.urgent ? URGENT_LANE : '#e7edf4';
     ctx.beginPath();
     ctx.moveTo(head.x, head.y);
     ctx.lineTo(tailX + -dy * wing, tailY + dx * wing);
@@ -2092,7 +2096,7 @@ export function createLaneMinimap(canvas, { size = null } = {}) {
         const p = toMini(pts[i].x, pts[i].y);
         ctx.lineTo(p.x, p.y);
       }
-      ctx.strokeStyle = line.air ? '#9ad8ff' : '#d5dee8';
+      ctx.strokeStyle = line.air ? '#9ad8ff' : (line.urgent ? URGENT_LANE : '#d5dee8');
       ctx.lineWidth = line.air ? 2.5 : LANE_MINI_BUDGET.stroke;
       if (line.air) ctx.setLineDash([3, 3]);
       ctx.stroke();
@@ -2101,7 +2105,7 @@ export function createLaneMinimap(canvas, { size = null } = {}) {
     ctx.lineWidth = 1;
     for (const path of (m.map?.paths ?? []).slice(0, LANE_MINI_BUDGET.maxPaths)) {
       if (!path.spawn) continue;
-      ring(path.spawn.x, path.spawn.y, 4.5, path.air ? '#9ad8ff' : '#e7edf4');
+      ring(path.spawn.x, path.spawn.y, 4.5, path.air ? '#9ad8ff' : (path.urgent ? URGENT_LANE : '#e7edf4'));
     }
     const cores = m.cores?.length ? m.cores : (m.core ? [m.core] : []);
     for (const core of cores) {
@@ -2152,6 +2156,15 @@ export function createLaneMinimap(canvas, { size = null } = {}) {
       wardMarks += 1;
     }
     for (const cue of invasionArrows(m)) drawArrow(cue);
+    ctx.fillStyle = URGENT_LANE;
+    ctx.font = '600 11px sans-serif';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'bottom';
+    for (const path of (m.map?.paths ?? []).slice(0, LANE_MINI_BUDGET.maxPaths)) {
+      if (!path.urgent || !path.spawn) continue;
+      const at = toMini(path.spawn.x, path.spawn.y);
+      ctx.fillText('急', at.x + 8, at.y - 2);
+    }
     const heroes = laneHeroes(m);
     heroes.forEach((h, i) => {
       if (!h) return;

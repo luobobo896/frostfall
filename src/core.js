@@ -159,8 +159,51 @@ function padRoute(route, pad) {
 }
 
 /**
- * 生成一张地图的运行时数据：1-2 条地面路径 + 可选空中航线 + 显式塔位。
- * 路径总格数严格等于 mapDef.pathLength（§2.2）。
+ * 比最长的地面路短这么多格，才标成急路。
+ * 12 格 ≈ 基准移速 5 秒，一两格的折返不会被当成「先到核心」。
+ */
+export const URGENT_LANE_GAP = 12;
+
+/** 这一条路要多长。没写 `laneLengths` 的图仍用统一的 `pathLength`。 */
+function laneLengthOf(mapDef, index) {
+  const n = mapDef.laneLengths?.[index];
+  return Number.isFinite(n) && n > 0 ? n : mapDef.pathLength;
+}
+
+/**
+ * 出怪走哪条路。地面路轮流，空中怪走空中航线。
+ * 长短路都分到怪：短的先到，长的不会整波空着。
+ */
+export function spawnPathIndex(paths, { isAir = false, spawned = 0 } = {}) {
+  const list = paths ?? [];
+  const airPath = list.findIndex((p) => p.air);
+  if (isAir && airPath >= 0) return airPath;
+  const ground = [];
+  for (let i = 0; i < list.length; i++) if (!list[i].air) ground.push(i);
+  if (!ground.length) return Math.max(0, airPath);
+  const n = Math.trunc(spawned);
+  const at = ((n % ground.length) + ground.length) % ground.length;
+  return ground[at];
+}
+
+/** 唯一更短的那几条地面路标上 `urgent`。等长图不加标记。 */
+function markUrgentLanes(paths) {
+  const ground = paths.filter((p) => !p.air && p.cells?.length);
+  if (ground.length < 2) return;
+  let min = Infinity;
+  let max = 0;
+  for (const p of ground) {
+    min = Math.min(min, p.cells.length);
+    max = Math.max(max, p.cells.length);
+  }
+  if (max - min < URGENT_LANE_GAP) return;
+  for (const p of ground) p.urgent = p.cells.length === min;
+}
+
+/**
+ * 生成一张地图的运行时数据：地面路径 + 可选空中航线 + 显式塔位。
+ * 没写 `laneLengths` 时，每条地面路的格数严格等于 `pathLength`。
+ * 写了就按车道分别裁（map_02 的急路 / 长路）。
  */
 export function buildMap(mapDef) {
   const g = mapDef.grid ?? GRID;   // 4★ 起的大图用更大的画布（§2.2 的长局图）
@@ -191,7 +234,7 @@ export function buildMap(mapDef) {
     // 出生点 → 扫描带起点 的入场段（出生点通常在地图边缘）
     const entry = connector(spawn, { x: startX, y });
     // 最终 cells = [spawn, ...entry, ...body]，所以要扣掉 spawn 自己那一格
-    const bodyTarget = Math.max(12, mapDef.pathLength - entry.length - 1);
+    const bodyTarget = Math.max(12, laneLengthOf(mapDef, i) - entry.length - 1);
     // 先取长蛇形，再挑一个「与核心同列」的截断点，使 蛇形 + 竖直连线 == 目标长度（精确命中）。
     const full = serpentine(Math.max(bodyTarget + 40, 120), { x: startX, y, dir, stepY, band }, g);
     let cells = null;
@@ -228,6 +271,8 @@ export function buildMap(mapDef) {
     const cells = [spawn, ...connector(spawn, core)];
     paths.push({ index: paths.length, spawn, cells, lengthTiles: cells.length, air: true });
   }
+
+  markUrgentLanes(paths);
 
   const blocked = new Set();
   for (const p of paths) for (const c of p.cells) blocked.add(key(c.x, c.y));

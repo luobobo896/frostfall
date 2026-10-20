@@ -257,7 +257,8 @@ test('§2.2/§2.5 地图路径长度、塔位数与核心位置', () => {
     const map = buildMap(def);
     for (const p of map.paths) {
       if (p.air) continue;
-      assert.equal(p.cells.length, def.pathLength, `${def.id} 路径长度`);
+      const want = def.laneLengths?.[p.index] ?? def.pathLength;
+      assert.equal(p.cells.length, want, `${def.id} 路径 ${p.index} 长度`);
       const last = p.cells[p.cells.length - 1];
       // 双核心地图（map_06）：每条路走到「自己那个核心」，不是都走到第一个
       assert.deepEqual(last, p.core ?? def.core, `${def.id} 终点应是该路径对应的核心`);
@@ -845,13 +846,13 @@ test('§10.7 配置表 schema：畸形数据不许上线（缺字段 / 类型错
 
 /**
  * §169：**§2.2 的地图表逐列对账**。塔位/核心血量/路线数这些「一眼能对」的列钉住；
- * 「分道长度」那一列实现里对不上（生成器把每条道造成等长），已知偏差按下表钉住——
- * 谁把偏差修好了（或改坏了），这条会红，提醒去更新 STATUS 第 30 条与那张表。
+ * map_02 的分道已经按表落地（急路 / 长路）。map_04 / map_05 与 map_03 的空中航线
+ * 仍是等长生成器留下的已知偏差——谁改了，这条会红，提醒去更新 STATUS 第 30 条与那张表。
  */
-test('§169 §2.2 地图表：路线/出生点/塔位/核心血量对账，分道长度是已知偏差', () => {
+test('§169 §2.2 地图表：路线/出生点/塔位/核心血量对账，其余分道长度是已知偏差', () => {
   const DOC = {
     map_01: { lanes: 1, spawns: 1, slots: 18, coreHp: 2400, grounds: [58] },
-    map_02: { lanes: 2, spawns: 2, slots: 22, coreHp: 3000, grounds: [62, 62] },
+    map_02: { lanes: 2, spawns: 2, slots: 22, coreHp: 3000, grounds: [32, 57] },
     map_03: { lanes: 2, air: 1, spawns: 3, slots: 24, coreHp: 3000, grounds: [68, 68], airLen: 34 },
     map_04: { lanes: 3, spawns: 3, slots: 28, coreHp: 3600, grounds: [76, 96, 112] },
     map_05: { lanes: 3, spawns: 4, slots: 26, coreHp: 4200, grounds: [88, 88, 64] },
