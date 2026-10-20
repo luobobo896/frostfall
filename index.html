@@ -52,7 +52,7 @@
         <div class="hud-next-wave"><div class="panel next-wave"><div class="next-wave-line"><span class="muted small">下一波</span> <b id="nextWaveLabel">—</b></div><div class="role-row" id="nextWaveRoles"></div></div></div>
       </div>
       <div id="netBadge" class="panel net-badge hidden"></div>
-      <div id="playerPanel" class="panel player-panel"></div>
+      <div id="playerPanel" class="panel player-panel mb"></div>
       <!-- 防守模式：轮次 / 预警 / 城堡 -->
       <div id="defensePanel" class="panel defense-panel hidden">
         <div class="row"><span>第 <b id="defRound">0</b> 轮</span><span id="defTimer" class="muted">—</span></div>
@@ -94,6 +94,8 @@
 
     <!-- 防守模式的小地图（§2.6 / §14.3 稿 5）：点它 = 回城（与按钮共用 30 秒冷却） -->
     <div class="hud hud-minimap hidden" id="minimapBox"><canvas id="minimap" title="点地图回城（冷却 30 秒）"></canvas></div>
+    <!-- 塔防小地图：点它把镜头移到那一格，不回城 -->
+    <div class="hud hud-td-minimap hidden" id="tdMinimapBox"><canvas id="tdMinimap" title="点地图把镜头移到那里"></canvas></div>
     <!-- 新手引导提示条（§14.3 稿 11） -->
     <div id="tutorialBar" class="hud hud-tutorial hidden"><div class="panel tutorial">
       <span id="tutorialText">—</span>

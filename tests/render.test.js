@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 
 import { createMatch, buildTower, towerStatsAt, update } from '../src/match.js';
 import { heroPos, posAt, project } from '../src/core.js';
-import { GRID, HEROES, MONSTERS, TICK_STEP } from '../src/data.js';
+import { GRID, HEROES, MONSTERS, TEAM_COLORS, TICK_STEP } from '../src/data.js';
 
 globalThis.window = { devicePixelRatio: 1 };
 
@@ -28,7 +28,7 @@ const {
   fortSilhouette, fortDrawSize, wallSilhouette, wallKindAt, wallDrawSize,
   pathBandColor, pathProgressOf, colorLuma, lanePropSilhouette,
   isoOcclusionRatio, shouldEaseOcclusion, OCCLUSION_ALPHA, OCCLUSION_LIMIT,
-  createLaneMinimap, nextInvasion, decimateCells, LANE_MINI_BUDGET, laneHeroes, BODY_PX,
+  createLaneMinimap, nextInvasion, invasionArrows, decimateCells, LANE_MINI_BUDGET, laneHeroes, BODY_PX,
 } = await import('../src/render.js');
 
 test('等距投影：格坐标 → 屏幕往返可逆（点击判定依赖它）', () => {
@@ -976,12 +976,15 @@ test('TD 小地图只描折线：英雄点跟着走，箭头指向下一只怪�
   assert.equal(laneHeroes(m).length, 2, '主英雄之外的点也要画');
   const ground = m.map.paths.filter((p) => !p.air);
   assert.deepEqual(nextInvasion(m).spawn, ground[0].spawn);
+  assert.equal(invasionArrows(m).length, ground.length, '备战期每条地面路一支入侵箭头');
   m.wave.phase = 'spawning';
   m.wave.spawned = 1;
   m.wave.total = 6;
   assert.deepEqual(nextInvasion(m).spawn, ground[1 % ground.length].spawn);
+  assert.equal(invasionArrows(m).length, 1, '出怪中只留下一只的那支箭头');
   m.wave.phase = 'clearing';
   assert.equal(nextInvasion(m), null, '清场没有下一只，箭头收起');
+  assert.equal(invasionArrows(m).length, 0);
   const at = mini.toMini(10, 8);
   assert.deepEqual(mini.cellAt(at.x, at.y, m), { x: 10, y: 8 });
   const long = decimateCells(Array.from({ length: 200 }, (_, i) => ({ x: i, y: 0 })));
@@ -991,4 +994,28 @@ test('TD 小地图只描折线：英雄点跟着走，箭头指向下一只怪�
   const callsBefore = ctx.calls.length;
   mini.draw(m);
   assert.ok(ctx.calls.length - callsBefore < 400, '第二帧不能把格子再扫一遍');
+
+  const marked = styleContext();
+  const canvas2 = { clientWidth: 168, clientHeight: 122, width: 0, height: 0, getContext: () => marked };
+  const mini2 = createLaneMinimap(canvas2, { size: () => ({ w: 168, h: 122 }) });
+  const built = createMatch({ mapId: 'map_02', seed: 1 });
+  assert.ok(buildTower(built, 0, 'tw_arrow', 2));
+  built.hero.hold = { x: built.hero.cell.x + 1, y: built.hero.cell.y };
+  built.monsters = Array.from({ length: 30 }, (_, i) => ({
+    uid: i + 1, mobId: 'mob_01', def: MONSTERS.mob_01, dead: false, isAir: false,
+    cell: { x: i % 8, y: 3 },
+  }));
+  mini2.draw(built, { fx: 'high' });
+  const fills = marked.calls.filter((c) => c.key === 'fillStyle').map((c) => c.value);
+  assert.ok(fills.includes('#7fd4ff'), '核心要有自己的点');
+  assert.ok(fills.includes(TEAM_COLORS[2]), '塔点用建塔的人的队伍色');
+  const strokes = marked.calls.filter((c) => c.key === 'strokeStyle').map((c) => c.value);
+  assert.ok(strokes.includes('#f0d59a'), '驻守点是小菱形，不是第二颗英雄点');
+  const highArcs = marked.calls.filter((c) => c.name === 'arc').length;
+  const lowCtx = styleContext();
+  const lowCanvas = { clientWidth: 168, clientHeight: 122, width: 0, height: 0, getContext: () => lowCtx };
+  createLaneMinimap(lowCanvas, { size: () => ({ w: 168, h: 122 }) }).draw(built, { fx: 'low' });
+  const lowArcs = lowCtx.calls.filter((c) => c.name === 'arc').length;
+  assert.ok(highArcs > lowArcs, '低特效不画路上的怪点');
+  assert.ok(lowCtx.calls.filter((c) => c.name === 'fillRect').length < 8, '低档也不许逐格填色');
 });

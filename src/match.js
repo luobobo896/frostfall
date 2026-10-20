@@ -456,7 +456,10 @@ export function createMatch({
     equipped: { weapon: null, armor: null, trinket: null },
     // rolls：掉落判定的**次数**（按档位）。§5.2 的「橙装 5-8 局一次」是概率口径，
     // 用 10 局样本去数橙装件数是在赌运气（见验证记录 §57）；有这张表就能把期望值直接算出来。
-    stats: { kills: 0, leaks: 0, normalKills: 0, damage: {}, goldEarned: 0, drops: 0, crafts: 0, rolls: { normal: 0, elite: 0, boss: 0, chest: 0 } },
+    stats: {
+      kills: 0, leaks: 0, killsBySlot: [0, 0, 0, 0], normalKills: 0, damage: {},
+      goldEarned: 0, drops: 0, crafts: 0, rolls: { normal: 0, elite: 0, boss: 0, chest: 0 },
+    },
     result: null,
     events: [],
   };
@@ -655,7 +658,22 @@ function applySlow(mon, pct, until) {
   mon.effects.push({ type: 'slow', pct, until });
 }
 
-export function damageMonster(m, mon, amount, source = 'tower') {
+/** 记到建塔的那位。没有席位账本（旧档 / 防守）就不另造一份。英雄击杀记在 0 号，本代只有一个英雄。 */
+function creditKill(m, owner, source) {
+  const slots = m.stats?.killsBySlot;
+  if (!Array.isArray(slots)) return;
+  let slot = owner;
+  if (slot == null) {
+    if (source === 'hero') slot = 0;
+    else return;
+  }
+  const i = slot | 0;
+  if (i < 0 || i > 7) return;
+  while (slots.length <= i) slots.push(0);
+  slots[i] += 1;
+}
+
+export function damageMonster(m, mon, amount, source = 'tower', owner = null) {
   if (mon.dead) return;
   const dealt = Math.max(0, Math.min(mon.hp, amount));
   mon.hp -= dealt;
@@ -663,6 +681,7 @@ export function damageMonster(m, mon, amount, source = 'tower') {
   if (mon.hp > 0) return;
   mon.dead = true;
   m.stats.kills += 1;
+  creditKill(m, owner, source);
   // §3.5 法力涌动：英雄自己的击杀回复 2% 最大生命（塔杀的功劳不算在英雄头上）
   const killHeal = m.hero ? talentValue(m.hero, 'killHealPct') : 0;
   if (killHeal > 0 && source === 'hero' && !m.hero.dead) {
@@ -1190,7 +1209,7 @@ function towerFire(m, tower) {
   m.projectiles.push({
     from: project(tower.cell.x, tower.cell.y, 1.1),
     target, stats: tower.stats, damage: tower.stats.damage,
-    towerId: tower.towerId, slot: tower.slot, progress: 0, life: 2,
+    towerId: tower.towerId, slot: tower.slot, owner: tower.owner ?? 0, progress: 0, life: 2,
   });
 }
 
@@ -1204,7 +1223,7 @@ function projectileHit(m, p) {
     targetReduce: -(mark?.value ?? 0), rng: m.rng,
   }).damage;
   const landing = monsterCell(m, target);
-  damageMonster(m, target, dealt, p.towerId);
+  damageMonster(m, target, dealt, p.towerId, p.owner ?? 0);
   if (s.special?.splashRadius) {
     for (const mo of m.monsters.filter((x) => x !== target && isTargetable(m, x, false)
       && gridDist(monsterCell(m, x), landing) <= s.special.splashRadius)) {
@@ -1212,7 +1231,7 @@ function projectileHit(m, p) {
       damageMonster(m, mo, computeDamage({
         atk: p.damage * splashScale(d, s.special.splashRadius),
         attackType: s.attackType, armor: mo.armor, armorType: mo.armorType, rng: m.rng,
-      }).damage, p.towerId);
+      }).damage, p.towerId, p.owner ?? 0);
     }
   }
   if (s.special?.slowPct) applySlow(target, s.special.slowPct, m.time + s.special.slowSec);
@@ -1223,7 +1242,7 @@ function projectileHit(m, p) {
       const next = m.monsters.find((mo) => isTargetable(m, mo, true) && !hit.has(mo.uid)
         && gridDist(monsterCell(m, mo), monsterCell(m, src)) <= s.special.chainRange);
       if (!next) break;
-      damageMonster(m, next, Math.max(1, Math.floor(dmg)), p.towerId);
+      damageMonster(m, next, Math.max(1, Math.floor(dmg)), p.towerId, p.owner ?? 0);
       hit.add(next.uid);
       src = next;
       dmg *= (1 - s.special.chainDecay);

@@ -253,7 +253,8 @@ export function createSnapshotter() {
         m.hero.facing === 1 ? 1 : -1,
         m.hero.hold?.x ?? m.hero.cell?.x ?? 0, m.hero.hold?.y ?? m.hero.cell?.y ?? 0],
       gold: Math.round(m.gold),
-      st: [m.stats.kills, m.stats.leaks],
+      // st[2..] 是各席击杀。老快照只有两项时，客户端不把缺的席位当成 0 杀。
+      st: [m.stats.kills, m.stats.leaks, ...(Array.isArray(m.stats.killsBySlot) ? m.stats.killsBySlot.slice(0, 4) : [])],
       result: m.result ?? 0,
       mon: monsters,
       rm: removed,
@@ -303,6 +304,9 @@ export function applyShared(m, s) {
   m.gold = s.gold;
   m.stats.kills = s.st[0];
   m.stats.leaks = s.st[1];
+  if (Array.isArray(s.st) && s.st.length > 2) {
+    m.stats.killsBySlot = [0, 1, 2, 3].map((i) => (s.st[i + 2] | 0));
+  }
   m.result = s.result || null;
   m.hero.level = s.hero[1];
   m.hero.exp = s.hero[2];

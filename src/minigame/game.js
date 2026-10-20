@@ -453,6 +453,7 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
       case 'shop': b.ui = { sheetKind: 'shop', heroSelected: !!b.ui.heroSelected }; return action;
       case 'bag': b.ui = { sheetKind: 'bag', heroSelected: !!b.ui.heroSelected }; return action;
       case 'speed': b.rate = b.rate === 2 ? 1 : 2; return action;
+      case 'noop': return action;
       case 'focus': {
         const cell = action.cell;
         const grid = b.m.map?.grid;
@@ -1006,7 +1007,7 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
       drawDefenseHud(ctx, b.m, b.layout, { message, stick: b.stick.active ? { base: b.stick.origin, dir: b.stick.dir } : { base: b.layout.stick, dir: { x: 0, y: 0, mag: 0 } } });
       // 小地图画在 HUD 之后：它那一格在 `items` 里（负责命中），底下的面板底由这张图盖住
       if (b.minimap) {
-        b.minimap.api.draw(b.m);
+        b.minimap.api.draw(b.m, { fx: settings.effects === 'low' ? 'low' : 'high' });
         ctx.drawImage(b.minimap.canvas, MINIMAP.x, MINIMAP.y, MINIMAP.w, MINIMAP.h);
       }
     } else {
@@ -1040,7 +1041,7 @@ export function startMinigame({ requestAnimationFrame: raf = globalThis.requestA
         selectedTower: b.selectedTower, message, preview: model.preview, roster: model.roster, heroSelected: !!b.ui.heroSelected,
       });
       if (b.minimap && b.layout.minimap) {
-        b.minimap.api.draw(b.m);
+        b.minimap.api.draw(b.m, { fx: settings.effects === 'low' ? 'low' : 'high' });
         const box = b.layout.minimap;
         ctx.drawImage(b.minimap.canvas, box.x, box.y, box.w, box.h);
       }

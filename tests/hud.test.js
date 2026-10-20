@@ -3,9 +3,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { DAMAGE_MATRIX, MONSTERS, TEAM_COLORS, WAVES, WAVES_LONG } from '../src/data.js';
-import { armorHint, attackHint, commandStrip, counterTable, creepRoles, damageFloaters, playerPanel, recordLabel, resultPanelModel, roleGlyph, teamColor, wavePreview, zoneLabel } from '../src/hud-model.js';
+import { armorHint, attackHint, commandStrip, counterTable, creepRoles, damageFloaters, playerPanel, recordLabel, resultPanelModel, roleGlyph, scoreboard, teamColor, wavePreview, zoneLabel } from '../src/hud-model.js';
 import { createDefenseMatch } from '../src/defense.js';
-import { createMatch, revivePoint } from '../src/match.js';
+import { pathTotalUnits } from '../src/core.js';
+import { createMatch, damageMonster, revivePoint, update } from '../src/match.js';
+import { applyShared, createSnapshotter } from '../src/protocol.js';
 
 // §190：结局面板别给「假出口」。城堡陷落之后那一局就结束了（内核 `updateDefense` 在 `m.over` 时直接
 // return），可面板还在说「（无尽中）」并摆着「继续（无尽）」——点下去只是让开面板，露出一个
@@ -152,6 +154,83 @@ test('伤害飘字：按两帧血量差生成，大伤害单独标记，数量�
     Array.from({ length: 30 }, (_, i) => ({ uid: i, hp: 100 - i, cell: { x: 0, y: 0 } })),
   );
   assert.equal(many.length, 12, '飘字数量要有上限');
+});
+
+test('记分板：怪死了击杀加一，走到核心漏怪加一，席位分开记', () => {
+  const creep = (dist) => {
+    const mob = MONSTERS.mob_01;
+    return {
+      uid: 1, mobId: 'mob_01', def: mob, pathIndex: 0, dist, cell: { ...mob && {} },
+      hp: 30, maxHp: mob.hp, armor: mob.armor, armorType: mob.armorType, speed: 0,
+      attack: 0, atkSpeed: 1, cooldown: 99, isAir: false, effects: [], dead: false, attacking: false,
+      coreIndex: 0,
+    };
+  };
+  const m = createMatch({ mapId: 'map_01', seed: 3 });
+  const before = scoreboard(m);
+  assert.equal(before.kills, 0);
+  assert.equal(before.leaks, 0);
+  assert.equal(before.collapsed, true);
+  assert.equal(before.rows[0].kills, 0);
+  assert.equal(before.gold, undefined, '金币已在资源条上，记分板不重复');
+
+  const killed = creep(0);
+  killed.cell = { x: 1, y: 1 };
+  m.monsters.push(killed);
+  damageMonster(m, killed, 9999, 'hero');
+  const afterKill = scoreboard(m);
+  assert.equal(afterKill.kills, before.kills + 1);
+  assert.equal(afterKill.leaks, 0, '打死不算漏');
+  assert.equal(afterKill.rows[0].kills, 1);
+  assert.equal(m.stats.killsBySlot[0], 1);
+
+  const leaked = creep(pathTotalUnits(m.map.paths[0]));
+  leaked.uid = 2;
+  leaked.hp = 9999;
+  leaked.cell = { ...m.map.paths[0].spawn };
+  m.monsters.push(leaked);
+  update(m, 0.05);
+  const afterLeak = scoreboard(m);
+  assert.equal(afterLeak.leaks, before.leaks + 1);
+  assert.equal(afterLeak.kills, afterKill.kills, '漏掉的那只不再算一次击杀');
+
+  const roomMatch = createMatch({ mapId: 'map_01', seed: 4 });
+  const shot = creep(0);
+  shot.cell = { x: 2, y: 2 };
+  roomMatch.monsters.push(shot);
+  damageMonster(roomMatch, shot, 9999, 'tw_arrow', 1);
+  const room = scoreboard(roomMatch, {
+    players: [{ slot: 0, name: '甲', online: true }, { slot: 1, name: '乙', online: true }],
+    localSlot: 0,
+  });
+  assert.equal(room.collapsed, false);
+  assert.equal(room.attributed, true);
+  assert.equal(room.rows[0].kills, 0);
+  assert.equal(room.rows[1].name, '乙');
+  assert.equal(room.rows[1].kills, 1);
+  assert.equal(room.leaks, 0);
+
+  const mirror = createMatch({ mapId: 'map_01', seed: 5 });
+  applyShared(mirror, {
+    t: 1, w: [0, 0, 12, 0, 0], core: [mirror.core.hp, mirror.core.maxHp],
+    hero: [0, 1, 0, mirror.hero.hp, 0, 0, [0, 0, 0], [1, 0, 0]],
+    gold: 10, st: [4, 2], result: 0, mon: [],
+  });
+  const stale = scoreboard(mirror, {
+    players: [{ slot: 0, name: '甲', online: true }, { slot: 1, name: '乙', online: true }],
+    localSlot: 0,
+  });
+  assert.equal(stale.kills, 4);
+  assert.equal(stale.leaks, 2);
+  assert.equal(stale.attributed, false, '老快照没有席位击杀，不能写成每人 0');
+  assert.equal(stale.rows[0].kills, null);
+
+  const snap = createSnapshotter()(roomMatch, { full: true });
+  const copy = createMatch({ mapId: 'map_01', seed: 4 });
+  applyShared(copy, snap);
+  assert.equal(copy.stats.kills, roomMatch.stats.kills);
+  assert.equal(copy.stats.leaks, roomMatch.stats.leaks);
+  assert.deepEqual(copy.stats.killsBySlot, roomMatch.stats.killsBySlot);
 });
 
 test('玩家面板：4 格固定位，标出自己、空位与掉线', () => {

@@ -285,6 +285,42 @@ export function playerPanel(players = [], localSlot = 0, maxPlayers = 4) {
   });
 }
 
+/**
+ * 记分板：击杀 / 漏怪来自对局统计，不另编数字。
+ * 金币已经在资源条上，这里不重复。
+ * 席位击杀只有和总击杀对得上才分行写；对不上（旧快照）就只写本局总数。
+ * 漏怪是怪走到核心，整队一份。
+ */
+export function scoreboard(m, { players = [], localSlot = 0 } = {}) {
+  const kills = Number(m?.stats?.kills) || 0;
+  const leaks = Number(m?.stats?.leaks) || 0;
+  const bySlot = Array.isArray(m?.stats?.killsBySlot) ? m.stats.killsBySlot : null;
+  const sum = bySlot ? bySlot.reduce((acc, n) => acc + (Number(n) || 0), 0) : null;
+  const attributed = bySlot != null && sum === kills;
+  const panel = playerPanel(players, localSlot);
+  const seated = panel.filter((p) => p.connected);
+  const inRoom = seated.length > 1 || seated.some((p) => !p.isSelf);
+  const rowKills = (slot) => (attributed ? (Number(bySlot[slot]) || 0) : null);
+  const rows = inRoom
+    ? seated.map((p) => ({ ...p, kills: rowKills(p.slot) }))
+    : [{
+      ...(panel[localSlot] ?? panel[0]),
+      name: seated.length === 1 ? seated[0].name : '我',
+      connected: true,
+      online: true,
+      isSelf: true,
+      kills: attributed ? rowKills(localSlot) : kills,
+    }];
+  return {
+    title: '记分',
+    kills,
+    leaks,
+    attributed,
+    collapsed: !inRoom,
+    rows,
+  };
+}
+
 /* ---------- 英雄选择卡片（§14.3 稿 3：4 职业卡片 + 技能预览） ---------- */
 
 const ROLE_TEXT = {

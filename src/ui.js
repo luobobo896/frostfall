@@ -9,7 +9,7 @@ import {
   craftableSlots, enhanceCostOf, heroMaxHp, shopPriceOf, skillLevel, TOWER_REPAIR_GOLD, towerStats, upgradeCost,
 } from './match.js';
 import { qualityColor, towerName } from './render.js';
-import { attackHint, commandStrip, detectNote, heroCard, heroCards, isLowHp, playerPanel, resultPanelModel, roleGlyphSvg, shopRows, wavePreview, zoneLabel } from './hud-model.js';
+import { attackHint, commandStrip, detectNote, heroCard, heroCards, isLowHp, resultPanelModel, roleGlyphSvg, scoreboard, shopRows, wavePreview, zoneLabel } from './hud-model.js';
 import { assaultStealthCount, zoneAt } from './defense.js';
 
 const $ = (id) => document.getElementById(id);
@@ -78,6 +78,7 @@ export function createUI(handlers) {
     el.waveLabel.textContent = `第 ${w.index} / ${(m.waves?.length ?? WAVES.length)} 波`;
     el.phaseLabel.textContent = w.phase === 'prep' ? `准备 ${Math.max(0, w.timer).toFixed(0)}s`
       : w.phase === 'spawning' ? `出怪 ${w.spawned}/${w.total}` : `清场中（剩 ${m.monsters.length}）`;
+    el.playerPanel?.classList.remove('hidden');
     el.waveTimer.style.width = `${w.phase === 'prep' ? Math.min(100, (1 - w.timer / 30) * 100) : (w.spawned / Math.max(1, w.total)) * 100}%`;
     el.coreLabel.textContent = `${Math.round(m.core.hp)} / ${m.core.maxHp}`;
     el.coreBar.style.width = `${Math.max(0, m.core.hp / m.core.maxHp) * 100}%`;
@@ -264,22 +265,42 @@ export function createUI(handlers) {
     }
   }
 
-  /** 玩家面板：4 格固定位 + 队伍色 + 掉线状态（联机时才知道谁在）。 */
+  /** 记分板：单人收成一行；联机列出在座的人。数字只读对局统计。 */
+  let playerSig = '';
   function renderPlayers(m, view) {
     if (!el.playerPanel) return;
     const players = view?.net?.players ?? [];
     const localSlot = view?.localSlot ?? 0;
-    const panel = playerPanel(players, localSlot);
-    if (panel.every((p) => !p.connected) && !players.length) {
-      // 单人局：只显示自己，避免空位噪音
-      el.playerPanel.innerHTML = `<div class="player-slot"><i class="dot" style="background:${panel[0].color}"></i><span class="who">我（Lv${m.hero.level}）</span></div>`;
+    const board = scoreboard(m, { players, localSlot });
+    // 矮屏右上角要留给雷达（技能键占着中右）。联机记分收成一行，避免压住雷达。
+    const tight = typeof matchMedia === 'function' && matchMedia('(max-height: 520px)').matches;
+    const sig = `${board.collapsed ? 1 : 0}|${tight ? 1 : 0}|${board.kills}|${board.leaks}|${board.attributed ? 1 : 0}|${m.hero?.level ?? 0}|`
+      + board.rows.map((p) => `${p.slot}:${p.name}:${p.kills}:${p.online ? 1 : 0}:${p.isSelf ? 1 : 0}`).join(',');
+    if (sig === playerSig) return;
+    playerSig = sig;
+    if (board.collapsed) {
+      el.playerPanel.innerHTML = `<div class="mb-solo"><span class="who">我（Lv${m.hero?.level ?? 1}）</span><span class="mb-num">击杀 ${board.kills}</span><span class="mb-num">漏怪 ${board.leaks}</span></div>`;
       return;
     }
-    el.playerPanel.innerHTML = panel.map((p) => `
-      <div class="player-slot${p.connected && !p.online ? ' offline' : ''}">
-        <i class="dot" style="background:${p.connected ? p.color : '#445'}"></i>
-        <span class="who">${p.connected ? `${esc(p.name)}${p.isSelf ? '（我）' : ''}${p.online ? '' : ' 掉线'}` : '空位'}</span>
-      </div>`).join('');
+    if (tight) {
+      const seats = board.rows.map((p) => {
+        const who = `${esc(p.name)}${p.isSelf ? '（我）' : ''}${p.online ? '' : '掉线'}`;
+        const k = board.attributed ? ` ${p.kills ?? 0}` : '';
+        return `<span class="who${p.online ? '' : ' offline'}">${who}${k}</span>`;
+      }).join('');
+      const team = board.attributed ? '' : `<span class="mb-num">击杀 ${board.kills}</span>`;
+      el.playerPanel.innerHTML = `<div class="mb-solo">${seats}${team}<span class="mb-num">漏怪 ${board.leaks}</span></div>`;
+      return;
+    }
+    const head = board.attributed
+      ? '<span class="mb-hd">记分</span><span></span><span class="mb-hd">击杀</span>'
+      : `<span class="mb-hd">记分</span><span class="mb-num">击杀 ${board.kills}</span><span></span>`;
+    const rows = board.rows.map((p) => {
+      const who = `${esc(p.name)}${p.isSelf ? '（我）' : ''}${p.online ? '' : ' 掉线'}`;
+      const k = board.attributed ? (p.kills ?? 0) : '';
+      return `<i class="dot${p.online ? '' : ' offline'}" style="background:${p.color}"></i><span class="who${p.online ? '' : ' offline'}">${who}</span><span class="mb-num">${k}</span>`;
+    }).join('');
+    el.playerPanel.innerHTML = `<div class="mb-table">${head}${rows}<span class="mb-foot">漏怪 ${board.leaks}</span></div>`;
   }
 
   /** 新手引导提示条（§14.3 稿 11）：只在引导进行中显示。 */
