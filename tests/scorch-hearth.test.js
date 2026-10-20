@@ -157,7 +157,7 @@ test('燎野炮台：满级才开，价钱与炮弹曲线分开，卖掉按投�
   assert.equal(upgradeCost('tw_cannon', 3), null);
   assert.equal(upgradeCost('tw_static', 3), null);
   assert.equal(TOWER_SPEC.tw_arrow, undefined);
-  assert.equal(TOWER_SPEC.tw_static, undefined);
+  assert.notEqual(TOWER_SPEC.tw_static?.id, HEARTH.id);
 
   const plain = towerStats('tw_cannon', 3);
   const grown = towerStats('tw_cannon', 3, HEARTH.id);
@@ -201,7 +201,12 @@ test('燎野炮台：满级才开，价钱与炮弹曲线分开，卖掉按投�
   assert.equal(buildTower(m, staticSlot, 'tw_static'), true);
   assert.equal(upgradeTower(m, staticSlot), true);
   assert.equal(upgradeTower(m, staticSlot), true);
-  assert.equal(upgradeTower(m, staticSlot), false, '静电塔满级没有专精');
+  assert.equal(upgradeTower(m, staticSlot), true);
+  const staticTower = m.towers.find((t) => t.slot === staticSlot);
+  assert.equal(staticTower.level, 3);
+  assert.notEqual(staticTower.spec, HEARTH.id, '静电塔的专精不是燎野炮台');
+  assert.equal(staticTower.stats.special.scorch, undefined);
+  assert.equal(staticTower.stats.attackType, 'magic');
 
   const cannon = raiseCannon(m, slot);
   assert.equal(nextUpgrade(cannon).id, HEARTH.id);
@@ -413,7 +418,7 @@ test('波次预告和建造面板写出焦土身份，寒霜那句还在', () =>
   assert.match(build.byId['build-tw_cannon'].sub, /满级焦土/);
   assert.match(build.byId['build-tw_frost'].sub, /满级支援/);
   assert.doesNotMatch(build.byId['build-tw_arrow'].sub, /满级/);
-  assert.doesNotMatch(build.byId['build-tw_static'].sub, /满级/);
+  assert.match(build.byId['build-tw_static'].sub, /满级雷暴/);
   assert.ok(build.byId['build-tw_cannon'].h >= 44);
   const preview = layoutSheet(m, { selectedSlot: 1, placingTowerId: 'tw_cannon' });
   assert.match(preview.hint, /焦土/);

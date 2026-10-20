@@ -147,6 +147,8 @@ export const TOWER_ATK_SPEED_CAP = 4.0;
  * 炮塔 → 燎野炮台：炮座下一块焦土，每秒按攻城灼烧站在里面的人。
  * 克制表里攻城打加强甲已经是 ×1.5，所以这里不加炮弹伤害和射程；
  * 成团的怪一起吃焦土，会拆塔的攻城单位再乘一截。霜壳仍削攻城。
+ * 静电塔 → 风暴电笼：塔下一块雷场，每秒按魔法轻击空中和地面。链式那一发停在 Lv3。
+ * 雷场自己不侦测，也不减速——减速仍是寒霜祭坛的事。空中要成团才在预告里提一句。
  */
 export const TOWER_SPEC = {
   tw_frost: {
@@ -169,6 +171,17 @@ export const TOWER_SPEC = {
     counters: ['siege'],
     counterMin: 2,
     scorch: { radius: 2.8, dps: 8, vsSiege: 0.5 },
+  },
+  tw_static: {
+    id: 'storm_cage',
+    name: '风暴电笼',
+    costMul: 288 / 260,
+    role: '雷暴',
+    hint: '雷暴 · 雷场轻击空中与地面',
+    counter: '风暴电笼可刮空中成团',
+    counters: ['air'],
+    counterMin: 15,
+    storm: { radius: 3.0, chip: 5 },
   },
 };
 
