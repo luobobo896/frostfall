@@ -8,7 +8,7 @@ import { HEROES, MONSTERS, TOWERS } from '../src/data.js';
 import { project } from '../src/core.js';
 import {
   FX_LIMITS, attackPulse, chargePulse, fxBudget, heroMotion, impactGlyphs, mobMotion,
-  poseClip, poseFrame, shotGlyphs, shotKind, slowShards, towerMarks, towerNudge,
+  poseClip, poseFrame, shotGlyphs, shotKind, slowShards, stealthGlyphs, towerMarks, towerNudge,
 } from '../src/motion.js';
 
 globalThis.window = globalThis.window ?? { devicePixelRatio: 1 };
@@ -63,6 +63,11 @@ test('四种弹道和命中的形状互不相同，减速是菱形不是圆', ()
   assert.ok(FX_LIMITS.low.impacts < FX_LIMITS.high.impacts);
   assert.ok(FX_LIMITS.low.corpses <= 12);
   assert.ok(FX_LIMITS.low.sprint < FX_LIMITS.high.sprint);
+  assert.ok(FX_LIMITS.low.invis < FX_LIMITS.high.invis);
+  assert.ok(stealthGlyphs('revealed').length > 0);
+  assert.ok(stealthGlyphs('revealed').every((g) => g.closed === false));
+  assert.equal(stealthGlyphs('ghost', 0).length, 0);
+  assert.equal(stealthGlyphs('none').length, 0);
 });
 
 function fakeContext() {

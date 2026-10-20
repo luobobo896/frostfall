@@ -35,7 +35,9 @@ export const MONSTERS = {
   mob_03: { id: 'mob_03', name: '石像鬼', tier: 'normal', level: 3, hp: 110, armor: 2, armorType: 'medium', attack: 10, atkSpeed: 1.1, speed: 330, bounty: 20, lumber: 0, coreDamage: 70, attackType: 'pierce', isAir: true },
   mob_04: { id: 'mob_04', name: '沼泽巨魔', tier: 'normal', level: 4, hp: 220, armor: 3, armorType: 'heavy', attack: 16, atkSpeed: 0.8, speed: 260, bounty: 26, lumber: 0, coreDamage: 90, attackType: 'normal' },
   mob_10: { id: 'mob_10', name: '冰甲卫士', tier: 'elite', level: 7, hp: 900, armor: 6, armorType: 'fortified', attack: 30, atkSpeed: 1.0, speed: 240, bounty: 120, lumber: 2, coreDamage: 220, attackType: 'normal', siege: true },
-  mob_11: { id: 'mob_11', name: '亡语蛛后', tier: 'elite', level: 7, hp: 700, armor: 2, armorType: 'medium', attack: 22, atkSpeed: 1.2, speed: 300, bounty: 130, lumber: 2, coreDamage: 200, attackType: 'normal', onDeath: { splitInto: 'mob_01', count: 2 } },
+  // 隐身是周期窗，不是永久消失：hidden 秒内普通塔锁不到，末尾 shimmer 秒仍锁敌但灰阶变清楚。
+// 短局只在第 9 波出 2 只，血量移速不动。侦测（冰塔 / 工事箭塔 / 圣徒结界）在半径内解除。
+mob_11: { id: 'mob_11', name: '亡语蛛后', tier: 'elite', level: 7, hp: 700, armor: 2, armorType: 'medium', attack: 22, atkSpeed: 1.2, speed: 300, bounty: 130, lumber: 2, coreDamage: 200, attackType: 'normal', onDeath: { splitInto: 'mob_01', count: 2 }, invis: { period: 5, hidden: 3.2, shimmer: 0.8 } },
   mob_12: { id: 'mob_12', name: '亡灵巫师', tier: 'elite', level: 8, hp: 650, armor: 1, armorType: 'unarmored', attack: 18, atkSpeed: 1.0, speed: 280, bounty: 140, lumber: 2, coreDamage: 210, attackType: 'magic', aura: { id: 'heal', radius: 3, hps: 20 } },
   boss_01: { id: 'boss_01', name: '霜嚎巨兽', tier: 'boss', level: 12, hp: 3600, armor: 8, armorType: 'fortified', attack: 80, atkSpeed: 1.0, speed: 220, bounty: 800, lumber: 10, coreDamage: 600, attackType: 'normal', bossTier: 'minor', siege: true },
   boss_02: { id: 'boss_02', name: '巫妖侍从', tier: 'boss', level: 15, hp: 8000, armor: 10, armorType: 'fortified', attack: 110, atkSpeed: 1.2, speed: 240, bounty: 1500, lumber: 15, coreDamage: 900, attackType: 'magic', bossTier: 'final', aura: { id: 'haste', radius: 3, atkSpeedPct: 0.15 }, siege: true },
@@ -129,7 +131,7 @@ export const LONG_RUN = { waves: 30, bountyMul: 1.0, label: '长局（30 波）'
 export const TOWERS = {
   tw_arrow: { id: 'tw_arrow', name: '箭塔', cost: 60, attackType: 'normal', damage: 18, atkSpeed: 1.5, range: 5.0, hitsAir: true, special: {} },
   tw_cannon: { id: 'tw_cannon', name: '炮塔', cost: 150, attackType: 'siege', damage: 40, atkSpeed: 0.8, range: 6.0, hitsAir: false, special: { splashRadius: 1.5 } },
-  tw_frost: { id: 'tw_frost', name: '冰塔', cost: 120, attackType: 'magic', damage: 8, atkSpeed: 1.0, range: 4.5, hitsAir: true, special: { slowPct: 0.30, slowSec: 2 } },
+  tw_frost: { id: 'tw_frost', name: '冰塔', cost: 120, attackType: 'magic', damage: 8, atkSpeed: 1.0, range: 4.5, hitsAir: true, special: { slowPct: 0.30, slowSec: 2, detectRadius: 6 } },
   tw_static: { id: 'tw_static', name: '静电塔', cost: 260, attackType: 'magic', damage: 30, atkSpeed: 1.0, range: 5.5, hitsAir: true, special: { chainCount: 3, chainDecay: 0.2, chainRange: 3 } },
 };
 export const TOWER_MAX_LEVEL = 3;
@@ -183,7 +185,7 @@ export const HEROES = {
     id: 'hero_paladin', name: '守誓圣徒', hp: 800, attack: 20, def: 5, atkSpeed: 1.00, moveSpeed: 310, range: 3.0, attackType: 'normal',
     skills: [
       { id: 'sk_holy', name: '圣光术', unlockLevel: 1, cooldown: 10, heal: [200, 500] },
-      { id: 'sk_barrier', name: '守护结界', unlockLevel: 8, cooldown: 22, radius: 4, duration: 8, reducePct: [0.20, 0.35] },
+      { id: 'sk_barrier', name: '守护结界', unlockLevel: 8, cooldown: 22, radius: 4, duration: 8, reducePct: [0.20, 0.35], detectRadius: 7.2 },
     ],
     thirdSkill: { id: 'sk_hammer', name: '制裁之锤', unlockLevel: 15, cooldown: 20, dmg: [80, 200], stun: 1.5 },
     talents: [
@@ -392,7 +394,7 @@ export const DEFENSE_RULES = {
 
 // 基地工事（§12.5：比 TD 的 6 种少，只有 2 种）
 export const FORTS = {
-  fort_arrow: { id: 'fort_arrow', name: '箭塔', cost: 60, damage: 20, atkSpeed: 1.4, range: 5.0, hitsAir: true, attackType: 'normal', hp: 400 },
+  fort_arrow: { id: 'fort_arrow', name: '箭塔', cost: 60, damage: 20, atkSpeed: 1.4, range: 5.0, hitsAir: true, attackType: 'normal', hp: 400, detectRadius: 6.5 },
   fort_wall: { id: 'fort_wall', name: '围墙', cost: 40, hp: 800, blocks: true },
 };
 

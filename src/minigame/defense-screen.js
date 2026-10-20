@@ -7,7 +7,7 @@
 // 这一层仍然是纯函数四件套（布局 / 绘制 / 命中 / 摇杆向量），所以能在 Node 里测、也能出样张。
 import { DEFENSE_RULES, FORTS } from '../data.js';
 import { skillKeys } from './battle.js';
-import { commandStrip, zoneLabel } from '../hud-model.js';
+import { commandStrip, roleGlyph, zoneLabel } from '../hud-model.js';
 import { zoneAt } from '../defense.js';
 import { REVIVE_LUMBER } from '../match.js';
 import { fitText } from '../render.js';
@@ -200,6 +200,10 @@ export function layoutDefense(m, model = {}) {
      * 以前它右对齐到小地图左边（393）——那一截正压在倍速键下面（通用几何用例量出来的）。
      */
     statsLine: { right: 372, y: 48 },
+    // 下一波有隐身才出现。不进 items，点它不算按键。让开顶栏、英雄行和小地图。
+    stealthChip: model.stealthAlert
+      ? { x: 12, y: 70, w: 228, h: 44, count: model.stealthAlert.count ?? 0 }
+      : null,
     items,
     byId: Object.fromEntries(items.map((it) => [it.id, it])),
     stick: stickBase(model),
@@ -318,8 +322,44 @@ export function drawDefenseHud(ctx, m, L, { message = null, stick = null } = {})
    * 「城堡 x/y + 血条」（城堡多半就在屏幕中上部）与小地图（y=60 起）。以前写在这两者中间，
    * 样张里一眼就能看见半句话被切掉。底部这一带是空的（右排按钮在 x=579 往右，工事/回城都不在这）。
    */
+  if (L.stealthChip) paintStealthChip(ctx, L.stealthChip);
   if (message) text(ctx, message, L.w / 2, 300, { size: 12, align: 'center', color: COLORS.gold });
   return L;
+}
+
+function paintStealthChip(ctx, c) {
+  ctx.fillStyle = 'rgba(10, 16, 28, 0.94)';
+  roundRect(ctx, c.x, c.y, c.w, c.h, 8);
+  ctx.fill();
+  ctx.setLineDash([3, 3]);
+  ctx.strokeStyle = '#d5dde8';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.lineWidth = 1;
+  const s = 28 / 24;
+  ctx.save();
+  ctx.translate(c.x + 8, c.y + 8);
+  ctx.scale(s, s);
+  ctx.strokeStyle = '#e7edf4';
+  ctx.fillStyle = '#e7edf4';
+  ctx.lineWidth = 1.6;
+  for (const part of roleGlyph('invis')) {
+    ctx.beginPath();
+    if (part.ellipse) {
+      ctx.ellipse(part.ellipse[0], part.ellipse[1], part.ellipse[2], part.ellipse[3], 0, 0, Math.PI * 2);
+      if (part.stroke) ctx.stroke();
+      else ctx.fill();
+      continue;
+    }
+    part.d.forEach((p, i) => (i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1])));
+    if (part.stroke) ctx.stroke();
+    else { ctx.closePath(); ctx.fill(); }
+  }
+  ctx.restore();
+  text(ctx, '隐身', c.x + 44, c.y + 16, { size: 14, weight: 'bold' });
+  text(ctx, '需要侦测', c.x + 44, c.y + 32, { size: 12, color: COLORS.dim });
+  text(ctx, String(c.count), c.x + c.w - 14, c.y + 22, { size: 14, align: 'right', weight: 'bold' });
 }
 
 /** 工事建造面板（防守只有两种工事，§12.5） */
@@ -327,7 +367,8 @@ export function layoutFortSheet(m, model = {}) {
   const rows = [];
   Object.values(FORTS).forEach((f, i) => {
     rows.push({
-      id: `fort-${f.id}`, label: f.name, sub: `${f.cost} 金`,
+      id: `fort-${f.id}`, label: f.name,
+      sub: f.detectRadius > 0 ? `${f.cost} 金 · 侦测 ${f.detectRadius}` : `${f.cost} 金`,
       /**
        * **每个 i 各占一行**：这里以前把 `y` 写死成 96（`i` 收了却没用），两行就**完全叠在一起**——
        * `hitTestSheet` 返回第一行，于是「墙」那个选项**永远点不到**（只能在代码里直接建）。

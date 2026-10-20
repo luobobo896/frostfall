@@ -10,7 +10,7 @@ import {
   EQUIP_SELL_BONUS_LUMBER, EQUIP_SELL_REFUND, EQUIP_SLOTS, QUALITY, QUALITY_ORDER,
   SHOP_ITEMS, TARGET_PRIORITIES, TOWERS, TOWER_SELL_REFUND,
 } from '../data.js';
-import { attackHint, commandStrip, resultPanelModel, roleGlyph, shopRows, wavePreview } from '../hud-model.js';
+import { attackHint, commandStrip, detectNote, resultPanelModel, roleGlyph, shopRows, wavePreview } from '../hud-model.js';
 import { fitText } from '../render.js';
 import {
   REVIVE_LUMBER, TOWER_REPAIR_GOLD, craftableSlots, enhanceCostOf, potionCount, shopPriceOf, skillLevel,
@@ -475,7 +475,7 @@ export function layoutSheet(m, ui = {}) {
       kind: 'build',
       title: `在这里建塔（第 ${slot + 1} 号塔位 · 金币 ${Math.round(m.gold)}）`,
       hint: ui.placingTowerId
-        ? `射程已标出 · 再点一次建造${TOWERS[ui.placingTowerId]?.name ?? ''}`
+        ? `${(TOWERS[ui.placingTowerId]?.special?.detectRadius > 0) ? '射程与侦测已标出' : '射程已标出'} · 再点一次建造${TOWERS[ui.placingTowerId]?.name ?? ''}`
         : (cell ? `格 ${cell.x},${cell.y}` : ''),
       box: { x: 12, y: 62, w: 643, h: 194 },
       rows, byId: Object.fromEntries(rows.map((r) => [r.id, r])),
@@ -488,7 +488,7 @@ export function layoutSheet(m, ui = {}) {
   const refund = Math.floor(t.invested * TOWER_SELL_REFUND);   // 与内核同一个常数，别手写比例
   const canRepair = !!m.map.def.siege && t.maxHp && t.hp < t.maxHp;
   const info = `Lv${t.level} · 伤害 ${s.damage.toFixed(1)} · 攻速 ${s.atkSpeed.toFixed(2)} · 射程 ${s.range.toFixed(1)}`
-    + (s.hitsAir ? ' · 对空' : ' · 不对空') + ` · ${attackHint(s.attackType)}`;
+    + (s.hitsAir ? ' · 对空' : ' · 不对空') + ` · ${attackHint(s.attackType)}` + detectNote(s);
 
   rows.push({
     id: 'upgrade', label: cost == null ? '已满级' : `升级 → Lv${t.level + 1}`, sub: cost == null ? '' : `${cost} 金`,

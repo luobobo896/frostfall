@@ -111,11 +111,19 @@ test('下一波预告：把波次表翻成人话，Boss 波要标出来', () => 
   assert.ok(sprint.chips.some((c) => c.id === 'sprint' && c.label === '冲刺' && c.count === 11));
   assert.ok(sprint.chips.some((c) => c.id === 'siege'));
   assert.match(sprint.text, /冲刺/);
-  assert.ok(wavePreview(9).chips.some((c) => c.id === 'split'));
+  const w9 = wavePreview(9);
+  assert.ok(w9.chips.some((c) => c.id === 'split'));
+  assert.ok(w9.chips.some((c) => c.id === 'invis' && c.label === '隐身' && c.count === 2));
+  assert.match(w9.text, /隐身/);
+  assert.match(w9.text, /需要侦测/);
+  assert.equal(w9.needsDetect, true);
+  assert.ok(creepRoles(MONSTERS.mob_11).includes('split'));
+  assert.ok(creepRoles(MONSTERS.mob_11).includes('invis'));
   assert.ok(wavePreview(13, 3, WAVES_LONG).chips.some((c) => c.id === 'heal' && c.label === '治疗'));
   assert.deepEqual(creepRoles(MONSTERS.mob_02), ['sprint']);
   assert.deepEqual(creepRoles(MONSTERS.mob_01), []);
   assert.ok(roleGlyph('sprint').some((p) => p.stroke), '冲刺图标要有速度线，不能只靠填色');
+  assert.ok(roleGlyph('invis').some((p) => p.stroke), '隐身图标要有描边，不能只靠填色');
   assert.ok(roleGlyph('air').length >= 3);
 });
 

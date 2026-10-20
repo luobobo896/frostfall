@@ -6,7 +6,7 @@ import {
   MONSTERS, QUALITY_ORDER, TICK_STEP,
 } from './data.js';
 import { computeDamage, findPath, gridDist, makeRng, project } from './core.js';
-import { damageMonster, grantExp, heroAttack, heroDamageReduce, heroDodge, heroMaxHp, heroStats, makeEquipment, sprintState, stepMonsterEffects, updateHeroBuffs } from './match.js';
+import { damageMonster, grantExp, heroAttack, heroDamageReduce, heroDodge, heroMaxHp, heroStats, isTargetable, makeEquipment, markReveal, sprintState, stepMonsterEffects, updateHeroBuffs } from './match.js';
 
 const key = (x, y) => `${x},${y}`;
 
@@ -317,12 +317,44 @@ export function spawnAssaultWave(m) {
   return spawned;
 }
 
+/**
+ * 下一波还没刷出来时，预告用的就是 `spawnAssaultWave` 此刻会读的那一组。
+ * 无尽波次下标是 `round - rounds.length`，不能再 +1（刷怪函数在加轮次之前读这个数）。
+ */
+export function upcomingAssaultGroups(m) {
+  const rounds = m?.def?.rounds ?? [];
+  if (m?.assault?.endless) {
+    const endlessWave = (m.assault.round ?? 0) - rounds.length;
+    return [
+      { mobId: 'mob_04', count: 12 },
+      { mobId: 'mob_11', count: 2 },
+      ...(endlessWave % 2 === 1 ? [{ mobId: 'boss_01', count: 1 }] : []),
+    ];
+  }
+  if (!rounds.length) return [];
+  const roundDef = rounds[Math.min(m?.assault?.round ?? 0, rounds.length - 1)];
+  return roundDef?.groups ?? [];
+}
+
+/** 下一波里会潜行的只数。0 表示这波不用侦测。 */
+export function assaultStealthCount(m) {
+  let n = 0;
+  for (const g of upcomingAssaultGroups(m)) {
+    const def = MONSTERS[g.mobId];
+    if (def?.invis && (def.invis.hidden ?? 0) > 0) n += g.count ?? 0;
+  }
+  return n;
+}
+
 function stepAssault(m, dt) {
   const a = m.assault;
   a.timer -= dt;
   if (!a.warning && a.timer <= DEFENSE_RULES.assaultWarnSec) {
     a.warning = true;
-    addLog(m, '⚠ 进攻预警：30 秒后抵达，回防！', 'warn');
+    const stealth = assaultStealthCount(m);
+    addLog(m, stealth > 0
+      ? '⚠ 进攻预警：30 秒后抵达，有隐身，需要侦测，回防！'
+      : '⚠ 进攻预警：30 秒后抵达，回防！', 'warn');
   }
   if (a.timer <= 0) {
     // 上一轮挺到下一波开打、城堡还活着 = 这一轮守住了。
@@ -394,7 +426,7 @@ function stepForts(m, dt) {
     f.cooldown = Math.max(0, f.cooldown - dt);
     if (f.cooldown > 0) continue;
     const target = m.monsters
-      .filter((x) => !x.dead && gridDist(x.cell, f.cell) <= f.stats.range)
+      .filter((x) => isTargetable(m, x, f.stats.hitsAir !== false) && gridDist(x.cell, f.cell) <= f.stats.range)
       .sort((a, b) => (a.kind === 'assault' ? -1 : 1) - (b.kind === 'assault' ? -1 : 1))[0];
     if (!target) continue;
     f.cooldown = 1 / f.stats.atkSpeed;
@@ -581,6 +613,7 @@ export function updateDefense(m, dtRaw) {
   stepCamps(m, dt);
   stepAssault(m, dt);
   stepMonsters(m, dt);
+  markReveal(m);
   stepForts(m, dt);
   stepPickups(m);
 
@@ -610,7 +643,7 @@ export function updateDefense(m, dtRaw) {
     hero.cooldown = Math.max(0, (hero.cooldown ?? 0) - dt);
     if (hero.cooldown <= 0) {
       const target = m.monsters
-        .filter((x) => !x.dead && gridDist(x.cell, hero.cell) <= st.range)
+        .filter((x) => isTargetable(m, x) && gridDist(x.cell, hero.cell) <= st.range)
         .sort((a, b) => gridDist(a.cell, hero.cell) - gridDist(b.cell, hero.cell))[0];
       if (target) {
         hero.cooldown = 1 / st.atkSpeed;

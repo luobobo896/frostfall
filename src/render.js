@@ -1,14 +1,14 @@
 // 等距 2:1 渲染（§14.1）。静帧按 docs/art/DIRECTION.md 热替换；缺图或没加载完就画 P0 剪影。
 
-import { DEFENSE_MAPS, GRID, HERO_REVIVE, MAPS, MONSTERS, QUALITY, TEAM_COLORS, TOWERS } from './data.js';
+import { DEFENSE_MAPS, FORTS, GRID, HERO_REVIVE, MAPS, MONSTERS, QUALITY, TEAM_COLORS, TOWERS } from './data.js';
 import { buildMap, heroPos, posAt, project } from './core.js';
-import { heroAbilityRange, heroMaxHp, holdCells, revivePoint, sprintState, towerStatsAt } from './match.js';
+import { heroAbilityRange, heroDetectRadius, heroMaxHp, holdCells, revivePoint, sprintState, stealthView, towerStatsAt } from './match.js';
 import { isLowHp } from './hud-model.js';
 import { viewport } from './platform.js';   // §平台适配：像素比在两个环境里的取法不同
 import { heroSpriteKey, mobSpriteKey, resolveSprite, tileSpriteKey, towerSpriteKey } from './assets.js';
 import {
   DEATH_SEC, attackPulse, chargePulse, fxBudget, heroMotion, hitSlash, impactGlyphs, leanParts, mobMotion,
-  poseClip, poseFrame, shotGlyphs, shotKind, slowShards, sprintStreaks, towerMarks, towerNudge,
+  poseClip, poseFrame, shotGlyphs, shotKind, slowShards, sprintStreaks, stealthGlyphs, towerMarks, towerNudge,
 } from './motion.js';
 
 /**
@@ -224,6 +224,8 @@ const r3 = (n) => Math.round(n * 1000) / 1000;
 export const HERO_GLOW = { stroke: '#ffd68a', lineWidth: 3, halo: 'rgba(255, 214, 138, .35)', haloWidth: 7, haloScale: 1.42 };
 /** 英雄技能圈：虚线、冷色、不填奶油底，和塔的射程圈分开。 */
 export const HERO_SKILL_RING = { stroke: '#7ec8ff', lineWidth: 1.5, dash: [5, 4] };
+/** 侦测圈：灰白虚线加四角括号，不填奶油底，和射程实线圈、技能冷色圈都分开。 */
+export const DETECT_RING = { stroke: '#d5dde8', lineWidth: 1.75, dash: [2, 6] };
 /** 点英雄的半径下限（直径约 44px）。视觉半径更大时跟视觉走。 */
 export const HERO_HIT_PX = 44;
 
@@ -736,6 +738,7 @@ export function createRenderer(canvas, { size = null } = {}) {
   let frameNow = 0;
   let frameFx = fxBudget('high');
   let sprintLeft = frameFx.sprint ?? 0;
+  let invisLeft = frameFx.invis ?? 0;
   const poses = new Map();
   const flashes = new Map();
   const corpses = [];
@@ -746,6 +749,7 @@ export function createRenderer(canvas, { size = null } = {}) {
     frameNow = isoView.now ?? 0;
     frameFx = fxBudget(isoView.fx);
     sprintLeft = frameFx.sprint ?? 0;
+    invisLeft = frameFx.invis ?? 0;
   }
 
   function drawGlyphs(glyphs, color, width = 1.5) {
@@ -1065,6 +1069,42 @@ export function createRenderer(canvas, { size = null } = {}) {
     ctx.lineWidth = 1;
   }
 
+  /** 侦测圈比射程大一圈：虚线外环、实线内环、四角括号。低特效也画，这是操作信息。 */
+  function drawDetectRing(cell, range) {
+    if (!cell || !(Number(range) > 0)) return;
+    const c = toScreen(cell.x, cell.y, 0);
+    const rx = range * (GRID.tileW / 2) * view.scale;
+    const ry = range * (GRID.tileH / 2) * view.scale;
+    ctx.beginPath();
+    ctx.ellipse(c.x, c.y, rx, ry, 0, 0, Math.PI * 2);
+    ctx.setLineDash(DETECT_RING.dash);
+    ctx.strokeStyle = DETECT_RING.stroke;
+    ctx.lineWidth = DETECT_RING.lineWidth;
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    ctx.ellipse(c.x, c.y, rx * 0.82, ry * 0.82, 0, 0, Math.PI * 2);
+    ctx.strokeStyle = DETECT_RING.stroke;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    const brackets = [
+      [[-1, -0.72], [-1, -1], [-0.72, -1]],
+      [[0.72, -1], [1, -1], [1, -0.72]],
+      [[1, 0.72], [1, 1], [0.72, 1]],
+      [[-0.72, 1], [-1, 1], [-1, 0.72]],
+    ];
+    ctx.beginPath();
+    for (const b of brackets) {
+      ctx.moveTo(c.x + b[0][0] * rx, c.y + b[0][1] * ry);
+      ctx.lineTo(c.x + b[1][0] * rx, c.y + b[1][1] * ry);
+      ctx.lineTo(c.x + b[2][0] * rx, c.y + b[2][1] * ry);
+    }
+    ctx.strokeStyle = DETECT_RING.stroke;
+    ctx.lineWidth = DETECT_RING.lineWidth;
+    ctx.stroke();
+    ctx.lineWidth = 1;
+  }
+
   /** 英雄技能圈：虚线冷色，不铺塔那种奶油填充。四个刻度再和实线圈拉开。 */
   function drawHeroSkillRing(cell, range) {
     if (!cell || !(Number(range) > 0)) return;
@@ -1141,10 +1181,13 @@ export function createRenderer(canvas, { size = null } = {}) {
       ctx.fillStyle = 'rgba(0,0,0,.28)';
       ctx.beginPath(); ctx.ellipse(c.x, c.y + r * 0.72, r * 0.7, r * 0.28, 0, 0, Math.PI * 2); ctx.fill();
     }
-    const fill = mo.isAir ? COLORS.air : COLORS.mob[tier] ?? '#c9d6e6';
+    const veil = stealthView(m, mo);
+    const veiled = veil === 'ghost' || veil === 'faint';
+    const fill = veiled ? '#a8b2be' : (mo.isAir ? COLORS.air : COLORS.mob[tier] ?? '#c9d6e6');
     const spec = mobSilhouette({ ...mo.def, isAir: mo.isAir || mo.def.isAir });
     const ghost = tier === 'boss' && !mo.isAir && coversBehind(p) && shouldEaseOcclusion('boss', 1, 'creep');
     if (ghost) ctx.globalAlpha = OCCLUSION_ALPHA;
+    if (veiled) ctx.globalAlpha = veil === 'ghost' ? 0.45 : 0.72;
     // 冲刺：前倾。有 transform 就剪整个身体（含静帧）；假画布没有 transform 时改剪影点。
     // 攻击中不倾，受击斜线那一笔才对得上。速度线在还原之后画，保持水平。
     const sprinting = sprintState(mo.def, m.time).on && !mo.attacking;
@@ -1156,7 +1199,7 @@ export function createRenderer(canvas, { size = null } = {}) {
       ctx.transform(1, 0, -0.35, 1, 0, 0);
       ctx.translate(-c.x, -c.y);
     }
-    if (frame && drawSprite(frame, c.x, c.y + r * 0.62, r * 2.5)) {
+    if (!veiled && frame && drawSprite(frame, c.x, c.y + r * 0.62, r * 2.5)) {
       // 光环是怪的法术圈，不是英雄光。英雄光只属于英雄。
       if (spec.aura) {
         ctx.strokeStyle = COLORS.aura;
@@ -1169,11 +1212,32 @@ export function createRenderer(canvas, { size = null } = {}) {
     } else {
       paintSilhouette(ctx, c.x, c.y, r, bodySpec, {
         fill,
-        accent: spec.aura ? COLORS.aura : fill,
+        accent: veiled ? '#e7edf4' : (spec.aura ? COLORS.aura : fill),
+        stroke: veiled ? '#e7edf4' : undefined,
       });
     }
     if (canShear) ctx.restore();
-    if (ghost) ctx.globalAlpha = 1;
+    if (ghost || veiled) ctx.globalAlpha = 1;
+    if (veil !== 'none' && invisLeft > 0) {
+      const glyphs = stealthGlyphs(veil, invisLeft);
+      invisLeft -= glyphs.length;
+      if (glyphs.length) {
+        drawGlyphs(glyphs.map((g) => ({
+          closed: false,
+          points: g.points.map(([x, y]) => [c.x + x * r, c.y + y * r]),
+        })), '#e7edf4', 1.5);
+      }
+    }
+    if (veiled) {
+      ctx.setLineDash([3, 3]);
+      ctx.strokeStyle = '#e7edf4';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.ellipse(c.x, c.y, r * 1.08, r * 0.82, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.lineWidth = 1;
+    }
     if (sprinting && sprintLeft > 0) {
       const n = Math.min(3, sprintLeft);
       sprintLeft -= n;
@@ -1194,7 +1258,7 @@ export function createRenderer(canvas, { size = null } = {}) {
     if ((flashes.get(mo.uid) ?? 0) > frameNow) {
       drawGlyphs(placeGlyphs(hitSlash(1), c.x, c.y, r * 0.85), '#fffaf0', 2);
     }
-    bar(c.x, c.y - r - 8, r * 2.2, 4, mo.hp / mo.maxHp, tier === 'boss' ? '#d1503f' : '#8ee08a');
+    bar(c.x, c.y - r - 8, r * 2.2, 4, mo.hp / mo.maxHp, veiled ? '#d5dde8' : (tier === 'boss' ? '#d1503f' : '#8ee08a'));
     if (mo.def.armorType === 'fortified') label('盾', c.x, c.y + r + 8, '#c5d0dc', 10);
     if (mo.attacking) label('!', c.x + r, c.y - r, '#ffb4a0', 12);
   }
@@ -1423,15 +1487,27 @@ export function createRenderer(canvas, { size = null } = {}) {
     for (const d of drawables) d.draw();
     drawProjectiles(m);
     for (const t of m.towers) {
-      if (selectedTower === t.slot) drawRangeRing(t.cell, t.stats?.range);
+      if (selectedTower === t.slot) {
+        drawRangeRing(t.cell, t.stats?.range);
+        const detect = t.stats?.special?.detectRadius;
+        if (detect > 0) drawDetectRing(t.cell, detect);
+      }
     }
     for (const p of pending) {
       const cell = m.map.slots[p.slot];
-      if (cell && TOWERS[p.towerId]) drawRangeRing(cell, towerStatsAt(m.map, cell, p.towerId, 1).range);
+      if (cell && TOWERS[p.towerId]) {
+        const stats = towerStatsAt(m.map, cell, p.towerId, 1);
+        drawRangeRing(cell, stats.range);
+        if (stats.special?.detectRadius > 0) drawDetectRing(cell, stats.special.detectRadius);
+      }
     }
     if (placingTowerId && TOWERS[placingTowerId] && selectedSlot != null && !m.towers.some((t) => t.slot === selectedSlot)) {
       const cell = m.map.slots[selectedSlot];
-      if (cell) drawRangeRing(cell, towerStatsAt(m.map, cell, placingTowerId, 1).range);
+      if (cell) {
+        const stats = towerStatsAt(m.map, cell, placingTowerId, 1);
+        drawRangeRing(cell, stats.range);
+        if (stats.special?.detectRadius > 0) drawDetectRing(cell, stats.special.detectRadius);
+      }
     }
     // 点选英雄之后才给驻守预览和技能圈（和塔的悬停圈同一规矩：先点中，再看范围）。
     if (isoView.heroSelected && !m.hero.dead) {
@@ -1439,6 +1515,8 @@ export function createRenderer(canvas, { size = null } = {}) {
       const ability = heroAbilityRange(m.hero);
       if (ability > 0) drawHeroSkillRing(heroPos(m.hero), ability);
     }
+    const heroDetect = heroDetectRadius(m);
+    if (heroDetect > 0) drawDetectRing(heroPos(m.hero), heroDetect);
     drawReviveMark(m);
     drawFloaters(floaters, now);
   }
@@ -1607,6 +1685,16 @@ export function createRenderer(canvas, { size = null } = {}) {
       const c = toScreen(spawn.x + 2, spawn.y);
       label('⚠ 进攻方向', c.x, c.y - 20, '#ffb4a0', 14);
     }
+    for (const f of m.forts ?? []) {
+      if (f.stats?.detectRadius > 0) drawDetectRing(f.cell, f.stats.detectRadius);
+    }
+    if (selectedFortSlot != null && !m.forts.some((f) => f.slot === selectedFortSlot)) {
+      const slot = m.def.fortSlots[selectedFortSlot];
+      const preview = FORTS.fort_arrow?.detectRadius;
+      if (slot && preview > 0) drawDetectRing(slot, preview);
+    }
+    const heroDetect = heroDetectRadius(m);
+    if (heroDetect > 0) drawDetectRing(heroPos(m.hero), heroDetect);
 
     drawReviveMark(m);
     drawFloaters(floaters, now);
@@ -1675,7 +1763,21 @@ export function createMinimap(canvas, { size = null } = {}) {
     for (const c of m.camps) dot(c.x, c.y, 2, c.alive ? '#b98ce6' : 'rgba(185,140,230,.45)');
     for (const t of m.def.teleports) dot(t.x, t.y, 1.6, '#7fd4ff');
     for (const f of m.forts) dot(f.cell.x, f.cell.y, 2, f.fortId === 'fort_wall' ? '#8ea0b8' : '#ffd479');
-    for (const mo of m.monsters) dot(mo.cell.x, mo.cell.y, mo.tier === 'boss' ? 3 : 1.8, mo.isAir ? '#9ad8ff' : '#e06a5c');
+    for (const mo of m.monsters) {
+      const kind = mo.dead ? 'none' : stealthView(m, mo);
+      if (kind === 'ghost' || kind === 'faint') {
+        const p = toMinimap(mo.cell.x, mo.cell.y);
+        ctx.beginPath();
+        ctx.strokeStyle = '#d5dde8';
+        ctx.lineWidth = 1;
+        if (kind === 'ghost') ctx.setLineDash([1.5, 1.5]);
+        ctx.arc(p.x, p.y, mo.tier === 'boss' ? 3 : 1.8, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      } else {
+        dot(mo.cell.x, mo.cell.y, mo.tier === 'boss' ? 3 : 1.8, mo.isAir ? '#9ad8ff' : '#e06a5c');
+      }
+    }
     dot(m.castle.cell.x, m.castle.cell.y, 3.2, '#7fd4ff');
     // §3.7 低血提示：生命 < 20% 时小地图上的英雄点变红并加一圈环（让辅助一眼看到该奶谁）
     const h = m.hero;
@@ -1812,6 +1914,21 @@ export function createLaneMinimap(canvas, { size = null } = {}) {
       ctx.arc(at.x, at.y, h.dead ? 4 : LANE_MINI_BUDGET.heroR, 0, Math.PI * 2);
       ctx.fill();
     });
+    let stealthMarks = 0;
+    for (const mo of m.monsters ?? []) {
+      if (stealthMarks >= 12 || mo.dead || !mo.cell) continue;
+      const kind = stealthView(m, mo);
+      if (kind !== 'ghost' && kind !== 'faint' && kind !== 'revealed') continue;
+      const at = toMini(mo.cell.x, mo.cell.y);
+      ctx.beginPath();
+      ctx.strokeStyle = '#e7edf4';
+      ctx.lineWidth = 1;
+      if (kind === 'ghost') ctx.setLineDash([2, 2]);
+      ctx.arc(at.x, at.y, 2.2, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      stealthMarks += 1;
+    }
     const grid = m.map?.grid ?? GRID;
     ctx.strokeStyle = 'rgba(120,140,170,.35)';
     ctx.lineWidth = 1;

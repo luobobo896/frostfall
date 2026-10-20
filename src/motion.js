@@ -3,8 +3,8 @@
 
 /** 粒子上限。低档少留几条拖尾和命中，起伏仍然算（一个正弦，不占预算）。 */
 export const FX_LIMITS = {
-  high: { trail: 3, impacts: 8, corpses: 12, sprint: 12 },
-  low: { trail: 1, impacts: 4, corpses: 6, sprint: 1 },
+  high: { trail: 3, impacts: 8, corpses: 12, sprint: 12, invis: 16 },
+  low: { trail: 1, impacts: 4, corpses: 6, sprint: 1, invis: 4 },
 };
 
 export function fxBudget(level) {
@@ -114,6 +114,29 @@ export function sprintStreaks(count) {
     const y = -0.55 + i * 0.38;
     const x0 = -1.35 - (i % 2) * 0.15;
     lines.push({ closed: false, points: [[x0, y], [x0 + 0.55, y]] });
+  }
+  return lines;
+}
+
+/**
+ * 隐身的灰阶记号。横线穿过身体；将显形 / 已被侦测再加一道断开的弧。
+ * 全是开口折线，灰度下靠线的形状认，不靠把身体染成另一种颜色。
+ * budget 用完就停，低特效档少画几笔。
+ */
+export function stealthGlyphs(kind, budget = 8) {
+  const left = budget | 0;
+  if (left <= 0 || !kind || kind === 'none') return [];
+  const rows = kind === 'ghost' || kind === 'marked' ? 2 : 3;
+  const lines = [];
+  for (let i = 0; i < rows && lines.length < left; i++) {
+    const y = -0.42 + i * 0.42;
+    lines.push({ closed: false, points: [[-0.72, y], [0.72, y]] });
+  }
+  if ((kind === 'faint' || kind === 'revealed') && lines.length < left) {
+    lines.push({
+      closed: false,
+      points: [[0.9, -0.15], [0.55, -0.7], [0, -0.95], [-0.55, -0.7], [-0.9, -0.15]],
+    });
   }
   return lines;
 }

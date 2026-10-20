@@ -891,7 +891,7 @@ export function castSkill(m, index) {
   const spellMul = 1 + talentValue(h, 'spellDmg');
   const hit = (v) => Math.max(1, Math.floor(v * spellMul));
   const nearby = (radius, airOk = true) => m.monsters
-    .filter((mo) => !mo.dead && (airOk || !mo.isAir) && gridDist(monsterCell(m, mo), h.cell) <= radius)
+    .filter((mo) => isTargetable(m, mo, airOk) && gridDist(monsterCell(m, mo), h.cell) <= radius)
     .sort((a, b) => b.dist - a.dist);
 
   switch (def.id) {
@@ -916,7 +916,7 @@ export function castSkill(m, index) {
       const anchor = nearby(def.radius + 2)[0];
       if (!anchor) return false;
       const cell = monsterCell(m, anchor);
-      for (const t of m.monsters.filter((mo) => !mo.dead && gridDist(monsterCell(m, mo), cell) <= def.radius)) {
+      for (const t of m.monsters.filter((mo) => isTargetable(m, mo, true) && gridDist(monsterCell(m, mo), cell) <= def.radius)) {
         t.effects.push({ type: 'dot', until: m.time + def.duration, dps: hit(pick(def.hps)), tickAt: m.time });
         damageMonster(m, t, hit(pick(def.hps)), 'hero');
       }
@@ -946,6 +946,9 @@ export function castSkill(m, index) {
       break;
     case 'sk_barrier':
       h.buffs.push({ type: 'reduce', until: m.time + def.duration, reducePct: pick(def.reducePct) });
+      if (def.detectRadius > 0) {
+        h.buffs.push({ type: 'detect', until: m.time + def.duration, radius: def.detectRadius });
+      }
       break;
     case 'sk_timelock':
       for (const t of nearby(def.radius)) applySlow(t, def.slowPct, m.time + def.duration);
@@ -1154,7 +1157,7 @@ export function heroAttack(m, target) {
   }
   if (w?.special?.sector) {
     const extra = m.monsters
-      .filter((mo) => !mo.dead && mo !== target && gridDist(monsterCell(m, mo), m.hero.cell) <= st.range)
+      .filter((mo) => mo !== target && isTargetable(m, mo, true) && gridDist(monsterCell(m, mo), m.hero.cell) <= st.range)
       .sort((a, b) => gridDist(monsterCell(m, a), m.hero.cell) - gridDist(monsterCell(m, b), m.hero.cell))
       .slice(0, w.special.sector - 1);
     for (const mo of extra) dmgTo(mo, st.attack);
@@ -1169,8 +1172,7 @@ export function heroAttack(m, target) {
 }
 
 function pickTarget(m, tower) {
-  const inRange = m.monsters.filter((mo) => !mo.dead
-    && !(mo.isAir && !tower.stats.hitsAir)
+  const inRange = m.monsters.filter((mo) => isTargetable(m, mo, tower.stats.hitsAir)
     && gridDist(monsterCell(m, mo), tower.cell) <= tower.stats.range);
   if (!inRange.length) return null;
   switch (tower.priority) {
@@ -1204,7 +1206,7 @@ function projectileHit(m, p) {
   const landing = monsterCell(m, target);
   damageMonster(m, target, dealt, p.towerId);
   if (s.special?.splashRadius) {
-    for (const mo of m.monsters.filter((x) => !x.dead && x !== target && !x.isAir
+    for (const mo of m.monsters.filter((x) => x !== target && isTargetable(m, x, false)
       && gridDist(monsterCell(m, x), landing) <= s.special.splashRadius)) {
       const d = gridDist(monsterCell(m, mo), landing);
       damageMonster(m, mo, computeDamage({
@@ -1218,7 +1220,7 @@ function projectileHit(m, p) {
     let src = target, dmg = dealt * (1 - s.special.chainDecay);
     const hit = new Set([target.uid]);
     for (let i = 1; i < s.special.chainCount; i++) {
-      const next = m.monsters.find((mo) => !mo.dead && !hit.has(mo.uid)
+      const next = m.monsters.find((mo) => isTargetable(m, mo, true) && !hit.has(mo.uid)
         && gridDist(monsterCell(m, mo), monsterCell(m, src)) <= s.special.chainRange);
       if (!next) break;
       damageMonster(m, next, Math.max(1, Math.floor(dmg)), p.towerId);
@@ -1262,7 +1264,7 @@ function heroStep(m, dt) {
   h.cooldown = Math.max(0, h.cooldown - dt);
   if (h.cooldown > 0) return;
   const target = m.monsters
-    .filter((mo) => !mo.dead && gridDist(monsterCell(m, mo), h.cell) <= stats.range)
+    .filter((mo) => isTargetable(m, mo, true) && gridDist(monsterCell(m, mo), h.cell) <= stats.range)
     .sort((a, b) => b.dist - a.dist)[0];
   h.attacking = !!target;
   if (!target) return;
@@ -1313,6 +1315,110 @@ export const auraAt = (m, mon) => auraFrom(auraCarriers(m), mon, !!m.map?.def?.b
  * 冲刺：按对局时间切爆发窗，不改表上的 `speed`（§170 锁着霜狼 380）。
  * 窗内倍率，窗外 1。没有 `sprint` 的怪永远是 1。眩晕时移动本来就停，这里不再乘。
  */
+/**
+ * 隐身相位。没有 `invis` 的怪永远不潜行。
+ * `stealthed`：普通攻击锁不到。`faint`：仍锁不到，但残影加粗，开波前玩家已经知道要补侦测。
+ */
+export function invisPhase(def, time = 0) {
+  const spec = def?.invis;
+  if (!spec || !(spec.period > 0) || !(spec.hidden > 0)) return { stealthed: false, faint: false };
+  const hidden = Math.min(spec.hidden, spec.period);
+  const shimmer = Math.max(0, Math.min(spec.shimmer ?? 0, hidden));
+  const t = Number(time) || 0;
+  const phase = t - Math.floor(t / spec.period) * spec.period;
+  const stealthed = phase < hidden;
+  return { stealthed, faint: stealthed && phase >= hidden - shimmer };
+}
+
+/** 英雄身上还活着的侦测半径（圣徒结界）。死了不算。 */
+export function heroDetectRadius(m) {
+  const h = m?.hero;
+  if (!h || h.dead) return 0;
+  const now = m.time ?? 0;
+  let best = 0;
+  const buffs = h.buffs;
+  if (!buffs) return 0;
+  for (let i = 0; i < buffs.length; i++) {
+    const b = buffs[i];
+    if (b.type === 'detect' && b.until > now && (b.radius ?? 0) > best) best = b.radius;
+  }
+  return best;
+}
+
+function detectorList(m) {
+  const out = [];
+  const towers = m.towers;
+  if (towers) {
+    for (let i = 0; i < towers.length; i++) {
+      const r = towers[i].stats?.special?.detectRadius;
+      if (r > 0) out.push({ cell: towers[i].cell, r });
+    }
+  }
+  const forts = m.forts;
+  if (forts) {
+    for (let i = 0; i < forts.length; i++) {
+      const r = forts[i].stats?.detectRadius;
+      if (r > 0) out.push({ cell: forts[i].cell, r });
+    }
+  }
+  const hr = heroDetectRadius(m);
+  if (hr > 0 && m.hero?.cell) out.push({ cell: m.hero.cell, r: hr });
+  return out;
+}
+
+function seenByDetect(m, mon, detectors) {
+  const cell = monsterCell(m, mon);
+  for (let i = 0; i < detectors.length; i++) {
+    if (gridDist(cell, detectors[i].cell) <= detectors[i].r) return true;
+  }
+  return false;
+}
+
+/**
+ * 一帧标一次谁被侦测揭开。没有潜行怪就直接返回，不扫塔。
+ * 潜行怪默认 `revealed = false`，只有走进侦测半径才翻成 true。
+ */
+export function markReveal(m) {
+  const time = m.time ?? 0;
+  let hidden = null;
+  for (const mon of m.monsters) {
+    if (!mon || mon.dead) {
+      if (mon) { mon.stealth = null; mon.revealed = false; }
+      continue;
+    }
+    const phase = invisPhase(mon.def, time);
+    mon.stealth = phase;
+    if (!phase.stealthed) { mon.revealed = true; continue; }
+    mon.revealed = false;
+    (hidden ??= []).push(mon);
+  }
+  if (!hidden) return;
+  const detectors = detectorList(m);
+  if (!detectors.length) return;
+  for (const mon of hidden) mon.revealed = seenByDetect(m, mon, detectors);
+}
+
+/** 普通塔、英雄普攻、溅射和链只能打到这个。完全潜行且没被侦测 = 不行。 */
+export function isTargetable(m, mon, hitsAir = true) {
+  if (!mon || mon.dead) return false;
+  if (mon.isAir && hitsAir === false) return false;
+  const phase = mon.stealth ?? invisPhase(mon.def, m?.time ?? 0);
+  if (!phase.stealthed) return true;
+  if (mon.revealed === true) return true;
+  if (mon.revealed === false && mon.stealth) return false;
+  return seenByDetect(m, mon, detectorList(m));
+}
+
+/** 画哪一档：none / marked（显形但仍是隐身单位）/ revealed / faint / ghost。 */
+export function stealthView(m, mon) {
+  if (!mon?.def?.invis) return 'none';
+  const phase = mon.stealth ?? invisPhase(mon.def, m?.time ?? 0);
+  if (!phase.stealthed) return 'marked';
+  const seen = mon.revealed === true || (mon.revealed == null && seenByDetect(m, mon, detectorList(m)));
+  if (seen) return 'revealed';
+  return phase.faint ? 'faint' : 'ghost';
+}
+
 export function sprintState(def, time = 0) {
   const spec = def?.sprint;
   if (!spec || !(spec.period > 0) || !(spec.mul > 1) || !(spec.burst > 0)) return { on: false, mul: 1 };
@@ -1459,6 +1565,7 @@ export function update(m, dtRaw) {
     finishWave(m);
   }
 
+  markReveal(m);
   for (const t of m.towers) {
     t.cooldown = Math.max(0, t.cooldown - dt);
     if (t.cooldown <= 0) towerFire(m, t);
@@ -1472,6 +1579,7 @@ export function update(m, dtRaw) {
   m.projectiles = m.projectiles.filter((p) => p.life > 0);
 
   monsterStep(m, dt);
+  markReveal(m);
   heroStep(m, dt);
   return m;
 }

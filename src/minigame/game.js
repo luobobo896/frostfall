@@ -31,7 +31,7 @@ import { createLaneMinimap, createMinimap, createRenderer, pointHitsHero } from 
 import { bootSprites } from '../assets.js';
 import { damageFloaters, wavePreview } from '../hud-model.js';
 import {
-  buildFort, createDefenseMatch, describeDefense, orderMove, repairCastle, steerGoal, teleportHome, updateDefense,
+  assaultStealthCount, buildFort, createDefenseMatch, describeDefense, orderMove, repairCastle, steerGoal, teleportHome, updateDefense,
 } from '../defense.js';
 import {
   MINIMAP, drawDefenseHud, hitTestDefense, inStickZone, layoutDefense, layoutFortSheet, stickBase, stickVector,
@@ -1231,6 +1231,10 @@ export const defModel = (b) => ({
   paused: b.paused, rate: b.rate, potionCount: potionCount(b.m),
   potionReady: Object.keys(b.m.bag ?? {}).some((id) => b.m.bag[id] > 0 && !((b.m.potionCd ?? {})[id] > 0)),
   round: b.m.assault?.round ?? 0, warning: !!b.m.assault?.warning,
+  stealthAlert: (() => {
+    const n = assaultStealthCount(b.m);
+    return n > 0 ? { count: n } : null;
+  })(),
   // §131：守住 4 轮转无尽之后，玩家还得能接着玩——**结算面板还在时**才给那颗「继续（无尽）」
   // （点了它就 `resultDismissed`，面板收起来、那一局接着跑）
   // §190：**城堡已经陷落就不给这个出口**（`m.over`）——那种「继续」是假出口：点下去只是把面板让开，
