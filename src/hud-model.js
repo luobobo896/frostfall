@@ -102,6 +102,7 @@ export const CREEP_ROLES = Object.freeze([
   Object.freeze({ id: 'split', label: '分裂' }),
   Object.freeze({ id: 'heal', label: '治疗' }),
   Object.freeze({ id: 'sprint', label: '冲刺' }),
+  Object.freeze({ id: 'invis', label: '隐身' }),
 ]);
 
 const ROLE_TEST = {
@@ -110,6 +111,7 @@ const ROLE_TEST = {
   split: (d) => !!d?.onDeath,
   heal: (d) => (d?.aura?.hps ?? 0) > 0,
   sprint: (d) => (d?.sprint?.mul ?? 0) > 1,
+  invis: (d) => !!d?.invis && (d.invis.hidden ?? 0) > 0,
 };
 
 /** 这只怪带哪些职责（空中 / 攻城 / 分裂 / 治疗 / 冲刺）。 */
@@ -151,6 +153,13 @@ export function roleGlyph(id) {
         { stroke: true, d: [[1, 8], [7, 8]] },
         { stroke: true, d: [[1, 12], [8, 12]] },
         { stroke: true, d: [[2, 16], [9, 16]] },
+      ];
+    case 'invis':
+      return [
+        { ellipse: [12, 12, 8, 5], stroke: true },
+        { stroke: true, d: [[5, 18], [19, 6]] },
+        { stroke: true, d: [[2, 12], [5, 12]] },
+        { stroke: true, d: [[19, 12], [22, 12]] },
       ];
     default:
       return [];
@@ -211,6 +220,8 @@ export function wavePreview(waveIndex, maxGroups = 3, waves = WAVES) {
     };
   });
   const total = groups.reduce((s, g) => s + g.count, 0);
+  const chips = creepRoleChips(def.groups);
+  const needsDetect = chips.some((c) => c.id === 'invis');
   const mark = (g) => {
     const labels = g.roles.map((id) => CREEP_ROLES.find((r) => r.id === id)?.label).filter(Boolean);
     return labels.length ? `·${labels.join('·')}` : '';
@@ -220,15 +231,25 @@ export function wavePreview(waveIndex, maxGroups = 3, waves = WAVES) {
     groups: groups.slice(0, maxGroups),
     rest: Math.max(0, groups.length - maxGroups),
     total,
-    chips: creepRoleChips(def.groups),
+    chips,
+    needsDetect,
     isElite: !!def.isElite,
     isMinorBoss: !!def.isMinorBoss,
     isBoss: !!def.isBoss,
     tag: def.isBoss ? '最终 Boss' : def.isMinorBoss ? '小 Boss' : def.isElite ? '精英波' : '',
     // 护甲类型写进预告：玩家在**开波之前**就能决定这一波该补哪种塔（§6.2 的克制博弈）
+    // 隐身波再补一句「需要侦测」，开波前就知道普通塔锁不住。
     text: groups.map((g) => `${g.count}×${g.name}（${g.armorLabel}${mark(g)}）`).join(' + ')
-      + (groups.length > maxGroups ? ` 等 ${total} 只` : ''),
+      + (groups.length > maxGroups ? ` 等 ${total} 只` : '')
+      + (needsDetect ? ' · 需要侦测' : ''),
   };
+}
+
+/** 塔 / 工事面板上的侦测半径。没有侦测就返回空串，不改原来那行读数。 */
+export function detectNote(source) {
+  const r = source?.special?.detectRadius ?? source?.detectRadius;
+  if (!(Number(r) > 0)) return '';
+  return ` · 侦测 ${Number(r).toFixed(1)}`;
 }
 
 /**

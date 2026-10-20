@@ -160,7 +160,8 @@ test('小游戏工事面板：两种工事 + 取消，买不起的灰掉', () =>
   for (const f of Object.values(FORTS)) {
     const row = sheet.byId[`fort-${f.id}`];
     assert.ok(row, `少了 ${f.id}`);
-    assert.match(row.sub, /金$/);
+    assert.match(row.sub, new RegExp(`^${f.cost} 金`));
+    if (f.detectRadius > 0) assert.match(row.sub, /侦测/);
   }
   m.gold = 10;
   const poor = layoutFortSheet(m, { freeSlots: 1 });

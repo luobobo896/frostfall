@@ -9,8 +9,8 @@ import {
   craftableSlots, enhanceCostOf, heroMaxHp, shopPriceOf, skillLevel, TOWER_REPAIR_GOLD, towerStats, upgradeCost,
 } from './match.js';
 import { qualityColor, towerName } from './render.js';
-import { attackHint, commandStrip, heroCard, heroCards, isLowHp, playerPanel, resultPanelModel, roleGlyphSvg, shopRows, wavePreview, zoneLabel } from './hud-model.js';
-import { zoneAt } from './defense.js';
+import { attackHint, commandStrip, detectNote, heroCard, heroCards, isLowHp, playerPanel, resultPanelModel, roleGlyphSvg, shopRows, wavePreview, zoneLabel } from './hud-model.js';
+import { assaultStealthCount, zoneAt } from './defense.js';
 
 const $ = (id) => document.getElementById(id);
 const PRIORITY_LABEL = { front: '最靠前', strongest: '最强', weakest: '最弱', air_first: '空中优先' };
@@ -112,9 +112,10 @@ export function createUI(handlers) {
     if (el.playerPanel) el.playerPanel.classList.add('hidden');
     el.defRound.textContent = String(m.assault.round);
     const t = Math.max(0, Math.round(m.assault.timer));
-    el.defTimer.textContent = m.assault.warning
+    const detectHint = assaultStealthCount(m) > 0 ? ' · 隐身，需要侦测' : '';
+    el.defTimer.textContent = (m.assault.warning
       ? `⚠ ${t}s 后进攻`
-      : `下一波 ${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`;
+      : `下一波 ${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`) + detectHint;
     const warnPct = Math.min(100, (1 - m.assault.timer / 180) * 100);
     el.defWarnBar.style.width = `${warnPct}%`;
     el.defCastle.textContent = `${Math.round(m.castle.hp)} / ${m.castle.maxHp}`;
@@ -360,7 +361,8 @@ export function createUI(handlers) {
     el.twStats.textContent = `伤害 ${s.damage.toFixed(1)} · 攻速 ${s.atkSpeed.toFixed(2)} · 射程 ${s.range.toFixed(1)}`
       + (s.hitsAir ? ' · 对空' : ' · 不对空')
       // §3.8 / §6.2：UI 要给克制提示（数字直接从克制表算，见 hud-model.attackHint）
-      + ` · ${attackHint(s.attackType)}`;
+      + ` · ${attackHint(s.attackType)}`
+      + detectNote(s);
     el.twPriority.textContent = PRIORITY_LABEL[t.priority] ?? t.priority;
     const cost = upgradeCost(t.towerId, t.level);
     el.btnUpgrade.textContent = cost == null ? '已满级' : `升级 ${cost} 金`;

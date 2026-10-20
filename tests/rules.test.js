@@ -937,7 +937,7 @@ test('§170 数值表与设计文档逐列对账（难度 / 英雄 / 武器 / �
       `§8.1：${id} 的 造价/攻击类型/伤害/攻速/射程/对空`);
   }
   assert.deepEqual(TOWERS.tw_cannon.special, { splashRadius: 1.5 }, '§8.1：炮塔溅射 1.5 格');
-  assert.deepEqual(TOWERS.tw_frost.special, { slowPct: 0.3, slowSec: 2 }, '§8.1：冰塔减速 30% / 2 秒');
+  assert.deepEqual(TOWERS.tw_frost.special, { slowPct: 0.3, slowSec: 2, detectRadius: 6 }, '§8.1：冰塔减速 30% / 2 秒，并带侦测半径');
   assert.deepEqual(TOWERS.tw_static.special, { chainCount: 3, chainDecay: 0.2, chainRange: 3 }, '§8.1：静电塔链 3 目标、每跳 −20%');
   // §6.x 怪物表（跳过三个 Boss：它们的血量正等 §8.6 拍板）
   const MOB = {
