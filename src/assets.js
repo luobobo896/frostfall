@@ -1,10 +1,17 @@
-// §14.6：正式静帧和 P0 剪影共用同一套 id。图加载成功就画图，缺文件或失败就留着剪影。
-// 这一层不解码玩法，也不在导入时发请求——调用方（浏览器入口 / 小游戏入口）自己 boot。
+// 静帧和短序列共用同一套 id。动作帧缺了就回待机静帧，静帧也缺了就留 P0 剪影。
+// 死亡不回退到站着的静帧。这一层不解码玩法，也不在导入时发请求。
 
 import { HEROES, MONSTERS, TOWERS } from './data.js';
 
 /** P1 先接的五种地块。角块变体仍按 §14.4 以后再加，加载器不认别的名字。 */
 export const TILE_KINDS = ['tile_a', 'tile_b', 'path', 'swamp', 'lava'];
+
+/** 短序列只做这两帧。第 0 帧就是待机静帧，不另存文件。 */
+export const ACTION_CLIPS = Object.freeze({
+  walk: Object.freeze([1, 2]),
+  attack: Object.freeze([1, 2]),
+  death: Object.freeze([1, 2]),
+});
 
 const ready = new Map();
 let bootTask = null;
@@ -16,7 +23,7 @@ export function towerSpriteKey(towerId, level = 1) {
   return `towers/${towerId}_lv${clampLevel(level)}`;
 }
 
-/** 怪：`mobs/{id}_idle`。只认待机静帧。 */
+/** 怪：`mobs/{id}_idle`。这是第 0 帧（休息姿势）。 */
 export function mobSpriteKey(mobId) {
   return `mobs/${mobId}_idle`;
 }
@@ -24,6 +31,31 @@ export function mobSpriteKey(mobId) {
 /** 英雄：`heroes/{id}_idle`。队伍色不进这张图。 */
 export function heroSpriteKey(heroId) {
   return `heroes/${heroId}_idle`;
+}
+
+/**
+ * 动作帧。`frame` 从 1 起；0 就是上面的静帧。
+ * 怪和英雄会先去掉 `_idle`：`mobs/mob_01_walk_1`。
+ * 塔把等级留在键里：`towers/tw_arrow_lv2_attack_1`。塔不走路。
+ */
+export function actionSpriteKey(baseKey, clip, frame) {
+  const stem = (baseKey.startsWith('mobs/') || baseKey.startsWith('heroes/'))
+    ? baseKey.replace(/_idle$/, '')
+    : baseKey;
+  return `${stem}_${clip}_${frame}`;
+}
+
+/** 动作帧、静帧都归一到待机键。认不出就返回 null。 */
+export function stillKeyOf(key) {
+  if (!key || typeof key !== 'string') return null;
+  const tower = key.match(/^(towers\/tw_[a-z]+_lv[123])(?:_(?:attack|death)_\d+)?$/);
+  if (tower) return tower[1];
+  const mob = key.match(/^(mobs\/(?:mob|boss)_\d+)(?:_idle|_(?:walk|attack|death)_\d+)?$/);
+  if (mob) return `${mob[1]}_idle`;
+  const hero = key.match(/^(heroes\/hero_[a-z]+)(?:_idle|_(?:walk|attack|death)_\d+)?$/);
+  if (hero) return `${hero[1]}_idle`;
+  if (key.startsWith('tiles/')) return key;
+  return null;
 }
 
 /**
@@ -39,13 +71,15 @@ export function spriteSrc(key) {
   return `assets/${key}.png`;
 }
 
-/** §14.4 的画布。未知键返回 null，调用方就当没有这张图。 */
+/** §14.4 的画布。动作帧和它的静帧同一尺寸。未知键返回 null。 */
 export function spriteCanvasSize(key) {
-  if (key.startsWith('towers/')) return { w: 192, h: 192 };
-  if (key.startsWith('heroes/')) return { w: 128, h: 128 };
-  if (key.startsWith('tiles/')) return { w: 64, h: 32 };
-  if (key.startsWith('mobs/')) {
-    const id = key.slice('mobs/'.length).replace(/_idle$/, '');
+  const still = stillKeyOf(key);
+  if (!still) return null;
+  if (still.startsWith('towers/')) return { w: 192, h: 192 };
+  if (still.startsWith('heroes/')) return { w: 128, h: 128 };
+  if (still.startsWith('tiles/')) return { w: 64, h: 32 };
+  if (still.startsWith('mobs/')) {
+    const id = still.slice('mobs/'.length).replace(/_idle$/, '');
     const tier = MONSTERS[id]?.tier;
     if (tier === 'boss') return { w: 256, h: 256 };
     if (tier === 'elite') return { w: 160, h: 160 };
@@ -54,7 +88,7 @@ export function spriteCanvasSize(key) {
   return null;
 }
 
-/** 当前数据表里每一件该有的静帧。多出来的文件加载器可以登记，但开机只请求这一份。 */
+/** 当前数据表里每一件该有的静帧。开机先要这一份。 */
 export function catalogKeys() {
   const keys = [];
   for (const id of Object.keys(TOWERS)) {
@@ -66,9 +100,49 @@ export function catalogKeys() {
   return keys;
 }
 
+/** 可选短序列。缺文件不影响开机；加载失败就当没有这帧。 */
+export function actionKeys() {
+  const keys = [];
+  const push = (base, clips) => {
+    for (const clip of clips) {
+      for (const frame of ACTION_CLIPS[clip]) keys.push(actionSpriteKey(base, clip, frame));
+    }
+  };
+  for (const id of Object.keys(TOWERS)) {
+    for (const lv of [1, 2, 3]) push(towerSpriteKey(id, lv), ['attack', 'death']);
+  }
+  for (const id of Object.keys(MONSTERS)) push(mobSpriteKey(id), ['walk', 'attack', 'death']);
+  for (const id of Object.keys(HEROES)) push(heroSpriteKey(id), ['walk', 'attack', 'death']);
+  return keys;
+}
+
 export function spriteFrame(key) {
   const frame = ready.get(key);
   return frame?.image ? frame : null;
+}
+
+/**
+ * 选一帧。热路径只做 Map 查找，不分配画布。
+ * 走/攻：要的那帧没有就回静帧。死亡：不回站立静帧，没有死亡帧就返回 null（调用方画剪影）。
+ */
+export function resolveSprite(baseKey, clip, index) {
+  if (!baseKey) return null;
+  if (clip === 'death') {
+    const want = index > 0 ? index : 1;
+    const hit = ready.get(actionSpriteKey(baseKey, 'death', want));
+    if (hit?.image) return hit;
+    if (want !== 1) {
+      const mid = ready.get(actionSpriteKey(baseKey, 'death', 1));
+      if (mid?.image) return mid;
+    }
+    return null;
+  }
+  if (index > 0 && (clip === 'walk' || clip === 'attack')) {
+    const hit = ready.get(actionSpriteKey(baseKey, clip, index));
+    if (hit?.image) return hit;
+  }
+  const still = ready.get(baseKey);
+  return still?.image ? still : null;
 }
 
 export function registerSprite(key, image, meta = {}) {
@@ -102,7 +176,7 @@ function canLoad(opts) {
 }
 
 /**
- * 加载一张。失败返回 null，不往表里写——下一帧继续画剪影。
+ * 加载一张。失败返回 null，不往表里写——下一帧继续画静帧或剪影。
  * `createImage` 供测试注入；不传就用浏览器 `Image` 或小游戏 `wx.createImage`。
  */
 export async function loadSprite(key, opts = {}) {
@@ -128,12 +202,19 @@ export async function loadSprites(keys, opts = {}) {
 }
 
 /**
- * 开机拉目录里的静帧。没有 `Image` 的环境（Node 用例）直接返回空列表，不挂请求。
+ * 开机先拉静帧，再拉短序列。返回的是静帧那一份（和 P1 一样）。
+ * 短序列失败不挡静帧。没有 `Image` 的环境直接返回空列表。
  * 重复调用复用同一次加载；测试要重来就 `clearSprites()`。
  */
 export function bootSprites(opts = {}) {
   if (!canLoad(opts)) return Promise.resolve([]);
   if (bootTask && !opts.force) return bootTask;
-  bootTask = loadSprites(opts.keys ?? catalogKeys(), opts);
+  const stills = opts.keys ?? catalogKeys();
+  const actions = opts.actionKeys === false ? [] : (opts.actionKeys ?? (opts.keys ? [] : actionKeys()));
+  bootTask = (async () => {
+    const rows = await loadSprites(stills, opts);
+    if (actions.length) await loadSprites(actions, opts);
+    return rows;
+  })();
   return bootTask;
 }

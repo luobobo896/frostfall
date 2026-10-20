@@ -75,6 +75,34 @@ export function heroMotion({ now = 0, dead = false, cooldown = 0, atkSpeed = 1, 
   return { dx: pulse * 5, dy: -bob, dissolve: false, pulse };
 }
 
+/**
+ * 短序列。纯算术，不分配、不读图。60fps 和 120fps 走同一条。
+ * 第 0 帧是休息姿势（静帧）。`now === 0` 的走路停在第 0 帧。
+ * 死亡从第 1 帧开始倒下，不回到站立静帧。
+ */
+export const WALK_HZ = 6;
+export const DEATH_SEC = 0.42;
+
+export function poseClip({ dead = false, pulse = 0, attacking = false, moving = false } = {}) {
+  if (dead) return 'death';
+  if (pulse > 0 || attacking) return 'attack';
+  if (moving) return 'walk';
+  return 'idle';
+}
+
+export function poseFrame(clip, { now = 0, pulse = 0, uid = 0, deathT = 0 } = {}) {
+  if (clip === 'attack') {
+    if (!(pulse > 0)) return 0;
+    return pulse >= 0.45 ? 1 : 2;
+  }
+  if (clip === 'death') return deathT >= 0.5 ? 2 : 1;
+  if (clip === 'walk') {
+    if (now === 0) return 0;
+    return (Math.floor(now * WALK_HZ + (uid % 5)) % 2) + 1;
+  }
+  return 0;
+}
+
 /** 受击：两道斜线，不是变色。 */
 export function hitSlash(size) {
   return [

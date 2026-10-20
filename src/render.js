@@ -1,15 +1,38 @@
 // 等距 2:1 渲染（§14.1）。静帧按 docs/art/DIRECTION.md 热替换；缺图或没加载完就画 P0 剪影。
 
-import { DEFENSE_MAPS, GRID, MAPS, MONSTERS, QUALITY, TEAM_COLORS, TOWERS } from './data.js';
+import { DEFENSE_MAPS, GRID, HERO_REVIVE, MAPS, MONSTERS, QUALITY, TEAM_COLORS, TOWERS } from './data.js';
 import { buildMap, heroPos, posAt, project } from './core.js';
 import { heroMaxHp, towerStatsAt } from './match.js';
 import { isLowHp } from './hud-model.js';
 import { viewport } from './platform.js';   // §平台适配：像素比在两个环境里的取法不同
-import { heroSpriteKey, mobSpriteKey, spriteFrame, tileSpriteKey, towerSpriteKey } from './assets.js';
+import { heroSpriteKey, mobSpriteKey, resolveSprite, tileSpriteKey, towerSpriteKey } from './assets.js';
 import {
-  attackPulse, chargePulse, fxBudget, heroMotion, hitSlash, impactGlyphs, mobMotion,
-  shotGlyphs, shotKind, slowShards, towerMarks, towerNudge,
+  DEATH_SEC, attackPulse, chargePulse, fxBudget, heroMotion, hitSlash, impactGlyphs, mobMotion,
+  poseClip, poseFrame, shotGlyphs, shotKind, slowShards, towerMarks, towerNudge,
 } from './motion.js';
+
+/**
+ * 身体像素高（再乘 view.scale）。Boss > Hero > Elite > Creep。
+ * 英雄不低于精英。塔是建筑体量，随等级加高，不是又一个兵。
+ */
+export const BODY_PX = Object.freeze({
+  creep: 42,
+  elite: 56,
+  hero: 70,
+  boss: 96,
+  tower: Object.freeze([60, 76, 92]),
+});
+
+const BODY_DIV = { creep: 2.5, elite: 2.5, boss: 2.5, hero: 2.6, tower: 2.4 };
+
+/** 剪影用的单位半径。精灵高度 = 半径 × 对应档的除数 = BODY_PX × scale。 */
+export function bodyRadius(kind, scale = 1, level = 1) {
+  const lv = Math.min(3, Math.max(1, Math.round(Number(level) || 1)));
+  const px = kind === 'tower' ? BODY_PX.tower[lv - 1] : BODY_PX[kind];
+  return (px * (Number(scale) || 0)) / BODY_DIV[kind];
+}
+
+const mobKind = (tier) => (tier === 'boss' ? 'boss' : tier === 'elite' ? 'elite' : 'creep');
 
 /**
  * 地形填色。路径要比可建地亮一档并带深色描边，否则整张图是同一块深蓝灰。
@@ -244,6 +267,8 @@ const COLORS = {
   hero: '#8ee08a',
   mob: { normal: '#c9d6e6', elite: '#e8a33d', boss: '#d1503f' },
   air: '#9ad8ff',
+  // 怪的法术圈。不要用英雄光的 #ffd68a。
+  aura: '#7f9e92',
 };
 
 /**
@@ -449,7 +474,7 @@ export function createRenderer(canvas, { size = null } = {}) {
 
   /** 地块图中心对齐格子。没有这张图就返回 false，调用方继续填色。 */
   function paintCell(x, y, kind) {
-    const frame = spriteFrame(tileSpriteKey(kind));
+    const frame = resolveSprite(tileSpriteKey(kind), 'idle', 0);
     if (!frame) return false;
     const c = toScreen(x, y);
     const tw = GRID.tileW * view.scale;
@@ -519,7 +544,7 @@ export function createRenderer(canvas, { size = null } = {}) {
     }
     for (const [uid, pose] of poses) {
       if (live.has(uid)) continue;
-      if (corpses.length < frameFx.corpses) corpses.push({ ...pose, until: frameNow + 0.42 });
+      if (corpses.length < frameFx.corpses) corpses.push({ ...pose, until: frameNow + DEATH_SEC });
       poses.delete(uid);
       flashes.delete(uid);
     }
@@ -529,28 +554,34 @@ export function createRenderer(canvas, { size = null } = {}) {
   function drawCorpses() {
     for (let i = corpses.length - 1; i >= 0; i--) {
       const corpse = corpses[i];
-      const life = (corpse.until - frameNow) / 0.42;
+      const life = (corpse.until - frameNow) / DEATH_SEC;
       if (life <= 0) { corpses.splice(i, 1); continue; }
       const c = toScreen(corpse.x, corpse.y, corpse.isAir ? 1.6 : 0);
       const tier = corpse.def?.tier;
-      const r = ((tier === 'boss' ? 18 : tier === 'elite' ? 13 : 9) * view.scale + 5) * (0.55 + 0.45 * life);
+      const r = bodyRadius(mobKind(tier), view.scale) * (0.55 + 0.45 * life);
+      const deathT = 1 - life;
+      const frame = resolveSprite(mobSpriteKey(corpse.mobId ?? corpse.def?.id), 'death', poseFrame('death', { deathT }));
       ctx.globalAlpha = Math.max(0, Math.min(1, life));
-      paintSilhouette(ctx, c.x, c.y + (1 - life) * 6, r, mobSilhouette({ ...corpse.def, isAir: corpse.isAir }), {
-        fill: '#8b95a3',
-        accent: '#c5ced6',
-      });
-      ctx.beginPath();
-      ctx.moveTo(c.x - r, c.y);
-      ctx.lineTo(c.x + r, c.y);
-      ctx.strokeStyle = '#d5dde6';
-      ctx.stroke();
+      if (!(frame && drawSprite(frame, c.x, c.y + r * 0.62, r * 2.5))) {
+        paintSilhouette(ctx, c.x, c.y + (1 - life) * 6, r, mobSilhouette({ ...corpse.def, isAir: corpse.isAir }), {
+          fill: '#8b95a3',
+          accent: '#c5ced6',
+        });
+        ctx.beginPath();
+        ctx.moveTo(c.x - r, c.y);
+        ctx.lineTo(c.x + r, c.y);
+        ctx.strokeStyle = '#d5dde6';
+        ctx.stroke();
+      }
       ctx.globalAlpha = 1;
     }
   }
 
-  function drawTowerBody(towerId, level, cx, cy, size, style) {
-    const frame = spriteFrame(towerSpriteKey(towerId, level));
-    if (frame && drawSprite(frame, cx, cy + size * 0.5, size * 2.4)) return;
+  function drawTowerBody(towerId, level, cx, cy, size, style, frame) {
+    const sprite = frame === undefined
+      ? resolveSprite(towerSpriteKey(towerId, level), 'idle', 0)
+      : frame;
+    if (sprite && drawSprite(sprite, cx, cy + size * 0.5, size * 2.4)) return;
     paintSilhouette(ctx, cx, cy, size, towerSilhouette(towerId, level), style);
   }
 
@@ -688,10 +719,15 @@ export function createRenderer(canvas, { size = null } = {}) {
   function drawTower(m, t, selected, localSlot) {
     const c = toScreen(t.cell.x, t.cell.y, 0.9);
     const color = COLORS.tower[t.towerId] ?? '#dbe6f2';
-    const size = (16 + t.level * 3) * view.scale + 7;
+    const size = bodyRadius('tower', view.scale, t.level);
     const pulse = attackPulse(t.cooldown, t.stats?.atkSpeed);
     const charge = chargePulse(t.cooldown, t.stats?.atkSpeed);
-    const nudge = towerNudge(t.towerId, pulse);
+    const clip = poseClip({ pulse, dead: t.hp <= 0 });
+    const index = poseFrame(clip, { now: frameNow, pulse, uid: t.uid ?? 0 });
+    const base = towerSpriteKey(t.towerId, t.level);
+    const frame = resolveSprite(base, clip, index);
+    const posed = !!(frame && frame.key !== base);
+    const nudge = posed ? { dx: 0, dy: 0 } : towerNudge(t.towerId, pulse);
     const bx = c.x + nudge.dx * view.scale;
     const by = c.y + nudge.dy * view.scale;
     ctx.fillStyle = 'rgba(0,0,0,.35)';
@@ -701,8 +737,8 @@ export function createRenderer(canvas, { size = null } = {}) {
       accent: color,
       stroke: selected ? '#8ee08a' : 'rgba(10,20,30,.6)',
       lineWidth: selected ? 2.5 : 1,
-    });
-    const marks = towerMarks(t.towerId, pulse, charge);
+    }, frame);
+    const marks = posed ? [] : towerMarks(t.towerId, pulse, charge);
     if (marks.length) drawGlyphs(placeGlyphs(marks, bx, by - size * 0.2, view.scale), color, 1.5);
     label(`${t.level}`, c.x, c.y - size * 0.15, '#0b1420', 12);
     // 5★/6★ 图会被攻城怪拆：塔血不满时显示血条
@@ -745,13 +781,22 @@ export function createRenderer(canvas, { size = null } = {}) {
     // §10.3：用亚格位置画（`dist` 是内核本来就有的连续量），逻辑判定仍走 mo.cell
     const p = monPos(m, mo);
     const c0 = toScreen(p.x, p.y, z);
-    const motion = mobMotion({
-      now: frameNow, uid: mo.uid, attacking: !!mo.attacking, isAir: !!mo.isAir,
-      cooldown: mo.cooldown, atkSpeed: mo.atkSpeed,
-    });
+    const pulse = attackPulse(mo.cooldown, mo.atkSpeed);
+    const moving = mo.pathIndex != null ? !mo.attacking : !!(mo.path?.length) && !mo.attacking;
+    const clip = poseClip({ now: frameNow, pulse, attacking: !!mo.attacking, moving });
+    const index = poseFrame(clip, { now: frameNow, pulse, uid: mo.uid ?? 0 });
+    const base = mobSpriteKey(mo.def?.id);
+    const frame = resolveSprite(base, clip, index);
+    const posed = !!(frame && frame.key !== base);
+    const motion = posed
+      ? { dy: 0, pulse, bob: 0 }
+      : mobMotion({
+        now: frameNow, uid: mo.uid, attacking: !!mo.attacking, isAir: !!mo.isAir,
+        cooldown: mo.cooldown, atkSpeed: mo.atkSpeed,
+      });
     const c = { x: c0.x, y: c0.y + motion.dy * view.scale };
     const tier = mo.def.tier;
-    const r = (tier === 'boss' ? 18 : tier === 'elite' ? 13 : 9) * view.scale + 5;
+    const r = bodyRadius(mobKind(tier), view.scale);
     if (z) {
       const g = toScreen(p.x, p.y, 0);
       ctx.fillStyle = 'rgba(0,0,0,.30)';
@@ -762,11 +807,10 @@ export function createRenderer(canvas, { size = null } = {}) {
     }
     const fill = mo.isAir ? COLORS.air : COLORS.mob[tier] ?? '#c9d6e6';
     const spec = mobSilhouette({ ...mo.def, isAir: mo.isAir || mo.def.isAir });
-    const frame = spriteFrame(mobSpriteKey(mo.def?.id));
     if (frame && drawSprite(frame, c.x, c.y + r * 0.62, r * 2.5)) {
-      // 光环是特性，不是身体。静帧里没画出来时，这一圈仍要留着。
+      // 光环是怪的法术圈，不是英雄光。英雄光只属于英雄。
       if (spec.aura) {
-        ctx.strokeStyle = '#ffd08a';
+        ctx.strokeStyle = COLORS.aura;
         ctx.lineWidth = 1.5;
         ctx.beginPath();
         ctx.ellipse(c.x, c.y, r * 1.35, r * 1.05, 0, 0, Math.PI * 2);
@@ -776,7 +820,7 @@ export function createRenderer(canvas, { size = null } = {}) {
     } else {
       paintSilhouette(ctx, c.x, c.y, r, spec, {
         fill,
-        accent: spec.aura ? '#ffd08a' : fill,
+        accent: spec.aura ? COLORS.aura : fill,
       });
     }
     const slowed = mo.effects?.some((e) => e.type === 'slow' && !(e.until <= (m.time ?? 0)));
@@ -792,7 +836,7 @@ export function createRenderer(canvas, { size = null } = {}) {
       drawGlyphs(placeGlyphs(hitSlash(1), c.x, c.y, r * 0.85), '#fffaf0', 2);
     }
     bar(c.x, c.y - r - 8, r * 2.2, 4, mo.hp / mo.maxHp, tier === 'boss' ? '#d1503f' : '#8ee08a');
-    if (mo.def.armorType === 'fortified') label('盾', c.x, c.y + r + 8, '#ffd08a', 10);
+    if (mo.def.armorType === 'fortified') label('盾', c.x, c.y + r + 8, '#c5d0dc', 10);
     if (mo.attacking) label('!', c.x + r, c.y - r, '#ffb4a0', 12);
   }
 
@@ -805,15 +849,25 @@ export function createRenderer(canvas, { size = null } = {}) {
     // 人物同样按小数位置画：防守里 `carry` 就是「走向下一格的进度」（相机也用它，见 drawDefense）
     const hp = heroPos(h);
     const c0 = toScreen(hp.x, hp.y, 1.0);
-    const motion = heroMotion({
-      now: frameNow, dead: !!h.dead, cooldown: h.cooldown, atkSpeed: h.def?.atkSpeed, uid: 1,
-    });
+    const pulse = attackPulse(h.cooldown, h.def?.atkSpeed);
+    const dead = !!h.dead;
+    const moving = !dead && !!(h.path?.length);
+    const reviveMax = HERO_REVIVE.sec * (m.reviveMul ?? 1);
+    const deathT = dead ? Math.min(1, Math.max(0, (reviveMax - (h.reviveTimer ?? reviveMax)) / DEATH_SEC)) : 0;
+    const clip = dead ? 'death' : poseClip({ pulse, attacking: !!h.attacking, moving });
+    const index = poseFrame(clip, { now: frameNow, pulse, uid: 1, deathT });
+    const base = heroSpriteKey(h.def?.id);
+    const frame = resolveSprite(base, clip, index);
+    const posed = !!(frame && frame.key !== base);
+    const motion = posed
+      ? { dx: 0, dy: 0, dissolve: false, pulse }
+      : heroMotion({
+        now: frameNow, dead, cooldown: h.cooldown, atkSpeed: h.def?.atkSpeed, uid: 1,
+      });
     const c = { x: c0.x + motion.dx * view.scale, y: c0.y + motion.dy * view.scale };
-    // 比塔的身体大一档，避免和塔挤成同一号剪影。倒下时收一截，表示已经倒了。
-    const r = (16 * view.scale + 8) * (h.dead ? 0.82 : 1);
-    const fill = h.dead ? '#5a6474' : (TEAM_COLORS[localSlot % TEAM_COLORS.length] ?? COLORS.hero);
-    // 这批没有死亡帧：倒下之后继续用灰色剪影，即使待机图已经在。
-    const frame = h.dead ? null : spriteFrame(heroSpriteKey(h.def?.id));
+    // 英雄是冠军单位，高于精英。倒下时收一截。暖色轮廓只有活着的英雄有。
+    const r = bodyRadius('hero', view.scale) * (dead ? 0.82 : 1);
+    const fill = dead ? '#5a6474' : (TEAM_COLORS[localSlot % TEAM_COLORS.length] ?? COLORS.hero);
     if (frame && drawSprite(frame, c.x, c.y + r * 0.62, r * 2.6)) {
       ctx.strokeStyle = TEAM_COLORS[localSlot % TEAM_COLORS.length] ?? COLORS.hero;
       ctx.lineWidth = 2;
@@ -829,13 +883,13 @@ export function createRenderer(canvas, { size = null } = {}) {
       });
     }
     // 暖色轮廓只有英雄有。塔的队伍色在底座环上，不走这一圈。
-    ctx.strokeStyle = h.dead ? '#8b95a3' : '#ffd68a';
+    ctx.strokeStyle = dead ? '#8b95a3' : '#ffd68a';
     ctx.lineWidth = 3;
     ctx.beginPath();
     ctx.ellipse(c.x, c.y - r * 0.05, r * 1.05, r * 0.82, 0, 0, Math.PI * 2);
     ctx.stroke();
     ctx.lineWidth = 1;
-    if (motion.dissolve) {
+    if (motion.dissolve && !posed) {
       ctx.beginPath();
       ctx.moveTo(c.x - r, c.y);
       ctx.lineTo(c.x + r, c.y);
@@ -926,7 +980,7 @@ export function createRenderer(canvas, { size = null } = {}) {
       const cell = m.map.slots[p.slot];
       if (!cell) continue;
       const c = toScreen(cell.x, cell.y, 0.9);
-      const size = (16 + 3) * view.scale + 7;
+      const size = bodyRadius('tower', view.scale, 1);
       ctx.globalAlpha = 0.5;
       drawTowerBody(p.towerId, 1, c.x, c.y, size, {
         fill: COLORS.tower[p.towerId] ?? '#dbe6f2',
@@ -1037,7 +1091,7 @@ export function createRenderer(canvas, { size = null } = {}) {
       const c = toScreen(s.x, s.y, built ? 0.8 : 0);
       if (built) {
         const isWall = built.fortId === 'fort_wall' || !built.stats;
-        const size = (isWall ? 14 : 18) * view.scale + 6;
+        const size = isWall ? (14 * view.scale + 6) : bodyRadius('tower', view.scale, 1);
         if (isWall) {
           paintSilhouette(ctx, c.x, c.y, size, wallSilhouette(), {
             fill: '#6b7a90',
