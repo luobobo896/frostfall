@@ -6,7 +6,7 @@ import {
   MONSTERS, QUALITY_ORDER, TICK_STEP, fortStatsOf,
 } from './data.js';
 import { computeDamage, findPath, gridDist, makeRng, project } from './core.js';
-import { damageMonster, grantExp, heroAttack, heroDamageReduce, heroDodge, heroMaxHp, heroStats, isTargetable, makeEquipment, markReveal, sprintState, stepMonsterEffects, updateHeroBuffs } from './match.js';
+import { ATTACK_COMMIT_SEC, LEVEL_FLOURISH_SEC, damageMonster, defenseLook, grantExp, heroAttack, heroDamageReduce, heroDodge, heroMaxHp, heroStats, isTargetable, makeEquipment, markReveal, sprintState, stepMonsterEffects, updateHeroBuffs } from './match.js';
 
 const key = (x, y) => `${x},${y}`;
 
@@ -57,6 +57,7 @@ export function createDefenseMatch({
       path: [], goal: null, cooldown: 0, skillCd: [0, 0, 0],
       skillUnlocked: [true, false, false], buffs: [],
       attackBuff: 0, reduceBuff: 0, dead: false, reviveTimer: 0, moving: false,
+      facing: -1, attacking: false,
       teleportCd: 0,   // 回城冷却（§2.6）
     },
     monsters: [],          // 野外怪 + 进攻怪
@@ -86,8 +87,12 @@ export function createDefenseMatch({
   };
   addLog(m, '出城打野、升级换装；预警响起就回防城堡');
   m.hero.equipped = m.equipped;   // §5.2 / §5.4：英雄属性读身上的装备（与 TD 同一个约定）
-  m.onMonsterKilled = (mon) => onMonsterKilled(m, mon);   // 接到内核的击杀回调（§12.5 的掉落/经验规则）
-  return m;
+    m.onMonsterKilled = (mon) => onMonsterKilled(m, mon);   // 接到内核的击杀回调（§12.5 的掉落/经验规则）
+    m.onHeroLevel = (level) => {
+      m.hero.levelPulseUntil = (m.time ?? 0) + LEVEL_FLOURISH_SEC;
+      addLog(m, `出征英雄升到 Lv${level}`);
+    };
+    return m;
 }
 
 export const addLog = (m, text, kind = 'info') => { m.events.push({ t: +m.time.toFixed(1), text, kind }); };
@@ -673,6 +678,7 @@ export function updateDefense(m, dtRaw) {
   hero.teleportCd = Math.max(0, (hero.teleportCd ?? 0) - dt);
   for (const k of Object.keys(m.potionCd)) m.potionCd[k] = Math.max(0, m.potionCd[k] - dt);
   if (hero.dead) {
+    hero.attacking = false;
     hero.reviveTimer -= dt;
     if (hero.reviveTimer <= 0) {
       hero.dead = false;
@@ -690,16 +696,15 @@ export function updateDefense(m, dtRaw) {
     if (inCombat) hero.engagedUntil = m.time + HERO_REGEN.outOfCombatSec;
     const regenPct = m.time >= (hero.engagedUntil ?? 0) ? HERO_REGEN.idlePct : HERO_REGEN.combatPct;
     hero.hp = Math.min(st.maxHp, hero.hp + (st.maxHp * regenPct + st.hpRegen) * dt);   // §5.2 词条「每秒回血」
+    const look = defenseLook(m, st.range);
+    hero.facing = look.facing;
     hero.cooldown = Math.max(0, (hero.cooldown ?? 0) - dt);
-    if (hero.cooldown <= 0) {
-      const target = m.monsters
-        .filter((x) => isTargetable(m, x) && gridDist(x.cell, hero.cell) <= st.range)
-        .sort((a, b) => gridDist(a.cell, hero.cell) - gridDist(b.cell, hero.cell))[0];
-      if (target) {
-        hero.cooldown = 1 / st.atkSpeed;
-        heroAttack(m, target);   // §4.1：与 TD 共用同一个普攻出口（武器特性在这里生效）
-      }
+    if (hero.cooldown <= 0 && look.target) {
+      hero.cooldown = 1 / st.atkSpeed;
+      hero.attackCommitUntil = m.time + ATTACK_COMMIT_SEC;
+      heroAttack(m, look.target);   // §4.1：与 TD 共用同一个普攻出口（武器特性在这里生效）
     }
+    hero.attacking = !!look.target || (hero.attackCommitUntil ?? 0) > m.time;
   }
 
   // 清场与结算

@@ -8,7 +8,7 @@ import { join } from 'node:path';
 
 import { installFakeWx } from '../tools/fake-wx.mjs';
 import {
-  DESIGN, MINIMAP, SKILL_BAR, STICK, drawDefenseHud, hitTestDefense, inStickZone,
+  CHAMPION_CARD, DESIGN, MINIMAP, SKILL_BAR, STICK, drawDefenseHud, hitTestDefense, inStickZone,
   layoutDefense, layoutFortSheet, stickBase, stickVector,
 } from '../src/minigame/defense-screen.js';
 import { hitTestSheet } from '../src/minigame/battle.js';
@@ -98,6 +98,35 @@ test('小游戏防守 HUD：右侧那排避开摇杆区、避开胶囊区、热�
   assert.ok(!inStickZone(L, 500, 300), '右半屏不该归摇杆');
   assert.deepEqual(stickBase({}, { w: 667, h: 375 }), { x: 107, y: 293, r: 64, floating: false });
   assert.equal(stickBase({ stickOrigin: { x: 200, y: 200 }, stickFloating: true }, { w: 667, h: 375 }).x, 200, '浮动模式底座跟手指');
+});
+
+test('小游戏防守 HUD：出征肖像有血、等级、技能冷却和背包点，且不压摇杆、技能、小地图', () => {
+  const m = createDefenseMatch({ seed: 5, heroId: 'hero_paladin' });
+  m.hero.hp = 400;
+  m.hero.skillUnlocked = [true, true, false];
+  m.hero.skillCd = [3.2, 0, 0];
+  m.inventory = [{}, {}];
+  const L = layoutDefense(m, { rate: 1, paused: false, potionCount: 1, stealthAlert: { count: 2 }, resistAlert: { count: 1 } });
+  const card = L.byId.portrait;
+  assert.ok(card, '防守要有出征肖像');
+  assert.equal(card.w, CHAMPION_CARD.w);
+  assert.ok(card.w >= 44 && card.h >= 44, '整张卡是热区，不能小于 44');
+  assert.deepEqual(hitTestDefense(L, card.x + 8, card.y + 8), { type: 'noop' }, '点肖像不走路、不回城');
+  const hit = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+  assert.ok(!inStickZone(L, card.x + card.w / 2, card.y + card.h / 2), '肖像中心不在固定摇杆区');
+  assert.ok(!inStickZone(L, card.x + 1, card.y + card.h - 1, true), '浮动摇杆区也不吃这张卡');
+  for (const id of ['minimap', 'skill-0', 'skill-1', 'skill-2', 'teleport', 'repair']) {
+    assert.ok(!hit(card, L.byId[id]), `肖像压到了 ${id}`);
+  }
+  assert.ok(!hit(card, L.top) && !hit(card, L.minimap), '肖像不压顶栏和小地图');
+  assert.ok(!hit(card, L.stealthChip) && !hit(card, L.resistChip), '肖像不压隐身/霜壳芯片');
+  assert.ok(card.y + card.h < SKILL_BAR.y, '肖像底边停在技能排上面');
+  const ctx = fakeCtx();
+  drawDefenseHud(ctx, m, L, {});
+  assert.ok(ctx.texts.includes('Champion'), `肖像要写 Champion（画了：${ctx.texts.join(' / ')}）`);
+  assert.ok(ctx.texts.some((t) => t.includes('守誓圣徒') && t.includes('Lv1')), '肖像要写名字和等级');
+  assert.ok(ctx.texts.includes('4'), '冷却中的技能要写剩余秒数');
+  assert.ok(ctx.texts.includes('备'), '转好的技能要能认出来');
 });
 
 test('小游戏防守 HUD：顶栏五格互不重叠，预警那一格写读得懂的短句，右侧写击杀与工事', () => {

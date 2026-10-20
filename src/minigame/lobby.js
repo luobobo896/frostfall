@@ -77,8 +77,8 @@ export function layoutLobby(w, h, model = {}) {
   const raw = [];   // 先按设计单位（667×375）摆，最后统一 scale+居中成画布坐标
 
   // 所有可点元素都给到 **≥44×44**（§1.9.2 的热区下限；浏览器版当初就是因为 `.btn.small` 36px 被收过一次）
-  raw.push(btn('mode-td', 24, 84, 78, 44, '驻守英雄', { type: 'mode', value: 'td' }, { on: mode === 'td' }));
-  raw.push(btn('mode-def', 110, 84, 78, 44, '出征英雄', { type: 'mode', value: 'defense' }, { on: mode === 'defense' }));
+  raw.push(btn('mode-td', 24, 84, 78, 44, '驻守英雄', { type: 'mode', value: 'td' }, { on: mode === 'td', sub: 'Guardian' }));
+  raw.push(btn('mode-def', 110, 84, 78, 44, '出征英雄', { type: 'mode', value: 'defense' }, { on: mode === 'defense', sub: 'Champion' }));
   ['normal', 'hard', 'nightmare'].forEach((d, i) => {
     raw.push(btn(`diff-${d}`, 24 + i * 66, 134, 60, 44, DIFF_LABEL[d], { type: 'difficulty', value: d }, { on: model.difficulty === d }));
   });
@@ -243,9 +243,9 @@ export function drawLobby(ctx, model, L) {
       }
       continue;
     }
-    if (it.id.startsWith('hero-')) {
-      text(ctx, it.label, it.x + it.w / 2, it.y + it.h * 0.36, { size: S(12), align: 'center' });
-      text(ctx, it.sub ?? '', it.x + it.w / 2, it.y + it.h * 0.68, { size: S(10), color: COLORS.dim, align: 'center' });
+    if (it.id.startsWith('hero-') || it.id === 'mode-td' || it.id === 'mode-def') {
+      text(ctx, it.label, it.x + it.w / 2, it.y + it.h * 0.36, { size: S(it.id.startsWith('hero-') ? 12 : 11), align: 'center' });
+      text(ctx, it.sub ?? '', it.x + it.w / 2, it.y + it.h * 0.68, { size: S(it.id.startsWith('hero-') ? 10 : 9), color: COLORS.dim, align: 'center' });
       continue;
     }
     text(ctx, it.label, it.x + it.w / 2, it.y + it.h / 2, {

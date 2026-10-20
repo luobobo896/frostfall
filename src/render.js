@@ -2,13 +2,13 @@
 
 import { DEFENSE_MAPS, FORTS, GRID, HERO_REVIVE, MAPS, MONSTERS, QUALITY, TEAM_COLORS, TOWERS } from './data.js';
 import { buildMap, heroPos, posAt, project } from './core.js';
-import { heroAbilityRange, heroDetectRadius, heroMaxHp, holdCells, revivePoint, sprintState, stealthView, towerStatsAt } from './match.js';
+import { defenseLook, heroAbilityRange, heroDetectRadius, heroMaxHp, heroStats, holdCells, LEVEL_FLOURISH_SEC, revivePoint, sprintState, stealthView, supportAuraRange, towerStatsAt } from './match.js';
 import { isLowHp } from './hud-model.js';
 import { viewport } from './platform.js';   // §平台适配：像素比在两个环境里的取法不同
 import { heroSpriteKey, mobSpriteKey, resolveSprite, tileSpriteKey, towerSpriteKey } from './assets.js';
 import {
   DEATH_SEC, attackPulse, chargePulse, fxBudget, heroMotion, hitSlash, impactGlyphs, leanParts, mobMotion,
-  poseClip, poseFrame, shotGlyphs, shotKind, slowShards, sprintStreaks, stealthGlyphs, towerMarks, towerNudge,
+  levelFlourish, poseClip, poseFrame, shotGlyphs, shotKind, slowShards, sprintStreaks, stealthGlyphs, towerMarks, towerNudge,
 } from './motion.js';
 
 /**
@@ -821,6 +821,8 @@ export function createRenderer(canvas, { size = null } = {}) {
   }
 
   let frameNow = 0;
+  let frameLow = false;
+  let flourishLevel = null;
   let frameFx = fxBudget('high');
   let sprintLeft = frameFx.sprint ?? 0;
   let invisLeft = frameFx.invis ?? 0;
@@ -830,8 +832,20 @@ export function createRenderer(canvas, { size = null } = {}) {
   const shotSeen = new Map();
   const impacts = [];
 
+  /** 镜像端不跑 grantExp。等级往上跳的那一帧补上同一段光环。 */
+  function noteChampionLevel(m) {
+    if (m?.mode !== 'defense' || !m.hero) return;
+    const lv = m.hero.level ?? 1;
+    if (flourishLevel != null && lv > flourishLevel) {
+      const until = (m.time ?? 0) + LEVEL_FLOURISH_SEC;
+      if ((m.hero.levelPulseUntil ?? 0) < until) m.hero.levelPulseUntil = until;
+    }
+    flourishLevel = lv;
+  }
+
   function beginFrame(isoView) {
     frameNow = isoView.now ?? 0;
+    frameLow = isoView.fx === 'low' || isoView.pulses === false;
     frameFx = fxBudget(isoView.fx);
     sprintLeft = frameFx.sprint ?? 0;
     invisLeft = frameFx.invis ?? 0;
@@ -1526,10 +1540,11 @@ export function createRenderer(canvas, { size = null } = {}) {
     const c0 = toScreen(hp.x, hp.y, 1.0);
     const pulse = attackPulse(h.cooldown, h.def?.atkSpeed);
     const dead = !!h.dead;
+    const look = m.mode === 'defense' && !dead ? defenseLook(m, heroStats(h).range) : null;
     const moving = !dead && !!(h.path?.length);
     const reviveMax = HERO_REVIVE.sec * (m.reviveMul ?? 1);
     const deathT = dead ? Math.min(1, Math.max(0, (reviveMax - (h.reviveTimer ?? reviveMax)) / DEATH_SEC)) : 0;
-    const clip = dead ? 'death' : poseClip({ pulse, attacking: !!h.attacking, moving });
+    const clip = dead ? 'death' : poseClip({ pulse, attacking: !!h.attacking || !!look?.target, moving });
     const index = poseFrame(clip, { now: frameNow, pulse, uid: 1, deathT });
     const base = heroSpriteKey(h.def?.id);
     const frame = resolveSprite(base, clip, index);
@@ -1539,7 +1554,7 @@ export function createRenderer(canvas, { size = null } = {}) {
       : heroMotion({
         now: frameNow, dead, cooldown: h.cooldown, atkSpeed: h.def?.atkSpeed, uid: 1,
       });
-    const face = h.facing === 1 ? 1 : -1;
+    const face = look ? look.facing : (h.facing === 1 ? 1 : -1);
     const c = { x: c0.x + motion.dx * view.scale * face, y: c0.y + motion.dy * view.scale };
     // 英雄是冠军单位，高于精英。倒下时收一截。暖色轮廓只有活着的英雄有。
     const r = bodyRadius('hero', view.scale) * (dead ? 0.82 : 1);
@@ -1572,6 +1587,20 @@ export function createRenderer(canvas, { size = null } = {}) {
     ctx.ellipse(c.x, c.y - r * 0.05, r * 1.05, r * 0.82, 0, 0, Math.PI * 2);
     ctx.stroke();
     ctx.lineWidth = 1;
+    const flourish = !dead && m.mode === 'defense'
+      ? levelFlourish(h.levelPulseUntil, m.time ?? 0, { low: frameLow, sec: LEVEL_FLOURISH_SEC })
+      : null;
+    if (flourish) {
+      ctx.save();
+      ctx.globalAlpha = flourish.alpha;
+      ctx.strokeStyle = '#e7edf4';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.ellipse(c.x, c.y + r * 0.35, r * flourish.scale, r * flourish.scale * 0.42, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+      ctx.lineWidth = 1;
+    }
     if (motion.dissolve && !posed) {
       ctx.beginPath();
       ctx.moveTo(c.x - r, c.y);
@@ -1579,7 +1608,7 @@ export function createRenderer(canvas, { size = null } = {}) {
       ctx.strokeStyle = '#d5dde6';
       ctx.stroke();
     }
-    const max = Math.max(1, h.def.hp);
+    const max = Math.max(1, heroMaxHp(h));
     bar(c.x, c.y - r - 8, r * 2.4, 4, h.hp / max, '#8ee08a');
     label(h.dead ? `复活 ${Math.ceil(h.reviveTimer)}s` : `Lv${h.level}`, c.x, c.y + r + 10, '#dff5dd', 11);
   }
@@ -1715,6 +1744,7 @@ export function createRenderer(canvas, { size = null } = {}) {
       }
     }
     // 点选英雄之后才给驻守预览和技能圈（和塔的悬停圈同一规矩：先点中，再看范围）。
+    // 圣徒的脚底光环就是这一圈：点中才画。没点中不另铺一圈，免得和「先点中再看范围」打架。
     if (isoView.heroSelected && !m.hero.dead) {
       drawHoldMarks(m);
       const ability = heroAbilityRange(m.hero);
@@ -1757,6 +1787,7 @@ export function createRenderer(canvas, { size = null } = {}) {
   function drawDefense(v) {
     beginFrame(v);
     const { m, floaters = [], now = 0, selectedFortSlot = null } = v;
+    noteChampionLevel(m);
     // 相机跟着**小数位置**走：只平滑人物、镜头还在一格一格跳，反而更扎眼（§10.3）
     const camP = heroPos(m.hero);
     setCamera(camP.x, camP.y, v.scale ?? 1.5);
@@ -1887,6 +1918,11 @@ export function createRenderer(canvas, { size = null } = {}) {
     trackMonsters(m.monsters, m);
     drawCorpses();
     noteUnits(m);
+
+    if (!m.hero.dead) {
+      const aura = supportAuraRange(m.hero);
+      if (aura > 0) drawHeroSkillRing(heroPos(m.hero), aura);
+    }
 
     // 深度排序画单位
     const drawables = [
