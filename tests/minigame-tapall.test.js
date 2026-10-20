@@ -44,6 +44,11 @@ const pokeSheet = (app, ids) => {
     const row = sheet.byId[id];
     if (!row) continue;
     poke(app, row);
+    // 建造行第一下只预览射程，再点一次才建。扫键要真的建出一座，后面才能打开塔面板。
+    if (id.startsWith('build-')) {
+      const again = app.getModel().sheet?.byId?.[id];
+      if (again) poke(app, again);
+    }
   }
 };
 

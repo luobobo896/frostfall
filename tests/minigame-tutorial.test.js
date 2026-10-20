@@ -102,6 +102,7 @@ test('小游戏引导：第一局挂上 → 建塔/开波/放技能/清波四步
       const p = r.toScreen(m.map.slots[i].x, m.map.slots[i].y);
       app.tap(p.x, p.y);
       tapItem(app, app.getModel().sheet.byId['build-tw_arrow']);
+      tapItem(app, app.getModel().sheet.byId['build-tw_arrow']);
       tapItem(app, app.getModel().sheet.byId.close);
     }
     assert.match(app.getModel().tutorial ?? '', /提前开波/, '建完塔要换第二句');

@@ -148,6 +148,7 @@ test('小游戏战场：在假 wx 里真的能打起来（点塔位建塔 → �
       const sheet = app.getModel().sheet;
       assert.equal(sheet.kind, 'build', '弹出来的应该是「选塔种」那张');
       const row = sheet.byId['build-tw_arrow'];
+      app.tap(row.x + row.w / 2, row.y + row.h / 2);   // 第一下只预览射程
       app.tap(row.x + row.w / 2, row.y + row.h / 2);
       // 建完会自动切到这座塔的面板 —— 关掉它，否则下一个塔位那一下会被弹层吃掉
       const close = app.getModel().sheet.byId.close;
@@ -805,6 +806,9 @@ test('小游戏提示文案：写玩家认得的名字，不出现内部 id（tw
     const row = app.getModel().sheet.byId['build-tw_arrow'];
     app.tap(row.x + row.w / 2, row.y + row.h / 2);
     app.drawFrame();
+    assert.match(newest(/再点一次确认/) ?? '', /箭塔/, '第一下只预览，提示里写塔的名字');
+    app.tap(row.x + row.w / 2, row.y + row.h / 2);
+    app.drawFrame();
     assert.equal(newest(/^建了/), '建了 箭塔', `提示要写塔的名字（实际「${newest(/^建了/)}」）`);
 
     // 优先级：提示要写「最靠前」，不是 `front`
@@ -892,6 +896,16 @@ test('小游戏战场：正在操作的那个塔位要在画面上高亮（空�
 
     // 建一座塔 → 面板切成塔面板，这一座要作为 selectedTower 传进去（描边）
     const row = app.getModel().sheet.byId['build-tw_arrow'];
+    const placing = [];
+    const prevDraw = r.draw;
+    r.draw = (view) => { placing.push(view.placingTowerId ?? null); return prevDraw(view); };
+    app.tap(row.x + row.w / 2, row.y + row.h / 2);
+    app.drawFrame();
+    assert.equal(m.towers.length, 0, '第一下不建塔');
+    assert.equal(app.getModel().sheet?.kind, 'build', '第一下还停在建造面板');
+    assert.equal(app.getModel().sheet.byId['build-tw_arrow'].on, true, '预览中的那一行要亮起来');
+    assert.match(app.getModel().sheet.hint, /射程已标出/);
+    assert.equal(placing.at(-1), 'tw_arrow', '预览的塔种要传给渲染器画射程圈');
     app.tap(row.x + row.w / 2, row.y + row.h / 2);
     app.drawFrame();
     assert.equal(seen.at(-1).tower, 0, '塔面板开着时，那一座塔要高亮');
@@ -923,6 +937,7 @@ test('小游戏战场：伤害飘字（§14.3）——两帧血量差算出来�
       const p = r.toScreen(m.map.slots[i].x, m.map.slots[i].y);
       app.tap(p.x, p.y);
       const row = app.getModel().sheet.byId['build-tw_arrow'];
+      app.tap(row.x + row.w / 2, row.y + row.h / 2);
       app.tap(row.x + row.w / 2, row.y + row.h / 2);
       const close = app.getModel().sheet.byId.close;
       app.tap(close.x + close.w / 2, close.y + close.h / 2);
