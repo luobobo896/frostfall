@@ -19,9 +19,9 @@ export function towerStats(towerId, level = 1, spec = null) {
   const t = TOWERS[towerId];
   const g = TOWER_LEVEL_GAIN;
   const offer = TOWER_SPEC[towerId];
-  // 专精只挂光环、焦土或雷场，不改共享的 special 对象（否则同族每一座塔都会带上）
+  // 专精只挂光环、焦土、雷场或风线，不改共享的 special 对象（否则同族每一座塔都会带上）
   let special = t.special;
-  if (spec && offer && offer.id === spec && (offer.aura || offer.scorch || offer.storm)) {
+  if (spec && offer && offer.id === spec && (offer.aura || offer.scorch || offer.storm || offer.wind)) {
     special = { ...t.special };
     if (offer.aura) {
       special.aura = { radius: offer.aura.radius, slowPct: offer.aura.slowPct, chip: offer.aura.chip };
@@ -31,6 +31,11 @@ export function towerStats(towerId, level = 1, spec = null) {
     }
     if (offer.storm) {
       special.storm = { radius: offer.storm.radius, chip: offer.storm.chip };
+    }
+    if (offer.wind) {
+      special.wind = {
+        reach: offer.wind.reach, span: offer.wind.span, chip: offer.wind.chip, vsAir: offer.wind.vsAir,
+      };
     }
   }
   return {
@@ -72,7 +77,7 @@ export function specCostOf(towerId) {
 
 /**
  * 下一档能买什么。3 级封顶的塔没有专精就是 null。
- * 冰塔满级之后是寒霜祭坛，炮塔满级之后是燎野炮台，静电塔满级之后是风暴电笼，都不是 Lv4。
+ * 冰塔满级之后是寒霜祭坛，炮塔满级之后是燎野炮台，静电塔满级之后是风暴电笼，箭塔满级之后是穿云箭楼，都不是 Lv4。
  */
 export function nextUpgrade(tower) {
   if (!tower) return null;
@@ -1321,6 +1326,63 @@ function stepScorchHearths(m, dt) {
 }
 
 /**
+ * 穿云箭楼的风线：每秒一次，沿它锁住的那一只所在的路打出穿刺。
+ * 普通射击的伤害、射程、攻速和攻击类型不动。空中优先被锁，线上的空中再吃 vsAir。
+ * 只打同一条路、射程内、离焦点不超过 span 格的已经能被锁定的敌人。
+ * 不减速，不侦测。完全潜行碰不到。霜壳照削穿刺。
+ */
+function windReachOf(tower, wind) {
+  const cap = tower.stats?.range;
+  if (!(wind?.reach > 0)) return 0;
+  return cap > 0 ? Math.min(wind.reach, cap) : wind.reach;
+}
+
+function windFocus(m, tower, reach) {
+  let focus = null;
+  for (const mo of m.monsters) {
+    if (!isTargetable(m, mo, true)) continue;
+    if (gridDist(monsterCell(m, mo), tower.cell) > reach) continue;
+    if (!focus) { focus = mo; continue; }
+    const airBias = (mo.isAir ? 1 : 0) - (focus.isAir ? 1 : 0);
+    if (airBias > 0 || (airBias === 0 && (mo.dist ?? 0) > (focus.dist ?? 0))) focus = mo;
+  }
+  return focus;
+}
+
+function stepWindLines(m, dt) {
+  const towers = m.towers;
+  let any = false;
+  for (let i = 0; i < towers.length; i++) {
+    if (towers[i].stats?.special?.wind?.chip > 0) { any = true; break; }
+  }
+  if (!any) return;
+  for (let i = 0; i < towers.length; i++) {
+    const t = towers[i];
+    const wind = t.stats?.special?.wind;
+    if (!(wind?.chip > 0) || !(wind.span > 0)) continue;
+    t.windClock = (t.windClock ?? 0) + dt;
+    if (t.windClock < 1) continue;
+    t.windClock -= 1;
+    const reach = windReachOf(t, wind);
+    const focus = windFocus(m, t, reach);
+    if (!focus) continue;
+    for (const mon of m.monsters) {
+      if (!isTargetable(m, mon, true)) continue;
+      if (mon.pathIndex !== focus.pathIndex) continue;
+      if (gridDist(monsterCell(m, mon), t.cell) > reach) continue;
+      const steps = Math.abs((mon.dist ?? 0) - (focus.dist ?? 0)) / GRID.unitPerTile;
+      if (steps > wind.span) continue;
+      const bonus = mon.isAir && wind.vsAir > 0 ? wind.vsAir : 0;
+      const dealt = computeDamage({
+        atk: wind.chip, attackType: 'pierce', armor: mon.armor, armorType: mon.armorType,
+        bonus, resist: mon.def?.resist, rng: m.rng,
+      }).damage;
+      damageMonster(m, mon, dealt, t.towerId, t.owner ?? 0);
+    }
+  }
+}
+
+/**
  * 风暴电笼的雷场：半径内、已经能被锁定的空中和地面敌人，每秒吃一次魔法刮伤。
  * 不改链式那一发的段数、衰减和跳跃距离。不减速，不侦测。
  * 完全潜行且没被既有侦测揭开的怪，雷场碰不到。霜壳不削魔法。
@@ -1736,6 +1798,7 @@ export function update(m, dtRaw) {
   stepTowerAuras(m, dt);
   stepScorchHearths(m, dt);
   stepStormCages(m, dt);
+  stepWindLines(m, dt);
   for (const t of m.towers) {
     t.cooldown = Math.max(0, t.cooldown - dt);
     if (t.cooldown <= 0) towerFire(m, t);

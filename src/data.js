@@ -149,6 +149,9 @@ export const TOWER_ATK_SPEED_CAP = 4.0;
  * 成团的怪一起吃焦土，会拆塔的攻城单位再乘一截。霜壳仍削攻城。
  * 静电塔 → 风暴电笼：塔下一块雷场，每秒按魔法轻击空中和地面。链式那一发停在 Lv3。
  * 雷场自己不侦测，也不减速——减速仍是寒霜祭坛的事。空中要成团才在预告里提一句。
+ * 箭塔 → 穿云箭楼：普通射击停在 Lv3。每隔一秒，沿它锁住的那一路打出一条穿刺风线，
+ * 站在这条线上的成团一起吃。空中优先被锁，并且这一发吃得更重。风线不减速、不侦测，
+ * 也不把射程加长。空中要够重才在预告里提一句，不跟三只石像鬼、也不跟风暴电笼的第一档抢。
  */
 export const TOWER_SPEC = {
   tw_frost: {
@@ -182,6 +185,17 @@ export const TOWER_SPEC = {
     counters: ['air'],
     counterMin: 15,
     storm: { radius: 3.0, chip: 5 },
+  },
+  tw_arrow: {
+    id: 'cloud_keep',
+    name: '穿云箭楼',
+    costMul: 288 / 60,
+    role: '穿刺',
+    hint: '穿刺 · 风线贯穿成团，对空更重',
+    counter: '穿云箭楼可贯穿重空中',
+    counters: ['air'],
+    counterMin: 16,
+    wind: { reach: 5.5, span: 2, chip: 5, vsAir: 1 },
   },
 };
 

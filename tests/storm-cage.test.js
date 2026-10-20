@@ -144,7 +144,8 @@ test('风暴电笼：满级才开，价钱与链式曲线分开，卖掉按投�
   assert.equal(Math.round(TOWERS.tw_static.cost * CAGE.costMul), 288);
   assert.equal(upgradeCost('tw_static', 3), null);
   assert.equal(upgradeCost('tw_arrow', 3), null);
-  assert.equal(TOWER_SPEC.tw_arrow, undefined);
+  assert.notEqual(TOWER_SPEC.tw_arrow?.id, CAGE.id);
+  assert.equal(towerStats('tw_arrow', 3).special.storm, undefined);
 
   const plain = towerStats('tw_static', 3);
   const grown = towerStats('tw_static', 3, CAGE.id);
@@ -197,8 +198,12 @@ test('风暴电笼：满级才开，价钱与链式曲线分开，卖掉按投�
   assert.equal(buildTower(m, arrowSlot, 'tw_arrow'), true);
   assert.equal(upgradeTower(m, arrowSlot), true);
   assert.equal(upgradeTower(m, arrowSlot), true);
-  assert.equal(upgradeTower(m, arrowSlot), false, '箭塔满级没有专精');
-  assert.equal(nextUpgrade(m.towers.find((t) => t.slot === arrowSlot)), null);
+  assert.equal(upgradeTower(m, arrowSlot), true);
+  const arrow = m.towers.find((t) => t.slot === arrowSlot);
+  assert.equal(arrow.spec, TOWER_SPEC.tw_arrow.id);
+  assert.equal(arrow.stats.special.storm, undefined, '穿云箭楼不铺雷场');
+  assert.equal(arrow.stats.damage, towerStats('tw_arrow', 3).damage);
+  assert.equal(nextUpgrade(arrow), null);
 
   const cage = raiseStatic(m, slot);
   assert.equal(nextUpgrade(cage).id, CAGE.id);
@@ -462,7 +467,8 @@ test('波次预告和建造面板写出雷暴身份，寒霜和焦土那两句�
   assert.match(build.byId['build-tw_static'].sub, /满级雷暴/);
   assert.match(build.byId['build-tw_frost'].sub, /满级支援/);
   assert.match(build.byId['build-tw_cannon'].sub, /满级焦土/);
-  assert.doesNotMatch(build.byId['build-tw_arrow'].sub, /满级/);
+  assert.match(build.byId['build-tw_arrow'].sub, /满级穿刺/);
+  assert.doesNotMatch(build.byId['build-tw_arrow'].sub, /雷暴/);
   assert.ok(build.byId['build-tw_static'].h >= 44);
   const preview = layoutSheet(m, { selectedSlot: 1, placingTowerId: 'tw_static' });
   assert.match(preview.hint, /雷暴/);
