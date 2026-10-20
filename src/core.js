@@ -45,6 +45,7 @@ export function typeMultiplier(attackType, armorType) {
 /**
  * 霜壳：克制系数之后再乘的一层。只削写明的攻击通道。
  * 没写的通道（魔法、混乱）是 1，所以冰塔、静电塔和寒霜祭坛的刮伤仍走护甲表。
+ * 燎野炮台的焦土走攻城，霜壳这层 0.25 照削。
  * 大于 1 的数夹回 1——这层只负责减伤，不另开增伤。没有 resist 的单位永远是 1。
  */
 export function resistMultiplier(attackType, resist) {

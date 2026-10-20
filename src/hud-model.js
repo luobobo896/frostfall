@@ -209,6 +209,21 @@ function creepRoleChips(groups) {
 }
 
 /**
+ * 专精只在自己克制的波次后面补一句。`counterMin` 挡住「每波都提」：
+ * 寒霜祭坛见冲刺就写，燎野炮台要至少两只攻城单位才写。
+ */
+function specCounterNote(chips) {
+  let note = '';
+  for (const offer of Object.values(TOWER_SPEC)) {
+    if (!offer?.counter || !offer.counters?.length) continue;
+    const min = offer.counterMin ?? 1;
+    const hit = offer.counters.some((id) => (chips.find((c) => c.id === id)?.count ?? 0) >= min);
+    if (hit) note += ` · ${offer.counter}`;
+  }
+  return note;
+}
+
+/**
  * 下一波预告（§8.3 的 UI 部分）：把当前波次表翻译成「4×沼泽巨魔 + 1×霜嚎巨兽」。
  * 客户端本地就能算——波次表是静态数据，不需要服务端下发。
  * `chips` 汇总整波的职责（不受 maxGroups 截断），给触控芯片用。
@@ -234,8 +249,7 @@ export function wavePreview(waveIndex, maxGroups = 3, waves = WAVES) {
   const chips = creepRoleChips(def.groups);
   const needsDetect = chips.some((c) => c.id === 'invis');
   const needsMagic = chips.some((c) => c.id === 'resist');
-  const sprintAid = Object.values(TOWER_SPEC).find((s) => s.counters?.includes('sprint'));
-  const sprintNote = sprintAid && chips.some((c) => c.id === 'sprint') ? ` · ${sprintAid.counter}` : '';
+  const specNote = specCounterNote(chips);
   const mark = (g) => {
     const labels = g.roles.map((id) => CREEP_ROLES.find((r) => r.id === id)?.label).filter(Boolean);
     return labels.length ? `·${labels.join('·')}` : '';
@@ -258,7 +272,7 @@ export function wavePreview(waveIndex, maxGroups = 3, waves = WAVES) {
       + (groups.length > maxGroups ? ` 等 ${total} 只` : '')
       + (needsDetect ? ' · 需要侦测' : '')
       + (needsMagic ? ' · 需要魔法' : '')
-      + sprintNote,
+      + specNote,
   };
 }
 

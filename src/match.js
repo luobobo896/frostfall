@@ -19,13 +19,16 @@ export function towerStats(towerId, level = 1, spec = null) {
   const t = TOWERS[towerId];
   const g = TOWER_LEVEL_GAIN;
   const offer = TOWER_SPEC[towerId];
-  // 专精只挂光环，不改共享的 special 对象（否则同族每一座塔都会带上光环）
+  // 专精只挂光环或焦土，不改共享的 special 对象（否则同族每一座塔都会带上）
   let special = t.special;
-  if (spec && offer && offer.id === spec && offer.aura) {
-    special = {
-      ...t.special,
-      aura: { radius: offer.aura.radius, slowPct: offer.aura.slowPct, chip: offer.aura.chip },
-    };
+  if (spec && offer && offer.id === spec && (offer.aura || offer.scorch)) {
+    special = { ...t.special };
+    if (offer.aura) {
+      special.aura = { radius: offer.aura.radius, slowPct: offer.aura.slowPct, chip: offer.aura.chip };
+    }
+    if (offer.scorch) {
+      special.scorch = { radius: offer.scorch.radius, dps: offer.scorch.dps, vsSiege: offer.scorch.vsSiege };
+    }
   }
   return {
     damage: t.damage * (1 + g.damage) ** (level - 1),
@@ -65,7 +68,8 @@ export function specCostOf(towerId) {
 }
 
 /**
- * 下一档能买什么。3 级封顶的塔没有专精就是 null；冰塔满级之后是寒霜祭坛，不是 Lv4。
+ * 下一档能买什么。3 级封顶的塔没有专精就是 null。
+ * 冰塔满级之后是寒霜祭坛，炮塔满级之后是燎野炮台，都不是 Lv4。
  */
 export function nextUpgrade(tower) {
   if (!tower) return null;
@@ -1281,6 +1285,38 @@ function stepTowerAuras(m, dt) {
   }
 }
 
+/**
+ * 燎野炮台的焦土：半径内、已经能被锁定的地面敌人，每秒吃一次攻城伤害。
+ * 不改炮弹的伤害、射程和溅射。不侦测。空中和完全潜行碰不到。
+ * 攻城打加强甲本来就是 ×1.5；会拆塔的单位再吃 vsSiege。霜壳的攻城抗性照旧。
+ */
+function stepScorchHearths(m, dt) {
+  const towers = m.towers;
+  let any = false;
+  for (let i = 0; i < towers.length; i++) {
+    if (towers[i].stats?.special?.scorch?.radius > 0) { any = true; break; }
+  }
+  if (!any) return;
+  for (let i = 0; i < towers.length; i++) {
+    const t = towers[i];
+    const scorch = t.stats?.special?.scorch;
+    if (!(scorch?.radius > 0) || !(scorch.dps > 0)) continue;
+    t.scorchClock = (t.scorchClock ?? 0) + dt;
+    if (t.scorchClock < 1) continue;
+    t.scorchClock -= 1;
+    for (const mon of m.monsters) {
+      if (!isTargetable(m, mon, false)) continue;
+      if (gridDist(monsterCell(m, mon), t.cell) > scorch.radius) continue;
+      const bonus = mon.def?.siege && scorch.vsSiege > 0 ? scorch.vsSiege : 0;
+      const dealt = computeDamage({
+        atk: scorch.dps, attackType: 'siege', armor: mon.armor, armorType: mon.armorType,
+        bonus, resist: mon.def?.resist, rng: m.rng,
+      }).damage;
+      damageMonster(m, mon, dealt, t.towerId, t.owner ?? 0);
+    }
+  }
+}
+
 function towerFire(m, tower) {
   const target = pickTarget(m, tower);
   if (!target) return;
@@ -1666,6 +1702,7 @@ export function update(m, dtRaw) {
 
   markReveal(m);
   stepTowerAuras(m, dt);
+  stepScorchHearths(m, dt);
   for (const t of m.towers) {
     t.cooldown = Math.max(0, t.cooldown - dt);
     if (t.cooldown <= 0) towerFire(m, t);

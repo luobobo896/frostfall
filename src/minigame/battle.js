@@ -479,7 +479,8 @@ export function layoutSheet(m, ui = {}) {
     TOWER_ORDER.forEach((id, i) => {
       const col = i % 2, row = Math.floor(i / 2);
       const preview = ui.placingTowerId === id;
-      const support = id === 'tw_frost' && !preview ? ' · 满级支援' : '';
+      const offer = TOWER_SPEC[id];
+      const support = offer && !preview ? ` · 满级${offer.role}` : '';
       rows.push({
         id: `build-${id}`, label: TOWERS[id].name, sub: preview ? '再点确认' : `${TOWERS[id].cost} 金${support}`,
         x: 20 + col * 314, y: 96 + row * 50, w: 300, h: 44,
@@ -496,7 +497,7 @@ export function layoutSheet(m, ui = {}) {
       title: `在这里建塔（第 ${slot + 1} 号塔位 · 金币 ${Math.round(m.gold)}）`,
       hint: ui.placingTowerId
         ? `${(TOWERS[ui.placingTowerId]?.special?.detectRadius > 0) ? '射程与侦测已标出' : '射程已标出'} · 再点一次建造${TOWERS[ui.placingTowerId]?.name ?? ''}`
-          + (ui.placingTowerId === 'tw_frost' ? ` · ${TOWER_SPEC.tw_frost.hint}` : '')
+          + (TOWER_SPEC[ui.placingTowerId] ? ` · ${TOWER_SPEC[ui.placingTowerId].hint}` : '')
         : (cell ? `格 ${cell.x},${cell.y}` : ''),
       box: { x: 12, y: 62, w: 643, h: 194 },
       rows, byId: Object.fromEntries(rows.map((r) => [r.id, r])),
