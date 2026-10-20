@@ -11,7 +11,7 @@ import {
   SKILL_MAX_LEVEL, TOWER_UPGRADE_COST, WAVES, expToNext, ilvlForWave, skillLevelOf,
 } from './data.js';
 import { LONG_RUN, LONG_RUN_BOSS_HP, WAVES_LONG } from './data.js';
-import { buildMap, cellAt, computeDamage, findPath, gridDist, makeRng, pathTotalUnits, project, splashScale } from './core.js';
+import { buildMap, cellAt, computeDamage, findPath, gridDist, makeRng, pathTotalUnits, project, spawnPathIndex, splashScale } from './core.js';
 
 /* ---------- 静态计算（UI 与测试共用同一份来源） ---------- */
 
@@ -1720,9 +1720,7 @@ export function update(m, dtRaw) {
     w.timer += dt;
     while (w.spawned < w.total && w.timer >= w.queue[w.spawned].at) {
       const { mobId } = w.queue[w.spawned];
-      const airPath = m.map.paths.findIndex((p) => p.air);
-      const groundPaths = m.map.paths.map((p, i) => (p.air ? -1 : i)).filter((i) => i >= 0);
-      const pathIndex = MONSTERS[mobId].isAir && airPath >= 0 ? airPath : groundPaths[w.spawned % groundPaths.length];
+      const pathIndex = spawnPathIndex(m.map.paths, { isAir: !!MONSTERS[mobId].isAir, spawned: w.spawned });
       spawnMonster(m, mobId, pathIndex);
       w.spawned += 1;
     }

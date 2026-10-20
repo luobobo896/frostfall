@@ -359,7 +359,10 @@ export const MAPS = {
     spawn: [{ x: 0, y: 4 }], core: { x: 16, y: 12 }, terrain: [], unlockCond: null,
   },
   map_02: {
-    id: 'map_02', name: '双峰隘口', stars: 2, pathCount: 2, pathLength: 62, towerSlots: 22, coreHp: 3000,
+    id: 'map_02', name: '双峰隘口', stars: 2, pathCount: 2, pathLength: 57, towerSlots: 22, coreHp: 3000,
+    // 上路 32 格是急路（沿北缘直下核心），下路 57 格先横穿再折返。
+    // 基准移速 300 时大约 13.7s / 24.3s。出怪仍按地面路轮流。其余多路图这一代仍等长。
+    laneLengths: [32, 57],
     spawn: [{ x: 0, y: 4 }, { x: 0, y: 20 }], core: { x: 16, y: 12 }, terrain: [],
     unlockCond: { clearMap: 'map_01', source: 'achievement' },
   },
