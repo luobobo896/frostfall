@@ -722,6 +722,32 @@ test('选中英雄时技能圈是虚线冷色，不走塔的奶油射程圈', ()
   assert.ok(!quiet.calls.some((c) => c.name === 'stroke' && c.strokeStyle === '#7ec8ff'), '没选中英雄不画技能圈');
 });
 
+test('阵亡时地面有复活点秒数，技能圈收起，暖色光不回到尸体上', () => {
+  const draw = (dead, heroSelected) => {
+    const ctx = inkContext();
+    const canvas = { clientWidth: 1334, clientHeight: 750, width: 0, height: 0, getContext: () => ctx };
+    const r = createRenderer(canvas);
+    const m = createMatch({ mapId: 'map_01', heroId: 'hero_paladin', seed: 1 });
+    m.towers = [];
+    m.monsters = [];
+    m.hero.dead = dead;
+    m.hero.reviveTimer = 12;
+    r.draw({ m, heroSelected, selectedTower: null, now: 0 });
+    return ctx;
+  };
+  const dead = draw(true, true);
+  assert.ok(dead.calls.some((c) => c.name === 'fillText' && c.args[0] === '12s'), '地面标记要写剩余秒数');
+  assert.ok(dead.calls.some((c) => c.name === 'fillText' && c.args[0] === '复活 12s'), '尸体旁仍写复活倒计时');
+  assert.ok(dead.calls.some((c) => c.name === 'stroke' && c.strokeStyle === '#d7e2ec' && c.lineWidth === 2));
+  assert.ok(!dead.calls.some((c) => c.name === 'stroke' && c.strokeStyle === '#ffd68a'), '倒下不描暖色光');
+  assert.ok(!dead.calls.some((c) => c.name === 'setLineDash'), '复活点不借用技能虚线');
+  assert.ok(!dead.calls.some((c) => c.name === 'stroke' && c.strokeStyle === '#7ec8ff'), '阵亡时不画技能圈');
+  assert.ok(!dead.calls.some((c) => c.name === 'stroke' && c.strokeStyle === '#fff4d2'), '没选塔不画奶油射程圈');
+  const alive = draw(false, true);
+  assert.ok(!alive.calls.some((c) => c.name === 'stroke' && c.strokeStyle === '#d7e2ec'), '活着时不画复活点');
+  assert.ok(alive.calls.some((c) => c.name === 'stroke' && c.strokeStyle === '#7ec8ff' && c.lineWidth === 1.5));
+});
+
 test('英雄光不描到怪和塔上', () => {
   const ctx = inkContext();
   const canvas = { clientWidth: 1334, clientHeight: 750, width: 0, height: 0, getContext: () => ctx };

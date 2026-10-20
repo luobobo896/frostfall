@@ -592,10 +592,12 @@ check('§14.3 稿 4：点空地会说明「取最近塔位」的判定规则（�
   && (await js(`document.getElementById('toast').classList.contains('show')`)),
   `「${toastBeforeHint}」→「${toastAfterHint}」`);
 
-// 提前开波 + 技能
+// 提前开波 + 技能。空地点击会取消英雄选择，技能条跟着收起，放技能前要把英雄选回来。
 await click('#btnEarly');
 await sleep(300);
 check('提前开波', (await state()).wave === 1, `第 ${(await state()).wave} 波 · ${(await state()).toast}`);
+await js(`__frostfall.view.heroSelected = true`);
+await sleep(50);
 check('技能按钮能放技能', (await click('#skillRow .skill')) === 'ok'
   && await js(`__frostfall.match.hero.skillCd.some(c=>c>0) || __frostfall.match.events.some(e=>e.text.includes('旋风斩'))`));
 
@@ -2120,7 +2122,9 @@ const prioOk = await waitFor(`__frostfall.match.towers[0]?.priority === 'stronge
 check('联机指令③ 优先级：点「最强」→ 服务端改了（快照回来才算）',
   prioClicked === 'ok' && prioOk, `点击=${prioClicked} · 优先级 ${await js(`__frostfall.match.towers[0]?.priority`)}`);
 
-// 技能：点第一个可用技能，冷却要从**快照**里回来（本地只发指令，不自己算冷却）
+// 技能：塔面板开着时技能条收起。先关掉塔、选回英雄，再点第一个可用技能。冷却要从**快照**里回来。
+await js(`(()=>{__frostfall.ui.closeTower(); __frostfall.view.heroSelected = true; __frostfall.view.selectedTower = null; return true;})()`);
+await sleep(80);
 const skillClicked = await js(`(()=>{const b=document.querySelector('#skillRow .skill');
   if(!b || b.disabled) return 'no-button'; b.click(); return 'ok';})()`);
 const skillOk = await waitFor(`(__frostfall.match.hero.skillCd ?? []).some((c) => c > 0)`, 5000);

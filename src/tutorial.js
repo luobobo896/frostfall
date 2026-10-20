@@ -14,7 +14,7 @@ export const TUTORIAL_STEPS = [
   },
   {
     id: 'use_skill',
-    text: '塔会自动攻击。怪多了就按左下角的「旋风斩」清场',
+    text: '塔会自动攻击。点左下英雄，再按「旋风斩」清场',
     hintSlots: 0,
   },
   {

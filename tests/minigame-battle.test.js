@@ -526,6 +526,25 @@ test('小游戏技能键：名字 / 等级 / 冷却都从内核取，解锁几�
   assert.equal(two.byId['skill-1'].disabled, true);
 });
 
+test('小游戏命令条互斥：没选英雄没有技能；选塔时技能和肖像都让开；阵亡只留复活', () => {
+  const hidden = layoutBattle({ ...BATTLE_MODEL, heroCommand: false, selection: 'none', hero: { selected: false, dead: false, level: 1 } });
+  assert.ok(!hidden.byId['skill-0'], '没选英雄时不画技能');
+  assert.ok(hidden.byId.portrait, '肖像仍是选择热区');
+  assert.equal(hidden.byId.portrait.showDots, false, '没打开命令条时不画背包点');
+  const tower = layoutBattle({
+    ...BATTLE_MODEL, selection: 'tower', heroCommand: false,
+    hero: { selected: false, dead: false, level: 1 },
+    skills: [{ name: '旋风斩', lv: 1 }],
+  });
+  assert.ok(!tower.byId['skill-0'] && !tower.byId.portrait && !tower.byId.revive, '选塔时只留塔面板，不叠英雄命令');
+  const dead = layoutBattle({
+    ...BATTLE_MODEL, heroCommand: true, selection: 'none', lumber: 0,
+    hero: { selected: true, dead: true, level: 1, reviveTimer: 8 },
+  });
+  assert.ok(dead.byId.revive && !dead.byId['skill-0'], '阵亡时技能换成复活');
+  assert.equal(dead.byId.portrait.showDots, false);
+});
+
 test('小游戏技能键：商店买了「技能书·秘传」之后，第三颗键真的出现而且能放', async () => {
   await import('../tools/build-minigame.mjs');
   const fake = installFakeWx();
@@ -749,6 +768,45 @@ test('小游戏 TD：阵亡时技能排换成「快速复活」、右上角写�
     assert.equal(m.lumber[0], 0, `扣 ${REVIVE_LUMBER} 木材`);
     app.drawFrame();
     assert.ok(app.layout().byId['skill-0'], '复活之后技能排回来');
+  } finally { fake.uninstall(); }
+});
+
+test('小游戏：点空地取消英雄；点塔位只留建造面板；再点肖像技能才回来', async () => {
+  await import('../tools/build-minigame.mjs');
+  const fake = installFakeWx();
+  try {
+    const require = createRequire(import.meta.url);
+    const app = loadFreshApp(require, 40);
+    app.startMatch();
+    app.drawFrame();
+    assert.ok(app.layout().byId['skill-0'], '开局选中英雄，技能在');
+    const m = app.match();
+    const r = app.renderer();
+    const hs = r.toScreen(m.hero.cell.x, m.hero.cell.y, 1);
+    let empty = null;
+    for (let y = 1; y < m.map.grid.h - 1 && !empty; y += 1) {
+      for (let x = 1; x < m.map.grid.w - 1; x += 1) {
+        const farSlot = m.map.slots.every((s) => (s.x - x) ** 2 + (s.y - y) ** 2 > 9);
+        const p = r.toScreen(x, y);
+        const farHero = Math.hypot(p.x - hs.x, p.y - hs.y) > 80;
+        const inField = p.x > 200 && p.x < 520 && p.y > 90 && p.y < 280;
+        if (farSlot && farHero && inField) { empty = p; break; }
+      }
+    }
+    assert.ok(empty, '要有一格离塔位、英雄和 HUD 都远');
+    assert.equal(app.tap(empty.x, empty.y)?.type, 'clear');
+    app.drawFrame();
+    assert.ok(!app.layout().byId['skill-0'], '点空地之后技能收起');
+    assert.ok(app.layout().byId.portrait, '肖像还在，用来再选英雄');
+    const portrait = app.layout().byId.portrait;
+    app.tap(portrait.x + 20, portrait.y + 20);
+    app.drawFrame();
+    assert.ok(app.layout().byId['skill-0'], '点肖像之后技能回来');
+    const slot = r.toScreen(m.map.slots[0].x, m.map.slots[0].y);
+    app.tap(slot.x, slot.y);
+    app.drawFrame();
+    assert.ok(!app.layout().byId['skill-0'] && !app.layout().byId.portrait, '点塔位之后英雄命令让开');
+    assert.equal(app.getModel().sheet?.kind, 'build', '建造面板开着');
   } finally { fake.uninstall(); }
 });
 

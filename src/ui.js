@@ -9,7 +9,7 @@ import {
   craftableSlots, enhanceCostOf, heroMaxHp, shopPriceOf, skillLevel, TOWER_REPAIR_GOLD, towerStats, upgradeCost,
 } from './match.js';
 import { qualityColor, towerName } from './render.js';
-import { attackHint, heroCard, heroCards, isLowHp, playerPanel, resultPanelModel, roleGlyphSvg, shopRows, wavePreview, zoneLabel } from './hud-model.js';
+import { attackHint, commandStrip, heroCard, heroCards, isLowHp, playerPanel, resultPanelModel, roleGlyphSvg, shopRows, wavePreview, zoneLabel } from './hud-model.js';
 import { zoneAt } from './defense.js';
 
 const $ = (id) => document.getElementById(id);
@@ -166,11 +166,24 @@ export function createUI(handlers) {
     const dots = Math.min(6, m.inventory?.length ?? 0);
     const bag = Object.values(m.bag ?? {}).reduce((a, b) => a + b, 0);
     const potion = Object.entries(m.potionCd ?? {}).map(([k, v]) => `${k}:${Math.ceil(v)}`).sort().join(',');
+    const towerOpen = defense
+      ? !el.wheel.classList.contains('hidden')
+      : (!el.towerPanel.classList.contains('hidden') || !el.wheel.classList.contains('hidden'));
+    const strip = commandStrip({
+      towerOpen,
+      heroSelected: !!view?.heroSelected,
+      dead: !!h.dead,
+      implicitHero: defense,
+    });
     const sig = [h.def.id, h.level, hpPct, h.dead ? 1 : 0, Math.ceil(h.reviveTimer || 0), state, role,
-      view?.heroSelected ? 1 : 0, dots, bag, skills, potion, Math.round(h.exp)].join('|');
+      view?.heroSelected ? 1 : 0, dots, bag, skills, potion, Math.round(h.exp),
+      strip.open ? 1 : 0, strip.skills ? 1 : 0, towerOpen ? 1 : 0].join('|');
     if (sig === heroHudSig) return;
     heroHudSig = sig;
     el.heroCommand?.classList.toggle('selected', !!view?.heroSelected && !defense);
+    el.heroCommand?.classList.toggle('open', strip.open);
+    el.skillRow?.classList.toggle('closed', !strip.open);
+    el.invDots?.classList.toggle('hidden', !strip.open);
     if (el.heroMark) el.heroMark.textContent = defense ? '征' : '驻';
     if (el.heroRole) el.heroRole.textContent = role;
     el.heroName.textContent = h.def.name;
@@ -200,8 +213,11 @@ export function createUI(handlers) {
       const cd = h.skillCd[i] ?? 0;
       // §132：等级走内核那**一个**出口（以前这里是内联的同一套算术，加了书本加成之后两边会打架）
       btn.innerHTML = `<span>${def.name}</span><span class="cd">${cd > 0 ? cd.toFixed(0) + 's' : `Lv${skillLevel(m, def)}`}</span>`;
-      btn.disabled = !h.skillUnlocked[i] || cd > 0;
-      btn.onclick = () => { if (!handlers.castSkill(i)) toast('技能冷却中或未解锁'); };
+      btn.disabled = !!h.dead || !h.skillUnlocked[i] || cd > 0;
+      btn.onclick = () => {
+        if (h.dead) { toast('阵亡中无法施放'); return; }
+        if (!handlers.castSkill(i)) toast('技能冷却中或未解锁');
+      };
       el.skillRow.appendChild(btn);
     });
     const potions = Object.keys(m.bag).filter((k) => m.bag[k] > 0);

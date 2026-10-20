@@ -13,7 +13,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+const CHROME = [
+  '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+  '/usr/local/bin/google-chrome',
+  '/usr/bin/google-chrome-stable',
+].find((p) => existsSync(p));
 const ROOT = fileURLToPath(new URL('../', import.meta.url));
 const [w = '667', h = '375'] = process.argv.slice(2);
 const SHOTS_DIR = join(ROOT, 'docs/testing/screenshots');
@@ -26,10 +30,12 @@ const SHOTS = [
   { file: 'minigame-pause.png', w: Number(w), h: Number(h), page: 'pause' },
   { file: 'minigame-defense.png', w: Number(w), h: Number(h), page: 'defense' },
   { file: 'minigame-hero.png', w: Number(w), h: Number(h), page: 'hero' },
+  { file: 'minigame-revive.png', w: Number(w), h: Number(h), page: 'revive' },
+  { file: 'minigame-revive-defense.png', w: Number(w), h: Number(h), page: 'revive-defense' },
 ];
 
-if (!existsSync(CHROME)) {
-  console.log(`跳过：没找到 Chrome（${CHROME}）。这一步只是出样张，不影响别的检查。`);
+if (!CHROME) {
+  console.log('跳过：没找到 Chrome。这一步只是出样张，不影响别的检查。');
   process.exit(0);
 }
 
@@ -74,7 +80,7 @@ if (page === 'lobby' || page === 'hero') {
   drawLobby(ctx, model, layoutLobby(w, h, model));
 } else {
   // 防守那一屏：单独一条分支（它用 createDefenseMatch + drawDefense + 摇杆那套 HUD）
-  if (page === 'defense') {
+  if (page === 'defense' || page === 'revive-defense') {
     const { createDefenseMatch, buildFort, updateDefense } = await import('/src/defense.js');
     const { createMinimap, createRenderer } = await import('/src/render.js');
     const { MINIMAP, layoutDefense, drawDefenseHud } = await import('/src/minigame/defense-screen.js');
@@ -87,6 +93,11 @@ if (page === 'lobby' || page === 'hero') {
     buildFort(m, 0, 'fort_arrow');
     buildFort(m, 1, 'fort_wall');
     for (let i = 0; i < Math.round(12 / TICK_STEP); i += 1) updateDefense(m, TICK_STEP);
+    if (page === 'revive-defense') {
+      m.hero.dead = true;
+      m.hero.hp = 0;
+      m.hero.reviveTimer = 14;
+    }
     /**
      * 模型直接用游戏入口那份（game.js 导出的 defModel），不再手拼：
      * 手拼的副本会随着内核加字段慢慢对不上（skills、potionReady 都踩过一次），
@@ -120,6 +131,11 @@ if (page === 'lobby' || page === 'hero') {
   startWaveEarly(m, 0);
   for (let i = 0; i < Math.round(70 / TICK_STEP); i += 1) update(m, TICK_STEP);
   // 结算那张样张：**先把结果摆上再画 HUD**，这样底部那排也跟真机一致（「开波」会变成「再开一局」）
+  if (page === 'revive') {
+    m.hero.dead = true;
+    m.hero.hp = 0;
+    m.hero.reviveTimer = 12;
+  }
   if (page === 'result') {
     m.time = 486;
     m.stats.leaks = 2;
@@ -131,14 +147,23 @@ if (page === 'lobby' || page === 'hero') {
   }
   // 模型直接用游戏入口那份（game.js 导出的 describeBattleModel）：手拼的副本会随内核加字段而漂
   const { describeBattleModel } = await import('/src/minigame/game.js');
+  const base = describeBattleModel(m);
+  const towerPage = page === 'tower';
   const model = {
-    ...describeBattleModel(m),
+    ...base,
+    hero: { ...base.hero, selected: !towerPage },
+    heroCommand: !towerPage,
+    selection: towerPage ? 'tower' : 'none',
     selectedTower: 'tw_arrow', rate: 1, paused: false,
     // 战场那张顺手把**新手引导条**也摆上：第一局进 TD 就是这个样子（引导文案从状态机那唯一一份取）；
     // 别的几张（商店 / 结算 / 暂停）不摆——真机上它们要么盖住条，要么（结算）本来就把条收掉了
     tutorial: page === 'battle' ? (await import('/src/tutorial.js')).TUTORIAL_STEPS[0].text : null,
   };
-  renderer.draw({ m, selectedSlot: null, selectedTower: null, localSlot: 0, now: m.time, pulses: false, hintSlots: 3 });
+  renderer.draw({
+    m, selectedSlot: towerPage ? 1 : null, selectedTower: towerPage ? 1 : null, localSlot: 0, now: m.time, pulses: false,
+    hintSlots: page === 'battle' ? 3 : 0,
+    heroSelected: !towerPage && !m.hero.dead,
+  });
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   // 下一波预告那一行（§8.3）：文案与游戏入口一样取 wavePreview（一份两处用）
   const { wavePreview } = await import('/src/hud-model.js');
@@ -192,7 +217,8 @@ await mkdir(SHOTS_DIR, { recursive: true });
 for (const shot of SHOTS) {
   const png = join(dir, `${shot.page}.png`);
   const chrome = spawn(CHROME, [
-    '--headless=new', '--disable-gpu', '--no-first-run', '--hide-scrollbars',
+    '--headless=new', '--disable-gpu', '--no-sandbox', '--disable-dev-shm-usage', '--no-first-run', '--hide-scrollbars',
+    `--user-data-dir=${join(dir, `profile-${shot.page}`)}`,
     `--window-size=${shot.w},${shot.h}`, `--screenshot=${png}`, '--virtual-time-budget=2500',
     `http://127.0.0.1:${port}/?page=${shot.page}`,
   ], { stdio: 'ignore' });
@@ -206,8 +232,11 @@ for (const shot of SHOTS) {
   ]);
   if (!exited) {
     try { chrome.kill('SIGKILL'); } catch { /* 已经退了 */ }
-    console.log(`⚠ 样张 ${shot.file}：headless Chrome 30 秒没退出，已强杀（这一张没出，继续下一张）`);
-    continue;
+    if (!existsSync(png)) {
+      console.log(`⚠ 样张 ${shot.file}：headless Chrome 30 秒没退出，已强杀（这一张没出，继续下一张）`);
+      continue;
+    }
+    console.log(`样张 ${shot.file}：Chrome 没自己退出，截图已经落盘`);
   }
   await copyFile(png, join(SHOTS_DIR, shot.file));
   const { size } = await stat(png);

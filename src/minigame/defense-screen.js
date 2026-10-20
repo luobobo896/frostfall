@@ -7,7 +7,7 @@
 // 这一层仍然是纯函数四件套（布局 / 绘制 / 命中 / 摇杆向量），所以能在 Node 里测、也能出样张。
 import { DEFENSE_RULES, FORTS } from '../data.js';
 import { skillKeys } from './battle.js';
-import { zoneLabel } from '../hud-model.js';
+import { commandStrip, zoneLabel } from '../hud-model.js';
 import { zoneAt } from '../defense.js';
 import { REVIVE_LUMBER } from '../match.js';
 import { fitText } from '../render.js';
@@ -158,11 +158,17 @@ export function layoutDefense(m, model = {}) {
    * 小游戏这一屏以前**一颗技能键都没有**——于是防守局里技能是死的（买了技能书更看不出区别）。
    * 阵亡时换成一颗「快速复活 · 50 木」（§7.6）：那时本来也放不了技能，而复活是唯一想做的事。
    */
-  if (m.hero?.dead) {
+  // 工事面板开着时收起技能/复活（和塔面板同一条：一次只开一种命令）。没传 heroCommand 时英雄仍是操作对象。
+  const strip = commandStrip({
+    towerOpen: model.heroCommand === false,
+    dead: !!m.hero?.dead,
+    implicitHero: model.heroCommand !== false,
+  });
+  if (strip.revive) {
     const wood = m.lumber?.[0] ?? 0;
     items.push(item('revive', SKILL_BAR.x, SKILL_BAR.y, SKILL_BAR.w * 3 + SKILL_BAR.gap * 2, SKILL_BAR.h,
       `快速复活 · ${REVIVE_LUMBER} 木`, { type: 'revive' }, { disabled: wood < REVIVE_LUMBER }));
-  } else {
+  } else if (strip.skills) {
     skillKeys(m).forEach((sk, i) => {
       items.push(item(`skill-${i}`, SKILL_BAR.x + i * (SKILL_BAR.w + SKILL_BAR.gap), SKILL_BAR.y, SKILL_BAR.w, SKILL_BAR.h,
         sk.name ?? `技能 ${i + 1}`, { type: 'skill', index: i },

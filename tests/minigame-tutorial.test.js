@@ -112,7 +112,10 @@ test('小游戏引导：第一局挂上 → 建塔/开波/放技能/清波四步
     app.tick(0.1);
     assert.match(app.getModel().tutorial ?? '', /旋风斩/, '开波之后要换第三句');
 
-    // ③ 放技能 → 换第四句（撑住这一波）
+    // ③ 建塔时命令条让给塔面板。点左下肖像把英雄选回来，再放技能。
+    const portrait = app.layout().byId.portrait;
+    tapItem(app, portrait);
+    app.drawFrame();
     tapItem(app, app.layout().byId['skill-0']);
     assert.match(app.getModel().tutorial ?? '', /撑住这一波/, '放了技能要换第四句');
 

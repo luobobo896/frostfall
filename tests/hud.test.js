@@ -3,8 +3,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { DAMAGE_MATRIX, MONSTERS, TEAM_COLORS, WAVES, WAVES_LONG } from '../src/data.js';
-import { armorHint, attackHint, counterTable, creepRoles, damageFloaters, playerPanel, recordLabel, resultPanelModel, roleGlyph, teamColor, wavePreview, zoneLabel } from '../src/hud-model.js';
+import { armorHint, attackHint, commandStrip, counterTable, creepRoles, damageFloaters, playerPanel, recordLabel, resultPanelModel, roleGlyph, teamColor, wavePreview, zoneLabel } from '../src/hud-model.js';
 import { createDefenseMatch } from '../src/defense.js';
+import { createMatch, revivePoint } from '../src/match.js';
 
 // §190：结局面板别给「假出口」。城堡陷落之后那一局就结束了（内核 `updateDefense` 在 `m.over` 时直接
 // return），可面板还在说「（无尽中）」并摆着「继续（无尽）」——点下去只是让开面板，露出一个
@@ -159,6 +160,34 @@ test('玩家面板：4 格固定位，标出自己、空位与掉线', () => {
   assert.equal(panel[2].name, '乙');
   assert.equal(panel[2].online, false, '掉线要能看出来');
   assert.equal(panel[3].color, TEAM_COLORS[3]);
+});
+
+test('复活点：活着没有；TD 在倒下的格子；防守在城堡格', () => {
+  const td = createMatch({ mapId: 'map_01', seed: 1 });
+  assert.equal(revivePoint(td), null);
+  td.hero.dead = true;
+  td.hero.reviveTimer = 9;
+  assert.deepEqual(revivePoint(td), { x: td.hero.cell.x, y: td.hero.cell.y });
+  const def = createDefenseMatch({ mapId: 'def_01', seed: 1 });
+  def.hero.dead = true;
+  def.hero.cell = { x: 3, y: 4 };
+  assert.deepEqual(revivePoint(def), { x: def.castle.cell.x, y: def.castle.cell.y });
+  assert.notDeepEqual(revivePoint(def), { x: 3, y: 4 });
+});
+
+test('命令条互斥：塔面板优先；英雄选中才给技能；阵亡改成复活', () => {
+  assert.deepEqual(commandStrip({ towerOpen: true, heroSelected: true, dead: true }),
+    { open: false, skills: false, revive: false, tower: true });
+  assert.deepEqual(commandStrip({ heroSelected: true }),
+    { open: true, skills: true, revive: false, tower: false });
+  assert.deepEqual(commandStrip({}),
+    { open: false, skills: false, revive: false, tower: false });
+  assert.deepEqual(commandStrip({ dead: true }),
+    { open: true, skills: false, revive: true, tower: false });
+  assert.deepEqual(commandStrip({ implicitHero: true }),
+    { open: true, skills: true, revive: false, tower: false });
+  assert.deepEqual(commandStrip({ implicitHero: true, dead: true }),
+    { open: true, skills: false, revive: true, tower: false });
 });
 
 test('§3.7 低血提示：生命 < 20% 才算（边界）', async () => {

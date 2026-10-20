@@ -117,6 +117,7 @@ function startMatch() {
   view.paused = false;
   view.selectedSlot = null;
   view.selectedTower = null;
+  view.heroSelected = choice.mode !== 'defense';
   view.resultDismissed = false;   // §131：新的一局，「继续（无尽）」收起面板的标记要清掉
   view.resultExtra = null;
   // §2.1：记下「上次配置」，下次进大厅直接沿用（URL 参数仍然优先）
@@ -757,7 +758,7 @@ canvas.addEventListener('pointerdown', (e) => {
   if (pointers.size === 2 && pinchZoomOk()) {
     // 第二根手指：这次手势改成缩放，把第一根手指可能已经打开的选择收掉
     drag = null;
-    ui.closeWheel(); ui.closeTower(); view.selectedSlot = null; view.selectedTower = null;
+    ui.closeWheel(); ui.closeTower(); view.selectedSlot = null; view.selectedTower = null; view.heroSelected = false;
     const [a, b] = [...pointers.values()];
     pinchDist = Math.hypot(a.x - b.x, a.y - b.y);
     return;
@@ -779,7 +780,7 @@ canvas.addEventListener('pointerdown', (e) => {
   // 点英雄：选中驻守。这一下在按下时就定，松手不再补一次（松手只负责双击回核心）。
   const hp = heroPos(match.hero);
   const hs = renderer.toScreen(hp.x, hp.y, 1);
-  if (!match.hero.dead && pointHitsHero(hs, renderer.scale, p.x, p.y)) {
+  if (pointHitsHero(hs, renderer.scale, p.x, p.y)) {
     view.heroSelected = true;
     ui.closeWheel(); ui.closeTower();
     view.selectedSlot = null; view.selectedTower = null;
@@ -805,7 +806,7 @@ canvas.addEventListener('pointerdown', (e) => {
     if (d < bestD) { bestD = d; best = i; }
   });
   if (best < 0 || bestD > 2) {
-    ui.closeWheel(); ui.closeTower(); view.selectedSlot = null;
+    ui.closeWheel(); ui.closeTower(); view.selectedSlot = null; view.selectedTower = null; view.heroSelected = false;
     // §14.3 稿 4 要求「标出『点击取最近塔位』的判定规则（§2.5）」。
     // 默认档（整图可见）下点空地原本**什么都不发生**——玩家分不清「没响应」和「这儿没塔位」，
     // 于是这条提示同时干两件事：给反馈 + 把判定规则说给玩家听（toast 自带 1.6s 自动消失）

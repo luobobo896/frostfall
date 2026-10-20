@@ -977,6 +977,17 @@ export function castSkill(m, index) {
  */
 export const REVIVE_LUMBER = 50;
 
+/**
+ * 倒下之后人会在哪一格起来。TD 就在倒下的那一格（`heroStep` 不传送）；
+ * 防守倒计时走完会回到城堡格。活着时没有复活点。
+ */
+export function revivePoint(m) {
+  if (!m?.hero?.dead) return null;
+  // 防守局带着城堡格，倒计时结束会回到那里；TD 没有城堡格，人就在倒下的格子起来。
+  const cell = m.castle?.cell ?? m.hero.cell;
+  return cell ? { x: cell.x, y: cell.y } : null;
+}
+
 export function reviveNow(m, playerIndex = 0) {
   if (!m.hero.dead || (m.lumber[playerIndex] ?? 0) < REVIVE_LUMBER) return false;
   m.lumber[playerIndex] -= REVIVE_LUMBER;
