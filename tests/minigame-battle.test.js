@@ -106,6 +106,8 @@ test('小游戏战场 HUD：画一帧有波次 / 金币 / 核心 / 塔造价（�
   assert.ok(ctx.texts.some((t) => t.includes('击杀')), '记分条要写击杀');
   assert.ok(ctx.texts.some((t) => t.includes('漏怪 2')), '记分条的漏怪跟内核统计走');
   assert.ok(ctx.texts.some((t) => t.includes('商店')) && ctx.texts.some((t) => t.includes('背包')), '商店/背包入口要画出来');
+  assert.ok(ctx.texts.includes('Guardian'), '驻守肖像要写 Guardian，和出征卡上的 Champion 成对');
+  assert.ok(ctx.texts.some((t) => t.includes('驻守英雄')), '等级那一行写驻守英雄');
 });
 
 test('小游戏战场 HUD：下一波预告那一行（§8.3）画出来，太长就裁到宽度里', () => {
