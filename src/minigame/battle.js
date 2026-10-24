@@ -200,7 +200,8 @@ function drawPortrait(ctx, m, it, selected) {
   ctx.fillRect(mx, my, mark, mark);
   ctx.strokeStyle = selected ? '#e0c36a' : '#8a93a3';
   ctx.strokeRect(mx, my, mark, mark);
-  text(ctx, '驻', mx + mark / 2, my + mark / 2, { size: 16, align: 'center', color: '#e8d7a2', weight: 'bold' });
+  text(ctx, '驻', mx + mark / 2, my + 14, { size: 15, align: 'center', color: '#e8d7a2', weight: 'bold' });
+  text(ctx, 'Guardian', mx + mark / 2, my + 30, { size: 8, align: 'center', color: '#c9b27a' });
   const name = m.hero?.def?.name ?? '英雄';
   const lv = m.hero?.level ?? 1;
   const dead = !!m.hero?.dead;
